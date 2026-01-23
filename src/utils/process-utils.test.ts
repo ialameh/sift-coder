@@ -29,12 +29,13 @@ describe('ProcessUtils', () => {
 
   describe('exec', () => {
     it('should execute command successfully', async () => {
-      // Register the mock command
+      // Register the mock command and recreate the exec mock
       mockExecutor.mockCommand('node -e "console.log(\'hello\')"', {
         exitCode: 0,
         stdout: 'hello\n',
         stderr: ''
       });
+      mockExecutor.createExecMock(); // Recreate mock with registered commands
 
       const result = await ProcessUtils.exec('node -e "console.log(\'hello\')"');
 
