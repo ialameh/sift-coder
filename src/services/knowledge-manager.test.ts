@@ -6,12 +6,25 @@
 import { KnowledgeManagerService, Pattern, Gotcha, Decision } from './knowledge-manager';
 import { MockFileSystem, TestDataFactory } from '../utils/test-helpers';
 
-// Mock dependencies
-jest.mock('../utils/file-utils.js');
-jest.mock('../utils/path-utils.js');
+// Mock dependencies with proper structure
+jest.mock('../utils/path-utils.js', () => ({
+  PathUtils: {
+    getStateDir: jest.fn(() => '/test/state'),
+    join: jest.fn((...args: string[]) => args.join('/'))
+  }
+}));
 
-const FileUtils = require('../utils/file-utils.js');
-const PathUtils = require('../utils/path-utils.js');
+jest.mock('../utils/file-utils.js', () => ({
+  FileUtils: {
+    mkdir: jest.fn().mockResolvedValue(undefined),
+    exists: jest.fn().mockResolvedValue(true),
+    readJSON: jest.fn().mockResolvedValue({}),
+    writeJSON: jest.fn().mockResolvedValue(undefined)
+  }
+}));
+
+const FileUtils = require('../utils/file-utils.js').FileUtils;
+const PathUtils = require('../utils/path-utils.js').PathUtils;
 
 describe('KnowledgeManagerService', () => {
   let service: KnowledgeManagerService;
