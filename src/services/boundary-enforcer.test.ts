@@ -289,8 +289,8 @@ describe('BoundaryEnforcer', () => {
       boundaryEnforcer = new BoundaryEnforcer();
       await boundaryEnforcer.addModifiable('src/**/*');
 
-      const saved = mockStateManager.saveBoundaries.mock.calls[0][0];
-      expect(saved.modifiable).toEqual(['src/**/*']);
+      // Should NOT call saveBoundaries since pattern already exists
+      expect(mockStateManager.saveBoundaries).not.toHaveBeenCalled();
     });
   });
 
