@@ -75,7 +75,12 @@ export class TokenCounter {
 }
 
 // CLI interface
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Check if this file is being run directly (CLI mode)
+const isMainModule = process.argv[1]?.endsWith('/token-counter.js') ||
+                        process.argv[1]?.endsWith('token-counter.js') ||
+                        process.argv[1]?.endsWith('\\token-counter.js');
+
+if (isMainModule) {
   const text = process.argv[2] || '';
   if (!text) {
     console.error('Usage: node token-counter.js <text>');
