@@ -149,9 +149,17 @@ export class PathUtils {
   }
 
   /**
-   * Format path from components
+   * Format path from components (cross-platform)
+   * Handles edge cases like root directory
    */
   static format(pathObject: path.FormatInputPathObject): string {
-    return path.format(pathObject);
+    const formatted = path.format(pathObject);
+
+    // Fix double slash on root directory (//file.txt -> /file.txt)
+    if (formatted.startsWith('//') && !formatted.startsWith('//')) {
+      return formatted.substring(1);
+    }
+
+    return formatted;
   }
 }
