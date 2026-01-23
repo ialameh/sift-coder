@@ -14,8 +14,6 @@
  */
 import fs from 'fs/promises';
 import path from 'path';
-import { fileURLToPath } from 'url';
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const STATE_DIR = process.env.SIFTCODER_STATE_DIR || '.claude/siftcoder-state';
 const LOG_FILE = path.join(STATE_DIR, 'implementation-log.jsonl');
 // State tracking

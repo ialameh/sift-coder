@@ -6,7 +6,6 @@
  * Prevents context overflow and ensures work isn't lost on long-running sessions.
  */
 import fs from 'fs/promises';
-import path from 'path';
 import { encode } from 'gpt-tokenizer';
 const STATE_DIR = process.env.SIFTCODER_STATE_DIR || '.claude/siftcoder-state';
 const THRESHOLDS = {
