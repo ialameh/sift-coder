@@ -5,14 +5,23 @@
 
 import { SuggestService, CommandMatch, SuggestionResult } from './suggest-service';
 
-// Mock dependencies
-jest.mock('fs/promises');
-jest.mock('path');
-jest.mock('glob');
+// Mock dependencies with proper structure
+jest.mock('glob', () => ({
+  glob: jest.fn().mockResolvedValue([])
+}));
 
-const fs = require('fs/promises');
+jest.mock('path', () => ({
+  join: jest.fn((...args: string[]) => args.filter(a => a).join('/')),
+  basename: jest.fn((p: string) => p.split('/').pop())
+}));
+
+jest.mock('fs/promises', () => ({
+  readFile: jest.fn().mockResolvedValue('')
+}));
+
+const glob = require('glob').glob;
 const path = require('path');
-const glob = require('glob');
+const fs = require('fs/promises');
 
 describe('SuggestService', () => {
   let service: SuggestService;
