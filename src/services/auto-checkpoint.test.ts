@@ -39,11 +39,37 @@ describe('AutoCheckpointService', () => {
   let service: AutoCheckpointService;
 
   beforeEach(() => {
-    PathUtils.getStateDir = jest.fn(() => '/test/state');
-    PathUtils.join = jest.fn((...args: string[]) => args.join('/'));
-    FileUtils.mkdir = jest.fn().mockResolvedValue(undefined);
-    FileUtils.writeJSON = jest.fn().mockResolvedValue(undefined);
-    FileUtils.appendFile = jest.fn().mockResolvedValue(undefined);
+    jest.clearAllMocks();
+
+    // Setup PathUtils mock
+    PathUtils.getStateDir.mockReturnValue('/test/state');
+    PathUtils.join.mockImplementation((...args: string[]) => args.join('/'));
+
+    // Setup FileUtils mock
+    FileUtils.mkdir.mockResolvedValue(undefined);
+    FileUtils.writeJSON.mockResolvedValue(undefined);
+    FileUtils.appendFile.mockResolvedValue(undefined);
+    FileUtils.exists.mockResolvedValue(true);
+    FileUtils.readJSON.mockResolvedValue({});
+    FileUtils.readFile.mockResolvedValue('');
+    FileUtils.readdir.mockResolvedValue([]);
+
+    // Setup child_process mock
+    (childProcess.exec as jest.Mock).mockImplementation((command: string, options: any, callback: any) => {
+      // Simulate successful git commands
+      if (command.includes('git rev-parse')) {
+        callback(null, { stdout: 'abc123\n' }, '');
+      } else if (command.includes('git diff')) {
+        callback(null, { stdout: 'file1.ts\nfile2.ts\n' }, '');
+      } else if (command.includes('git add')) {
+        callback(null, { stdout: '' }, '');
+      } else if (command.includes('git commit')) {
+        callback(null, { stdout: '[checkpoint abc123] Test\n' }, '');
+      } else {
+        callback(null, { stdout: '' }, '');
+      }
+      return { kill: jest.fn() };
+    });
   });
 
   afterEach(() => {
