@@ -247,20 +247,44 @@ Investigate First → Understand the Problem → Define Boundaries → Fix Safel
 
 ### Prerequisites
 - Claude Code CLI installed and configured
+- Node.js 18+ and npm installed
 - Restart Claude Code after installation
 
-### Method 1: Plugin Command (Recommended)
+### Method 1: Git Clone (Recommended)
 
-The simplest way to install Sift-Coder:
+Clone the repository and install dependencies:
 
 ```bash
-# In Claude Code, navigate to the plugin directory and run:
+# Clone the repository
+git clone https://github.com/ialameh/sift-coder.git
+cd sift-coder
+
+# Install dependencies
+npm install
+
+# Build the project
+npm run build
+
+# Navigate to the plugin directory in Claude Code and run:
 /plugin
 ```
 
-This command auto-detects the plugin in the current directory and installs it.
+### Method 2: Direct Plugin Load (Development)
 
-### Method 2: Local Marketplace
+For development and testing, load the plugin directly:
+
+```bash
+# Clone and install
+git clone https://github.com/ialameh/sift-coder.git
+cd sift-coder
+npm install
+npm run build
+
+# Run Claude Code with the plugin
+claude --plugin-dir /path/to/sift-coder
+```
+
+### Method 3: Local Marketplace
 
 1. **Create a local marketplace directory structure:**
 ```bash
@@ -268,16 +292,12 @@ mkdir -p /path/to/local-marketplace/.claude-plugin
 mkdir -p /path/to/local-marketplace/plugins
 ```
 
-2. **Clone or copy sift-coder to the plugins directory:**
+2. **Clone sift-coder to the plugins directory:**
 ```bash
-# Clone from repository
 git clone https://github.com/ialameh/sift-coder.git /path/to/local-marketplace/plugins/sift-coder
-
-# Or copy existing installation
-cp -r /path/to/sift-coder /path/to/local-marketplace/plugins/
-
-# Or create a symlink
-ln -s /path/to/sift-coder /path/to/local-marketplace/plugins/sift-coder
+cd /path/to/local-marketplace/plugins/sift-coder
+npm install
+npm run build
 ```
 
 3. **Create the marketplace.json file:**
@@ -314,14 +334,6 @@ EOF
 ```
 
 5. **Restart Claude Code to load the plugin**
-
-### Method 3: Direct Plugin Load (Development)
-
-For development and testing, load the plugin directly:
-
-```bash
-claude --plugin-dir /path/to/sift-coder
-```
 
 ### Method 4: Manual Installation
 
