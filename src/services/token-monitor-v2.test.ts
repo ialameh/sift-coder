@@ -237,6 +237,13 @@ describe('TokenMonitor', () => {
       FileUtils.exists.mockResolvedValue(true);
       FileUtils.readFile.mockResolvedValue('');
 
+      // Mock token counter to return 0 for empty string
+      TokenCounter.count.mockReturnValue({
+        tokens: 0,
+        method: 'exact',
+        characters: 0
+      });
+
       tokenMonitor = new TokenMonitor();
       const result = await tokenMonitor.calculateSessionTokens();
 
