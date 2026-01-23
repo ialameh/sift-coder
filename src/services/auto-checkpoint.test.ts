@@ -131,10 +131,17 @@ describe('AutoCheckpointService', () => {
     it('should support different trigger types', async () => {
       service = new AutoCheckpointService('/test/project');
       childProcess.execSync = jest.fn()
-        .mockReturnValueOnce('') // git rev-parse
-        .mockImplementationOnce(() => { throw new Error('Changes exist'); }) // git diff --quiet (throws for changes)
-        .mockReturnValueOnce('') // git rev-parse HEAD
-        .mockReturnValueOnce(''); // git diff-tree
+        .mockImplementation((cmd: string) => {
+          if (cmd.includes('rev-parse --git-dir')) return '';
+          if (cmd.includes('diff --quiet')) {
+            throw new Error('Changes exist'); // Throws to indicate changes exist
+          }
+          if (cmd.includes('rev-parse HEAD')) return 'def456\n';
+          if (cmd.includes('diff-tree')) return '';
+          if (cmd.includes('git add')) return '';
+          if (cmd.includes('git commit')) return '[checkpoint def456] Test\n';
+          return '';
+        });
 
       const triggers: CheckpointTrigger[] = [
         'feature_complete',
