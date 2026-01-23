@@ -581,8 +581,8 @@ describe('ProcessUtils', () => {
 
     it('should handle empty output', async () => {
       const mockExec = mockChildProcess.exec as jest.Mock;
-      mockExec.mockImplementation((command: string, options: any, callback: any) => {
-        callback(null, { stdout: '' }, '');
+      mockExec.mockImplementation((_command: string, _options: any, callback: any) => {
+        callback(null, '', '');
         return { kill: jest.fn() };
       });
 
