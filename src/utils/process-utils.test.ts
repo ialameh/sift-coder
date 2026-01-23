@@ -249,8 +249,14 @@ describe('ProcessUtils', () => {
 
   describe('commandExists', () => {
     it('should return true if command exists on Unix', async () => {
-      // This test uses the real commandExists implementation
-      // node should exist in the test environment
+      // Mock the which command
+      const checkCommand = process.platform === 'win32' ? 'where node' : 'which node';
+      mockExecutor.mockCommand(checkCommand, {
+        exitCode: 0,
+        stdout: '/usr/bin/node\n',
+        stderr: ''
+      });
+
       const result = await ProcessUtils.commandExists('node');
       expect(result).toBe(true);
     });
