@@ -7,7 +7,7 @@ import { jest } from '@jest/globals';
 
 // Mock fs module
 jest.mock('fs', () => {
-  const actual = jest.requireActual('fs');
+  const actual = jest.requireActual('fs') as any;
   const mockFs = {
     ...actual,
     promises: {
