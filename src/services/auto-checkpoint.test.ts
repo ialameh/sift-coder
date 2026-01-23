@@ -6,13 +6,33 @@
 import { AutoCheckpointService, CheckpointMetadata, CheckpointTrigger } from './auto-checkpoint';
 import { TestDataFactory } from '../utils/test-helpers';
 
-// Mock dependencies
-jest.mock('../utils/file-utils.js');
-jest.mock('../utils/path-utils.js');
-jest.mock('child_process');
+// Mock dependencies with proper structure
+jest.mock('../utils/path-utils.js', () => ({
+  PathUtils: {
+    getStateDir: jest.fn(() => '/test/state'),
+    join: jest.fn((...args: string[]) => args.join('/'))
+  }
+}));
 
-const FileUtils = require('../utils/file-utils.js');
-const PathUtils = require('../utils/path-utils.js');
+jest.mock('../utils/file-utils.js', () => ({
+  FileUtils: {
+    mkdir: jest.fn().mockResolvedValue(undefined),
+    writeJSON: jest.fn().mockResolvedValue(undefined),
+    appendFile: jest.fn().mockResolvedValue(undefined),
+    exists: jest.fn().mockResolvedValue(true),
+    readJSON: jest.fn().mockResolvedValue({}),
+    readFile: jest.fn().mockResolvedValue(''),
+    readdir: jest.fn().mockResolvedValue([])
+  }
+}));
+
+jest.mock('child_process', () => ({
+  exec: jest.fn(),
+  spawn: jest.fn()
+}));
+
+const FileUtils = require('../utils/file-utils.js').FileUtils;
+const PathUtils = require('../utils/path-utils.js').PathUtils;
 const childProcess = require('child_process');
 
 describe('AutoCheckpointService', () => {
