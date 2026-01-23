@@ -301,14 +301,25 @@ export async function injectContext(): Promise<void> {
   if (recentCheckpoints.length > 0) {
     console.log('### Previous Sessions');
     for (const checkpoint of recentCheckpoints) {
-      const date = new Date(checkpoint.created_at);
+      const date = new Date(checkpoint.createdAt);
       const timeAgo = getTimeAgo(date);
-      const agentName = formatAgentName(checkpoint.agent);
+      const agentName = checkpoint.agent ? formatAgentName(checkpoint.agent) : 'System';
 
-      console.log(`- **${checkpoint.name}** (${timeAgo})`);
-      console.log(`  - Phase: ${checkpoint.workflow_phase}`);
-      console.log(`  - Agent: ${agentName}`);
-      console.log(`  - Features: ${checkpoint.features.completed.length} completed, ${checkpoint.features.in_progress.length} in progress`);
+      console.log(`- **${checkpoint.id}** (${timeAgo})`);
+      console.log(`  - Trigger: ${checkpoint.trigger}`);
+      console.log(`  - Message: ${checkpoint.message}`);
+      if (checkpoint.workflow_phase) {
+        console.log(`  - Phase: ${checkpoint.workflow_phase}`);
+      }
+      if (checkpoint.agent) {
+        console.log(`  - Agent: ${agentName}`);
+      }
+      if (checkpoint.features) {
+        console.log(`  - Features: ${checkpoint.features.completed.length} completed, ${checkpoint.features.in_progress.length} in progress`);
+      }
+      if (checkpoint.filesChanged) {
+        console.log(`  - Files: ${checkpoint.filesChanged}`);
+      }
       console.log('');
     }
   }
