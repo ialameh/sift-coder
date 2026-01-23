@@ -200,7 +200,10 @@ Overall: ${results.overall_passed ? '✅ PASSED' : '❌ FAILED'}
     }
 }
 // CLI interface
-const isMainModule = process.argv[1] === new URL(import.meta.url).pathname;
+// Check if this file is being run directly (CLI mode)
+const isMainModule = process.argv[1]?.endsWith('/quality-gates.js') ||
+    process.argv[1]?.endsWith('quality-gates.js') ||
+    process.argv[1]?.endsWith('\\quality-gates.js');
 if (isMainModule) {
     const command = process.argv[2];
     const gates = new QualityGates();

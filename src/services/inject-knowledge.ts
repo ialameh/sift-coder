@@ -107,7 +107,8 @@ export class KnowledgeInjectionService {
 }
 
 // CLI interface
-if (import.meta.url === `file://${process.argv[1]}`) {
+const currentFilePath = new URL(import.meta.url).pathname;
+if (process.argv[1] === currentFilePath) {
   const service = new KnowledgeInjectionService();
 
   service.getKnowledgeSummary().then(output => {

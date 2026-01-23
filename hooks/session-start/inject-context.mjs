@@ -14,7 +14,7 @@
 
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { execSync } from 'child_process';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -32,7 +32,8 @@ async function main() {
     const sessionFile = join(STATE_DIR, 'session.json');
     if (existsSync(sessionFile)) {
       try {
-        const lastSession = require(sessionFile);
+        const sessionContent = readFileSync(sessionFile, 'utf-8');
+        const lastSession = JSON.parse(sessionContent);
         console.log('## 🔄 SiftCoder Session Continuation');
         console.log('');
         console.log('### Previous Session');
@@ -51,7 +52,7 @@ async function main() {
 
   // Use context builder service
   try {
-    execSync(`node "${CONTEXT_SERVICE}" inject-context`, {
+    execSync(`tsx "${CONTEXT_SERVICE}" inject-context`, {
       cwd: PROJECT_ROOT,
       stdio: 'inherit'
     });

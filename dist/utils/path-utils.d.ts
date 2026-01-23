@@ -17,11 +17,13 @@ export declare class PathUtils {
      */
     static resolve(...paths: string[]): string;
     /**
-     * Get directory name
+     * Get directory name (cross-platform)
+     * Handles both Unix and Windows path separators
      */
     static dirname(filePath: string): string;
     /**
-     * Get base name
+     * Get base name (cross-platform)
+     * Handles edge cases like root directory
      */
     static basename(filePath: string, ext?: string): string;
     /**
@@ -33,7 +35,8 @@ export declare class PathUtils {
      */
     static normalize(filePath: string): string;
     /**
-     * Check if path is absolute
+     * Check if path is absolute (cross-platform)
+     * Handles both Unix (/path) and Windows (C:\path, C:/path) absolute paths
      */
     static isAbsolute(filePath: string): boolean;
     /**
@@ -64,11 +67,13 @@ export declare class PathUtils {
      */
     static getTempDir(): string;
     /**
-     * Parse path into components
+     * Parse path into components (cross-platform)
+     * Handles both Unix and Windows path separators
      */
     static parse(filePath: string): path.ParsedPath;
     /**
-     * Format path from components
+     * Format path from components (cross-platform)
+     * Handles edge cases like root directory
      */
     static format(pathObject: path.FormatInputPathObject): string;
 }

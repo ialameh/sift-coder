@@ -88,7 +88,11 @@ export class McpIntegrationService {
     }
 }
 // CLI interface
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Check if this file is being run directly (CLI mode)
+const isMainModule = process.argv[1]?.endsWith('/mcp-integration.js') ||
+    process.argv[1]?.endsWith('mcp-integration.js') ||
+    process.argv[1]?.endsWith('\\mcp-integration.js');
+if (isMainModule) {
     const service = new McpIntegrationService();
     service.detect().then(result => {
         console.log(JSON.stringify(result, null, 2));

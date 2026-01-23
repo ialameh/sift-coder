@@ -143,7 +143,10 @@ export class BoundaryEnforcer {
     }
 }
 // CLI interface
-const isMainModule = process.argv[1] === new URL(import.meta.url).pathname;
+// Check if this file is being run directly (CLI mode)
+const isMainModule = process.argv[1]?.endsWith('/boundary-enforcer.js') ||
+    process.argv[1]?.endsWith('boundary-enforcer.js') ||
+    process.argv[1]?.endsWith('\\boundary-enforcer.js');
 if (isMainModule) {
     const command = process.argv[2];
     const args = process.argv.slice(3);

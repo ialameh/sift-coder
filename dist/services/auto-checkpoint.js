@@ -111,7 +111,11 @@ Co-Authored-By: Claude <noreply@anthropic.com>`;
     }
 }
 // CLI interface
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Check if this file is being run directly (CLI mode)
+const isMainModule = process.argv[1]?.endsWith('/auto-checkpoint.js') ||
+    process.argv[1]?.endsWith('auto-checkpoint.js') ||
+    process.argv[1]?.endsWith('\\auto-checkpoint.js');
+if (isMainModule) {
     const trigger = (process.argv[2] || 'manual');
     const featureId = process.argv[3] || 'unknown';
     const message = process.argv[4] || 'siftcoder checkpoint';

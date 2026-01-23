@@ -19,15 +19,27 @@ export class SuggestService {
         if (this.commandCache.size > 0) {
             return this.commandCache;
         }
-        const commandFiles = await glob('*.md', { cwd: join(this.commandsDir, 'commands') });
-        for (const file of commandFiles) {
-            const content = await readFile(join(this.commandsDir, 'commands', file), 'utf-8');
-            // Extract command name from filename (remove .md)
-            const commandName = file.replace('.md', '');
-            this.commandCache.set(commandName, {
-                name: commandName,
-                content
-            });
+        try {
+            const commandFiles = await glob('*.md', { cwd: join(this.commandsDir, 'commands') });
+            for (const file of commandFiles) {
+                try {
+                    const content = await readFile(join(this.commandsDir, 'commands', file), 'utf-8');
+                    // Extract command name from filename (remove .md)
+                    const commandName = file.replace('.md', '');
+                    this.commandCache.set(commandName, {
+                        name: commandName,
+                        content
+                    });
+                }
+                catch (error) {
+                    // Skip files that can't be read, but continue loading others
+                    console.warn(`Failed to load command ${file}:`, error);
+                }
+            }
+        }
+        catch (error) {
+            // If glob fails or all files fail to load, return empty cache
+            console.warn('Failed to load commands:', error);
         }
         return this.commandCache;
     }
@@ -114,9 +126,9 @@ export class SuggestService {
      * Determine primary intent
      */
     determineIntent(_request, keywords, _context) {
-        // Check for specific patterns
-        if (keywords.includes('add') || keywords.includes('create') || keywords.includes('build') || keywords.includes('new')) {
-            return 'Create new feature or functionality';
+        // Check for specific patterns - ordered by specificity
+        if (keywords.includes('test') || keywords.includes('spec') || keywords.includes('coverage')) {
+            return 'Test or add test coverage';
         }
         if (keywords.includes('fix') || keywords.includes('debug') || keywords.includes('bug') || keywords.includes('error')) {
             return 'Fix or debug existing code';
@@ -126,9 +138,6 @@ export class SuggestService {
         }
         if (keywords.includes('document') || keywords.includes('docs') || keywords.includes('explain')) {
             return 'Generate documentation';
-        }
-        if (keywords.includes('test') || keywords.includes('spec') || keywords.includes('coverage')) {
-            return 'Test or add test coverage';
         }
         if (keywords.includes('understand') || keywords.includes('learn') || keywords.includes('how does') || keywords.includes('what is')) {
             return 'Understand or learn codebase';
@@ -144,6 +153,9 @@ export class SuggestService {
         }
         if (keywords.includes('performance') || keywords.includes('slow') || keywords.includes('optimize')) {
             return 'Performance optimization';
+        }
+        if (keywords.includes('add') || keywords.includes('create') || keywords.includes('build') || keywords.includes('new')) {
+            return 'Create new feature or functionality';
         }
         return 'General assistance';
     }
@@ -252,12 +264,14 @@ export class SuggestService {
      * Get command category
      */
     getCommandCategory(command) {
-        if (command.startsWith('/sf-'))
+        // Remove leading slash if present for comparison
+        const cmdName = command.startsWith('/') ? command.substring(1) : command;
+        if (cmdName.startsWith('sf-') || cmdName.startsWith('salesforce-'))
             return 'Salesforce';
-        if (['build', 'fix', 'refactor', 'document', 'test', 'understand', 'review'].includes(command)) {
+        if (['build', 'fix', 'refactor', 'document', 'test', 'understand', 'review'].includes(cmdName)) {
             return 'Core';
         }
-        if (['autonomous', 'wizard', 'smart-retry'].includes(command)) {
+        if (['autonomous', 'wizard', 'smart-retry'].includes(cmdName)) {
             return 'AI';
         }
         return 'Utility';
@@ -277,7 +291,11 @@ export class SuggestService {
     }
 }
 // CLI interface
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Check if this file is being run directly (CLI mode)
+const isMainModule = process.argv[1]?.endsWith('/suggest-service.js') ||
+    process.argv[1]?.endsWith('suggest-service.js') ||
+    process.argv[1]?.endsWith('\\suggest-service.js');
+if (isMainModule) {
     const service = new SuggestService();
     const request = process.argv[2] || '';
     if (!request) {

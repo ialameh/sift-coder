@@ -345,7 +345,7 @@ export class MockProcessExecutor {
   createSpawnMock() {
     const { spawn } = require('child_process');
 
-    (spawn as any).mockImplementation((command: string, args: string[], options: any) => {
+    (spawn as any).mockImplementation((command: string, args: string[], _options: any) => {
       const mockChild = {
         stdout: {
           on: jest.fn((event: string, handler: (data: any) => void) => {
