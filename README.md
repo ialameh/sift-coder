@@ -305,7 +305,9 @@ mkdir -p /path/to/local-marketplace/plugins
 ```bash
 git clone https://github.com/ialameh/sift-coder.git /path/to/local-marketplace/plugins/sift-coder
 cd /path/to/local-marketplace/plugins/sift-coder
-npm install
+
+# Optional: Pre-install dependencies (will be done automatically on first run)
+npm install --ignore-scripts
 npm run build
 ```
 
@@ -343,6 +345,8 @@ EOF
 ```
 
 5. **Restart Claude Code to load the plugin**
+
+**Note:** If you skip the `npm install` step in step 2, the plugin will automatically install dependencies on first run (may cause a brief pause).
 
 ### Method 4: Manual Installation
 
