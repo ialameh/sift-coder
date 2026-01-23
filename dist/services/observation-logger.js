@@ -18,7 +18,6 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const STATE_DIR = process.env.SIFTCODER_STATE_DIR || '.claude/siftcoder-state';
 const LOG_FILE = path.join(STATE_DIR, 'implementation-log.jsonl');
-const SCHEMA_PATH = path.join(__dirname, '../schemas/observation.schema.json');
 // State tracking
 let sessionId = null;
 let currentPhase = 'PLANNING';
@@ -37,7 +36,7 @@ async function initializeSession() {
     const sessionFile = path.join(STATE_DIR, 'session.json');
     try {
         const sessionData = JSON.parse(await fs.readFile(sessionFile, 'utf-8'));
-        sessionId = sessionData.id;
+        sessionId = sessionData.id || `sess_${Date.now()}`;
         currentPhase = sessionData.workflow_phase || 'PLANNING';
         currentAgent = sessionData.agent || 'siftcoder-orchestrator';
         currentFeature = sessionData.feature || '';
@@ -155,7 +154,7 @@ function extractLearning(observation) {
         const narrative = observation.observation.narrative.toLowerCase();
         gotchaPatterns.forEach(pattern => {
             if (narrative.includes(pattern) && !learning.gotchas.some(g => g.includes(pattern))) {
-                const gotcha = observation.observation.narrative;
+                const gotcha = observation.observation.narrative || '';
                 learning.gotchas.push(gotcha.substring(0, 100));
             }
         });
@@ -232,7 +231,7 @@ export async function queryObservations(filters) {
         if (filters?.phase) {
             observations = observations.filter(obs => obs.workflow?.phase === filters.phase);
         }
-        if (filters?.concept) {
+        if (filters?.concept !== undefined) {
             observations = observations.filter(obs => obs.learning?.concepts?.includes(filters.concept));
         }
         if (filters?.limit) {
@@ -272,6 +271,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
             }
             logObservation({
                 timestamp: new Date().toISOString(),
+                session_id: await initializeSession(),
                 agent: currentAgent,
                 workflow: {
                     feature: currentFeature,

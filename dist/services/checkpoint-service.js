@@ -18,7 +18,6 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const STATE_DIR = process.env.SIFTCODER_STATE_DIR || '.claude/siftcoder-state';
 const CHECKPOINT_DIR = path.join(STATE_DIR, 'checkpoints');
-const SCHEMA_PATH = path.join(__dirname, '../schemas/checkpoint.schema.json');
 /**
  * Validate checkpoint data against schema
  */
@@ -157,10 +156,9 @@ export async function saveCheckpoint(name, data) {
         // Add metadata
         const checkpoint = {
             version: '1.0.0',
-            name,
             created_at: new Date().toISOString(),
-            iteration: data.iteration || 1,
-            ...data
+            ...data,
+            checkpoint_name: name
         };
         // Write checkpoint file
         const filepath = path.join(CHECKPOINT_DIR, `${name}.json`);
@@ -288,10 +286,10 @@ export async function listCheckpoints(filters) {
         if (filters?.phase) {
             checkpoints = checkpoints.filter(cp => cp.workflow_phase === filters.phase);
         }
-        if (filters?.since) {
+        if (filters?.since !== undefined) {
             checkpoints = checkpoints.filter(cp => new Date(cp.created_at) >= filters.since);
         }
-        if (filters?.until) {
+        if (filters?.until !== undefined) {
             checkpoints = checkpoints.filter(cp => new Date(cp.created_at) <= filters.until);
         }
         if (filters?.limit) {

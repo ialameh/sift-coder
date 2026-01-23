@@ -7,9 +7,7 @@
  */
 import fs from 'fs/promises';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import { encode } from 'gpt-tokenizer';
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const STATE_DIR = process.env.SIFTCODER_STATE_DIR || '.claude/siftcoder-state';
 const THRESHOLDS = {
     warn: 160_000, // 80% of 200k
@@ -96,7 +94,7 @@ export async function calculateSessionTokens() {
         return {
             tokens,
             characters,
-            method,
+            method: method,
             status,
             threshold_percent: thresholdPercent,
             recommendation
