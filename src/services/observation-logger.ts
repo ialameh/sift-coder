@@ -21,7 +21,6 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const STATE_DIR = process.env.SIFTCODER_STATE_DIR || '.claude/siftcoder-state';
 const LOG_FILE = path.join(STATE_DIR, 'implementation-log.jsonl');
-const SCHEMA_PATH = path.join(__dirname, '../schemas/observation.schema.json');
 
 // Observation entry structure
 interface ObservationEntry {
