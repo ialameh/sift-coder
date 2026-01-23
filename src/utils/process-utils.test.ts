@@ -532,16 +532,18 @@ describe('ProcessUtils', () => {
 
   describe('Output handling', () => {
     it('should handle large output', async () => {
-      // Generate a moderately large string using echo
+      const mockExec = mockChildProcess.exec as jest.Mock;
       const testString = 'x'.repeat(1000);
 
-      // Register mock command and recreate the exec mock
-      mockExecutor.mockCommand(`echo ${testString}`, {
-        exitCode: 0,
-        stdout: testString + '\n',
-        stderr: ''
+      mockExec.mockImplementation((command: string, options: any, callback: any) => {
+        const cb = typeof options === 'function' ? options : callback;
+        if (command === `echo ${testString}`) {
+          cb(null, { stdout: testString + '\n' }, '');
+        } else {
+          cb(null, { stdout: '' }, '');
+        }
+        return { kill: jest.fn() };
       });
-      mockExecutor.createExecMock(); // Recreate mock with registered commands
 
       const result = await ProcessUtils.exec(`echo ${testString}`);
 
