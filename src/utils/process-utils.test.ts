@@ -50,13 +50,16 @@ describe('ProcessUtils', () => {
     });
 
     it('should execute command with options', async () => {
-      // Register the mock command and recreate the exec mock
-      mockExecutor.mockCommand('node -e "console.log(\'test\')"', {
-        exitCode: 0,
-        stdout: 'test\n',
-        stderr: ''
+      const mockExec = mockChildProcess.exec as jest.Mock;
+      mockExec.mockImplementation((command: string, options: any, callback: any) => {
+        const cb = typeof options === 'function' ? options : callback;
+        if (command === 'node -e "console.log(\'test\')"') {
+          cb(null, { stdout: 'test\n' }, '');
+        } else {
+          cb(null, { stdout: '' }, '');
+        }
+        return { kill: jest.fn() };
       });
-      mockExecutor.createExecMock(); // Recreate mock with registered commands
 
       const result = await ProcessUtils.exec('node -e "console.log(\'test\')"', { cwd: process.cwd(), timeout: 5000 });
 
