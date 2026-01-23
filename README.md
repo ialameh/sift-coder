@@ -391,6 +391,8 @@ Add to `~/.claude/settings.json`:
 
 4. **Restart Claude Code**
 
+**Note:** If you skip the `npm install` step in step 1, the plugin will automatically install dependencies on first run (may cause a brief pause).
+
 ### Verifying Installation
 
 After installation, verify by running:
