@@ -6,14 +6,34 @@
 import { BoundaryEnforcer, BoundaryCheckResult } from './boundary-enforcer';
 import { MockFileSystem, TestDataFactory } from '../utils/test-helpers';
 
-// Mock dependencies
-jest.mock('../utils/file-utils.js');
-jest.mock('../utils/path-utils.js');
-jest.mock('./state-manager.js');
+// Mock dependencies with proper structure
+jest.mock('./state-manager.js', () => ({
+  StateManager: jest.fn().mockImplementation(() => ({
+    loadBoundaries: jest.fn(),
+    saveBoundaries: jest.fn(),
+    getStateDir: jest.fn(() => '/test/state')
+  }))
+}));
 
-const FileUtils = require('../utils/file-utils.js');
-const PathUtils = require('../utils/path-utils.js');
-const StateManager = require('./state-manager.js');
+jest.mock('../utils/file-utils.js', () => ({
+  FileUtils: {
+    match: jest.fn(),
+    exists: jest.fn(),
+    readJSON: jest.fn(),
+    writeJSON: jest.fn()
+  }
+}));
+
+jest.mock('../utils/path-utils.js', () => ({
+  PathUtils: {
+    toUnix: jest.fn((path: string) => path.replace(/\\/g, '/')),
+    join: jest.fn((...args: string[]) => args.join('/'))
+  }
+}));
+
+const StateManager = require('./state-manager.js').StateManager;
+const FileUtils = require('../utils/file-utils.js').FileUtils;
+const PathUtils = require('../utils/path-utils.js').PathUtils;
 
 describe('BoundaryEnforcer', () => {
   let boundaryEnforcer: BoundaryEnforcer;
