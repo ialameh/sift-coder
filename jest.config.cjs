@@ -7,6 +7,7 @@ module.exports = {
   transform: {
     '^.+\\.ts$': ['ts-jest', {
       tsconfig: {
+        module: 'ESNext',
         noUnusedLocals: false,
         noUnusedParameters: false
       }
