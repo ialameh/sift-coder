@@ -156,7 +156,8 @@ export class PathUtils {
     const formatted = path.format(pathObject);
 
     // Fix double slash on root directory (//file.txt -> /file.txt)
-    if (formatted.startsWith('//') && !formatted.startsWith('//')) {
+    // But preserve UNC paths on Windows (//server/share)
+    if (formatted.startsWith('//') && process.platform !== 'win32') {
       return formatted.substring(1);
     }
 
