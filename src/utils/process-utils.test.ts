@@ -3,14 +3,18 @@
  * Tests for cross-platform process utilities
  */
 
+// Mock child_process BEFORE importing ProcessUtils
+jest.mock('child_process', () => {
+  const actualChildProcess = jest.requireActual('child_process');
+  return {
+    ...actualChildProcess,
+    exec: jest.fn(),
+    spawn: jest.fn(),
+  };
+});
+
 import { ProcessUtils, ExecResult } from './process-utils';
 import { MockProcessExecutor } from './test-helpers';
-
-// Mock child_process
-jest.mock('child_process', () => ({
-  exec: jest.fn(),
-  spawn: jest.fn(),
-}));
 
 const mockChildProcess = require('child_process');
 
