@@ -548,12 +548,13 @@ describe('ProcessUtils', () => {
     });
 
     it('should handle stderr output', async () => {
-      // Register mock command that produces stderr
+      // Register mock command that produces stderr and recreate the exec mock
       mockExecutor.mockCommand('sh -c "echo error >&2"', {
         exitCode: 0,
         stdout: '',
         stderr: 'error\n'
       });
+      mockExecutor.createExecMock(); // Recreate mock with registered commands
 
       const result = await ProcessUtils.exec('sh -c "echo error >&2"');
 
