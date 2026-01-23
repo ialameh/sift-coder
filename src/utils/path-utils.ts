@@ -33,6 +33,11 @@ export class PathUtils {
    * Handles both Unix and Windows path separators
    */
   static dirname(filePath: string): string {
+    // Handle root directory edge case
+    if (filePath === '/' || filePath === '\\') {
+      return filePath;
+    }
+
     // Check if it's a Windows path (has backslashes or drive letter)
     const isWindowsPath = filePath.includes('\\') || /^[A-Za-z]:/.test(filePath);
 
