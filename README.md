@@ -255,14 +255,14 @@ Investigate First → Understand the Problem → Define Boundaries → Fix Safel
 
 ### Method 1: Git Clone (Recommended)
 
-Clone the repository and install dependencies:
+Clone the repository, install dependencies, and build:
 
 ```bash
 # Clone the repository
 git clone https://github.com/ialameh/sift-coder.git
 cd sift-coder
 
-# Install dependencies
+# Install dependencies (automatic on first run if skipped)
 npm install
 
 # Build the project
@@ -271,6 +271,12 @@ npm run build
 # Navigate to the plugin directory in Claude Code and run:
 /plugin
 ```
+
+**What happens when you run `/plugin`:**
+- Claude Code installs the plugin to its cache directory
+- On first session start, the plugin automatically checks for dependencies
+- If `node_modules` is missing, it runs `npm install` automatically
+- You may see a brief pause on first run while dependencies are installed
 
 ### Method 2: Direct Plugin Load (Development)
 
