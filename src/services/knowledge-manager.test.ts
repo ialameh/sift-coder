@@ -212,7 +212,8 @@ describe('KnowledgeManagerService', () => {
       FileUtils.writeJSON = jest.fn().mockResolvedValue(undefined);
 
       const id = await service.addDecision({
-        title: 'New Decision'
+        title: 'New Decision',
+        decision: 'Chose option B'
       });
 
       expect(id).toBe('decision-2');
