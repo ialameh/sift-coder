@@ -306,9 +306,11 @@ describe('AutoCheckpointService', () => {
       service = new AutoCheckpointService('/test/project');
       const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation();
       childProcess.execSync = jest.fn()
-        .mockReturnValueOnce('') // git rev-parse
-        .mockReturnValueOnce('') // git diff --quiet
-        .mockImplementationOnce((cmd: string) => {
+        .mockImplementation((cmd: string) => {
+          if (cmd.includes('rev-parse --git-dir')) return '';
+          if (cmd.includes('diff --quiet')) {
+            throw new Error('Changes exist'); // Throws to indicate changes exist
+          }
           if (cmd.includes('git commit')) {
             throw new Error('Commit failed');
           }
