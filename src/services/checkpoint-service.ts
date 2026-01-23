@@ -21,7 +21,6 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const STATE_DIR = process.env.SIFTCODER_STATE_DIR || '.claude/siftcoder-state';
 const CHECKPOINT_DIR = path.join(STATE_DIR, 'checkpoints');
-const SCHEMA_PATH = path.join(__dirname, '../schemas/checkpoint.schema.json');
 
 // Checkpoint data structure
 interface CheckpointData {
