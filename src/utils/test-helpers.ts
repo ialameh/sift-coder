@@ -68,7 +68,7 @@ export class MockFileSystem {
     const fs = require('fs/promises');
 
     // Mock readFile
-    (fs.readFile as Mock).mockImplementation((path: string) => {
+    (fs.readFile as any).mockImplementation((path: string) => {
       const content = this.files.get(path);
       if (content === undefined) {
         throw new Error(`File not found: ${path}`);
@@ -77,13 +77,13 @@ export class MockFileSystem {
     });
 
     // Mock writeFile
-    (fs.writeFile as Mock).mockImplementation((path: string, content: string) => {
+    (fs.writeFile as any).mockImplementation((path: string, content: string) => {
       this.files.set(path, content);
       return Promise.resolve();
     });
 
     // Mock access (for exists checks)
-    (fs.access as Mock).mockImplementation((path: string) => {
+    (fs.access as any).mockImplementation((path: string) => {
       if (this.files.has(path) || this.directories.has(path)) {
         return Promise.resolve();
       }
@@ -91,12 +91,12 @@ export class MockFileSystem {
     });
 
     // Mock mkdir
-    (fs.mkdir as Mock).mockImplementation((_path: string, _options: any) => {
+    (fs.mkdir as any).mockImplementation((_path: string, _options: any) => {
       return Promise.resolve();
     });
 
     // Mock readdir
-    (fs.readdir as Mock).mockImplementation((path: string, options?: any) => {
+    (fs.readdir as any).mockImplementation((path: string, options?: any) => {
       const entries: Array<{ name: string; isFile: () => boolean }> = [];
 
       // Find files and directories in this path
