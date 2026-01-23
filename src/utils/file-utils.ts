@@ -99,8 +99,9 @@ export class FileUtils {
    */
   static match(filePath: string, pattern: string): boolean {
     // Normalize paths for cross-platform comparison
-    const normalizedPath = filePath.split(path.sep).join('/');
-    const normalizedPattern = pattern.split(path.sep).join('/');
+    // Convert Windows backslashes to Unix forward slashes
+    const normalizedPath = filePath.replace(/\\/g, '/');
+    const normalizedPattern = pattern.replace(/\\/g, '/');
     return minimatch(normalizedPath, normalizedPattern);
   }
 
