@@ -5,14 +5,36 @@
 
 import { TokenMonitor, TokenThresholds, TokenUsage, TokenStatus, DEFAULT_THRESHOLDS } from './token-monitor-v2';
 
-// Mock dependencies
-jest.mock('../utils/file-utils.js');
-jest.mock('../utils/path-utils.js');
-jest.mock('./token-counter.js');
+// Mock dependencies with proper structure
+jest.mock('../utils/path-utils.js', () => ({
+  PathUtils: {
+    getStateDir: jest.fn(() => '/test/state'),
+    join: jest.fn((...args: string[]) => args.join('/'))
+  }
+}));
 
-const FileUtils = require('../utils/file-utils.js');
-const PathUtils = require('../utils/path-utils.js');
-const TokenCounter = require('./token-counter.js');
+jest.mock('../utils/file-utils.js', () => ({
+  FileUtils: {
+    exists: jest.fn(),
+    readFile: jest.fn(),
+    readJSON: jest.fn(),
+    writeJSON: jest.fn()
+  }
+}));
+
+jest.mock('./token-counter.js', () => ({
+  TokenCounter: {
+    count: jest.fn((text: string) => ({
+      tokens: Math.ceil(text.length / 4),
+      method: 'exact',
+      characters: text.length
+    }))
+  }
+}));
+
+const FileUtils = require('../utils/file-utils.js').FileUtils;
+const PathUtils = require('../utils/path-utils.js').PathUtils;
+const TokenCounter = require('./token-counter.js').TokenCounter;
 
 describe('TokenMonitor', () => {
   let tokenMonitor: TokenMonitor;
