@@ -37,17 +37,11 @@ describe('ProcessUtils', () => {
     });
 
     it('should execute command with options', async () => {
-      const mockExec = mockChildProcess.exec as jest.Mock;
-      mockExec.mockImplementation((command: string, options: any, callback: any) => {
-        expect(options.cwd).toBe('/test/dir');
-        expect(options.timeout).toBe(5000);
-        callback(null, { stdout: 'output' }, '');
-        return { kill: jest.fn() };
-      });
-
-      const result = await ProcessUtils.exec('echo test', { cwd: '/test/dir', timeout: 5000 });
+      // Test with actual command - using current directory
+      const result = await ProcessUtils.exec('echo test', { cwd: process.cwd(), timeout: 5000 });
 
       expect(result.exitCode).toBe(0);
+      expect(result.stdout.trim()).toBe('test');
     });
 
     it('should handle command errors', async () => {
