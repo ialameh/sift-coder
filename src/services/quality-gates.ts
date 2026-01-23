@@ -237,7 +237,8 @@ Overall: ${results.overall_passed ? '✅ PASSED' : '❌ FAILED'}
 }
 
 // CLI interface
-if (require.main === module) {
+const isMainModule = process.argv[1] === new URL(import.meta.url).pathname;
+if (isMainModule) {
   const command = process.argv[2];
 
   const gates = new QualityGates();
