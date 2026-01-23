@@ -5,9 +5,16 @@
 
 import { QualityGates, GateResult, QualityResults, GateStatus } from './quality-gates';
 
-// Mock ProcessUtils
-jest.mock('../utils/process-utils.js');
-const ProcessUtils = require('../utils/process-utils.js');
+// Mock ProcessUtils with class structure
+jest.mock('../utils/process-utils.js', () => ({
+  ProcessUtils: {
+    exec: jest.fn(),
+    commandExists: jest.fn(),
+    spawn: jest.fn()
+  }
+}));
+
+const ProcessUtils = require('../utils/process-utils.js').ProcessUtils;
 
 describe('QualityGates', () => {
   let qualityGates: QualityGates;
