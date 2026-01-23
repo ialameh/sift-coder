@@ -263,7 +263,7 @@ describe('AutoCheckpointService', () => {
       });
 
       expect(FileUtils.writeJSON).toHaveBeenCalledWith(
-        '/test/state/.claude/siftcoder-state/checkpoints/cp-*.json',
+        '/test/state/checkpoints/cp-2026-01-23T15-36-35.json',
         expect.objectContaining({
           id: expect.stringMatching(/^cp-/),
           createdAt: expect.any(String),
