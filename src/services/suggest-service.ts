@@ -163,9 +163,9 @@ export class SuggestService {
    * Determine primary intent
    */
   private determineIntent(_request: string, keywords: string[], _context?: any): string {
-    // Check for specific patterns
-    if (keywords.includes('add') || keywords.includes('create') || keywords.includes('build') || keywords.includes('new')) {
-      return 'Create new feature or functionality';
+    // Check for specific patterns - ordered by specificity
+    if (keywords.includes('test') || keywords.includes('spec') || keywords.includes('coverage')) {
+      return 'Test or add test coverage';
     }
     if (keywords.includes('fix') || keywords.includes('debug') || keywords.includes('bug') || keywords.includes('error')) {
       return 'Fix or debug existing code';
@@ -175,9 +175,6 @@ export class SuggestService {
     }
     if (keywords.includes('document') || keywords.includes('docs') || keywords.includes('explain')) {
       return 'Generate documentation';
-    }
-    if (keywords.includes('test') || keywords.includes('spec') || keywords.includes('coverage')) {
-      return 'Test or add test coverage';
     }
     if (keywords.includes('understand') || keywords.includes('learn') || keywords.includes('how does') || keywords.includes('what is')) {
       return 'Understand or learn codebase';
@@ -193,6 +190,9 @@ export class SuggestService {
     }
     if (keywords.includes('performance') || keywords.includes('slow') || keywords.includes('optimize')) {
       return 'Performance optimization';
+    }
+    if (keywords.includes('add') || keywords.includes('create') || keywords.includes('build') || keywords.includes('new')) {
+      return 'Create new feature or functionality';
     }
 
     return 'General assistance';
