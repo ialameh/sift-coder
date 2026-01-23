@@ -323,11 +323,14 @@ export class SuggestService {
    * Get command category
    */
   private getCommandCategory(command: string): string {
-    if (command.startsWith('/sf-')) return 'Salesforce';
-    if (['build', 'fix', 'refactor', 'document', 'test', 'understand', 'review'].includes(command)) {
+    // Remove leading slash if present for comparison
+    const cmdName = command.startsWith('/') ? command.substring(1) : command;
+
+    if (cmdName.startsWith('sf-') || cmdName.startsWith('salesforce-')) return 'Salesforce';
+    if (['build', 'fix', 'refactor', 'document', 'test', 'understand', 'review'].includes(cmdName)) {
       return 'Core';
     }
-    if (['autonomous', 'wizard', 'smart-retry'].includes(command)) {
+    if (['autonomous', 'wizard', 'smart-retry'].includes(cmdName)) {
       return 'AI';
     }
     return 'Utility';
