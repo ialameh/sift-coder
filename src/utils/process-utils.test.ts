@@ -521,12 +521,13 @@ describe('ProcessUtils', () => {
       // Generate a moderately large string using echo
       const testString = 'x'.repeat(1000);
 
-      // Register mock command
+      // Register mock command and recreate the exec mock
       mockExecutor.mockCommand(`echo ${testString}`, {
         exitCode: 0,
         stdout: testString + '\n',
         stderr: ''
       });
+      mockExecutor.createExecMock(); // Recreate mock with registered commands
 
       const result = await ProcessUtils.exec(`echo ${testString}`);
 
