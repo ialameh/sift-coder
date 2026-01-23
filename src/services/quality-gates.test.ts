@@ -5,9 +5,21 @@
 
 import { QualityGates, GateResult, QualityResults, GateStatus } from './quality-gates';
 
-// Mock ProcessUtils
-jest.mock('../utils/process-utils.js');
-const ProcessUtils = require('../utils/process-utils.js');
+// Mock ProcessUtils with proper factory
+const mockExec = jest.fn();
+const mockCommandExists = jest.fn();
+const mockSpawn = jest.fn();
+
+jest.mock('../utils/process-utils.js', () => ({
+  ProcessUtils: {
+    exec: mockExec,
+    commandExists: mockCommandExists,
+    spawn: mockSpawn
+  }
+}), { virtual: true });
+
+// Import after mock
+import { ProcessUtils } from '../utils/process-utils.js';
 
 describe('QualityGates', () => {
   let qualityGates: QualityGates;
