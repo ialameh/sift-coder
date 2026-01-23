@@ -35,7 +35,7 @@ describe('KnowledgeManagerService', () => {
     mockFs.createFsPromisesMock();
 
     // Setup PathUtils mock
-    PathUtils.getStateDir.mockReturnValue('/test/state');
+    PathUtils.getStateDir.mockReturnValue('/test/state/.claude/siftcoder-state');
     PathUtils.join.mockImplementation((...args: string[]) => args.join('/'));
 
     // Setup FileUtils mock
