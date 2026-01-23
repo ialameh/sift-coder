@@ -50,9 +50,11 @@ describe('SuggestService', () => {
 
   describe('suggestRequest', () => {
     beforeEach(() => {
+      jest.clearAllMocks();
+
       // Mock command files
       glob.mockResolvedValue(['build.md', 'fix.md', 'test.md']);
-      path.join = jest.fn((...args: string[]) => args.filter(a => a).join('/'));
+      path.join.mockImplementation((...args: string[]) => args.filter(a => a).join('/'));
 
       // Mock file content
       fs.readFile.mockImplementation((filePath: string) => {
