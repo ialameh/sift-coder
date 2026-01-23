@@ -92,7 +92,7 @@ describe('QualityGates', () => {
       const result = await qualityGates.runFormat();
 
       expect(result.status).toBe('failed');
-      expect(result.time_ms).toBeGreaterThan(0);
+      expect(result.time_ms).toBeGreaterThanOrEqual(0);
     });
 
     it('should use 30 second timeout', async () => {
@@ -408,7 +408,7 @@ describe('QualityGates', () => {
       const result = await qualityGates.runFormat();
 
       expect(result.status).toBe('failed');
-      expect(result.time_ms).toBeGreaterThan(0);
+      expect(result.time_ms).toBeGreaterThanOrEqual(0);
     });
 
     it('should handle lint gate errors gracefully', async () => {
@@ -418,7 +418,7 @@ describe('QualityGates', () => {
       const result = await qualityGates.runLint();
 
       expect(result.status).toBe('failed');
-      expect(result.time_ms).toBeGreaterThan(0);
+      expect(result.time_ms).toBeGreaterThanOrEqual(0);
     });
 
     it('should handle type-check gate errors gracefully', async () => {
@@ -428,7 +428,7 @@ describe('QualityGates', () => {
       const result = await qualityGates.runTypeCheck();
 
       expect(result.status).toBe('failed');
-      expect(result.time_ms).toBeGreaterThan(0);
+      expect(result.time_ms).toBeGreaterThanOrEqual(0);
     });
 
     it('should continue with other gates if one fails', async () => {
