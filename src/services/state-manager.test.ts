@@ -7,13 +7,15 @@ import { StateManager, Feature, FeaturesState, Boundaries, CurrentTask } from '.
 import { MockFileSystem, TestDataFactory } from '../utils/test-helpers';
 import * as path from 'path';
 
-// Setup path mocking for all tests
+// Setup path mocking for all tests - mock PathUtils class with static methods
 jest.mock('../utils/path-utils.js', () => ({
-  getStateDir: jest.fn(() => '/test/project/.claude/siftcoder-state'),
-  join: jest.fn((...args: string[]) => args.join('/')),
-  dirname: jest.fn((p: string) => path.dirname(p)),
-  basename: jest.fn((p: string, e?: string) => path.basename(p, e)),
-  toUnix: jest.fn((p: string) => p.split(path.sep).join('/'))
+  PathUtils: {
+    getStateDir: jest.fn(() => '/test/project/.claude/siftcoder-state'),
+    join: jest.fn((...args: string[]) => args.join('/')),
+    dirname: jest.fn((p: string) => path.dirname(p)),
+    basename: jest.fn((p: string, e?: string) => path.basename(p, e)),
+    toUnix: jest.fn((p: string) => p.replace(/\\/g, '/'))
+  }
 }));
 
 describe('StateManager', () => {
