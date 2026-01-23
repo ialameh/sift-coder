@@ -33,9 +33,18 @@ export class PathUtils {
    * Handles both Unix and Windows path separators
    */
   static dirname(filePath: string): string {
-    // Convert Windows paths to Unix for Node's path.dirname to work correctly
-    const unixPath = this.toUnix(filePath);
-    return path.dirname(unixPath);
+    // Check if it's a Windows path (has backslashes or drive letter)
+    const isWindowsPath = filePath.includes('\\') || /^[A-Za-z]:/.test(filePath);
+
+    if (isWindowsPath) {
+      // Convert to Unix, get dirname, convert back to Windows
+      const unixPath = this.toUnix(filePath);
+      const dir = path.dirname(unixPath);
+      // Convert back to Windows style if input was Windows style
+      return filePath.includes('\\') ? dir.replace(/\//g, '\\') : dir;
+    }
+
+    return path.dirname(filePath);
   }
 
   /**
