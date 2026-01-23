@@ -45,12 +45,13 @@ describe('ProcessUtils', () => {
     });
 
     it('should execute command with options', async () => {
-      // Register the mock command
+      // Register the mock command and recreate the exec mock
       mockExecutor.mockCommand('node -e "console.log(\'test\')"', {
         exitCode: 0,
         stdout: 'test\n',
         stderr: ''
       });
+      mockExecutor.createExecMock(); // Recreate mock with registered commands
 
       const result = await ProcessUtils.exec('node -e "console.log(\'test\')"', { cwd: process.cwd(), timeout: 5000 });
 
