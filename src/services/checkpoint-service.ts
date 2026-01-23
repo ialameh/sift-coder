@@ -230,10 +230,9 @@ export async function saveCheckpoint(name: string, data: CheckpointData): Promis
     // Add metadata
     const checkpoint = {
       version: '1.0.0',
-      name,
       created_at: new Date().toISOString(),
-      iteration: data.iteration || 1,
-      ...data
+      ...data,
+      checkpoint_name: name
     };
 
     // Write checkpoint file
