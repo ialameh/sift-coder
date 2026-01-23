@@ -355,6 +355,10 @@ EOF
 mkdir -p ~/.claude/plugins/cache/local/sift-coder/1.0.0
 cp -r /path/to/sift-coder/* ~/.claude/plugins/cache/local/sift-coder/1.0.0/
 cp -r /path/to/sift-coder/.claude-plugin ~/.claude/plugins/cache/local/sift-coder/1.0.0/
+
+# Optional: Pre-install dependencies in the cache directory
+cd ~/.claude/plugins/cache/local/sift-coder/1.0.0
+npm install --ignore-scripts
 ```
 
 2. **Register in installed_plugins.json:**
