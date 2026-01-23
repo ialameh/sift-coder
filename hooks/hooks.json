@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/src/services/boundary-enforcer.js",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/dist/services/boundary-enforcer.js",
             "timeout": 5
           }
         ]
@@ -28,22 +28,22 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/src/services/auto-checkpoint.js auto_threshold ${CLAUDE_PROJECT_DIR}",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/dist/services/auto-checkpoint.js auto_threshold ${CLAUDE_PROJECT_DIR}",
             "timeout": 30
           },
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/src/services/quality-gates.js format",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/dist/services/quality-gates.js format",
             "timeout": 30
           },
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/src/services/quality-gates.js lint",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/dist/services/quality-gates.js lint",
             "timeout": 60
           },
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/src/services/quality-gates.js type-check",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/dist/services/quality-gates.js type-check",
             "timeout": 120
           }
         ]
@@ -54,7 +54,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/src/services/should-continue.js",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/dist/services/should-continue.js",
             "timeout": 10
           }
         ]
@@ -70,7 +70,7 @@
           },
           {
             "type": "command",
-            "command": "node ${CLAUDE_PLUGIN_ROOT}/src/services/inject-knowledge.js",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/dist/services/inject-knowledge.js",
             "timeout": 5
           }
         ]
