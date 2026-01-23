@@ -349,7 +349,12 @@ export class SuggestService {
 }
 
 // CLI interface
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Check if this file is being run directly (CLI mode)
+const isMainModule = process.argv[1]?.endsWith('/suggest-service.js') ||
+                        process.argv[1]?.endsWith('suggest-service.js') ||
+                        process.argv[1]?.endsWith('\\suggest-service.js');
+
+if (isMainModule) {
   const service = new SuggestService();
   const request = process.argv[2] || '';
 
