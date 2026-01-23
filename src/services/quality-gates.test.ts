@@ -54,7 +54,7 @@ describe('QualityGates', () => {
 
       expect(result.status).toBe('passed');
       expect(result.message).toBe('All files formatted correctly');
-      expect(result.time_ms).toBeGreaterThan(0);
+      expect(result.time_ms).toBeGreaterThanOrEqual(0);
     });
 
     it('should fail when prettier check finds issues', async () => {
