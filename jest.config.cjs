@@ -10,7 +10,11 @@ module.exports = {
       {
         useESM: true,
         tsconfig: {
-          module: 'ESNext',
+          target: 'ES2022',
+          module: 'ES2022',
+          esModuleInterop: true,
+          allowSyntheticDefaultImports: true,
+          moduleResolution: 'node',
           noUnusedLocals: false,
           noUnusedParameters: false
         }
@@ -25,5 +29,13 @@ module.exports = {
   ],
   moduleNameMapper: {
     '^(\\.{1,2}/.*)\\.js$': '$1'
+  },
+  globals: {
+    'ts-jest': {
+      tsconfig: {
+        target: 'ES2022',
+        module: 'ES2022'
+      }
+    }
   }
 };
