@@ -29,7 +29,8 @@ describe('ProcessUtils', () => {
 
   describe('exec', () => {
     it('should execute command successfully', async () => {
-      const result = await ProcessUtils.exec('echo hello');
+      // Use node command which should be available
+      const result = await ProcessUtils.exec('node -e "console.log(\'hello\')"');
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout.trim()).toBe('hello');
@@ -38,7 +39,7 @@ describe('ProcessUtils', () => {
 
     it('should execute command with options', async () => {
       // Test with actual command - using current directory
-      const result = await ProcessUtils.exec('echo test', { cwd: process.cwd(), timeout: 5000 });
+      const result = await ProcessUtils.exec('node -e "console.log(\'test\')"', { cwd: process.cwd(), timeout: 5000 });
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout.trim()).toBe('test');
