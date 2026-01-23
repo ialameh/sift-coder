@@ -82,7 +82,7 @@ async function main() {
   process.exit(0);
 }
 
-async function readStdin(): Promise<string> {
+async function readStdin() {
   return new Promise((resolve) => {
     let data = '';
     process.stdin.on('data', (chunk) => {
