@@ -41,16 +41,26 @@ export class SuggestService {
       return this.commandCache;
     }
 
-    const commandFiles = await glob('*.md', { cwd: join(this.commandsDir, 'commands') });
+    try {
+      const commandFiles = await glob('*.md', { cwd: join(this.commandsDir, 'commands') });
 
-    for (const file of commandFiles) {
-      const content = await readFile(join(this.commandsDir, 'commands', file), 'utf-8');
-      // Extract command name from filename (remove .md)
-      const commandName = file.replace('.md', '');
-      this.commandCache.set(commandName, {
-        name: commandName,
-        content
-      });
+      for (const file of commandFiles) {
+        try {
+          const content = await readFile(join(this.commandsDir, 'commands', file), 'utf-8');
+          // Extract command name from filename (remove .md)
+          const commandName = file.replace('.md', '');
+          this.commandCache.set(commandName, {
+            name: commandName,
+            content
+          });
+        } catch (error) {
+          // Skip files that can't be read, but continue loading others
+          console.warn(`Failed to load command ${file}:`, error);
+        }
+      }
+    } catch (error) {
+      // If glob fails or all files fail to load, return empty cache
+      console.warn('Failed to load commands:', error);
     }
 
     return this.commandCache;
