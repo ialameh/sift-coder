@@ -21,27 +21,33 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const STATE_DIR = process.env.SIFTCODER_STATE_DIR || '.claude/siftcoder-state';
 
 interface CheckpointData {
-  name: string;
-  created_at: string;
-  workflow_phase: 'PLANNING' | 'CODING' | 'QA' | 'DONE';
-  iteration: number;
-  agent: string;
-  features: {
+  id: string;
+  createdAt: string;
+  gitRef: string;
+  featureId: string;
+  trigger: string;
+  message: string;
+  filesChanged: string;
+  // Legacy fields (may not exist)
+  workflow_phase?: 'PLANNING' | 'CODING' | 'QA' | 'DONE';
+  iteration?: number;
+  agent?: string;
+  features?: {
     completed: string[];
     in_progress: string[];
     pending: string[];
   };
-  quality_results: {
+  quality_results?: {
     format?: { status: string };
     lint?: { status: string; errors?: number; warnings?: number };
     type_check?: { status: string };
   };
-  boundaries: {
+  boundaries?: {
     modifiable: string[];
     protected: string[];
     blast_radius_verified: boolean;
   };
-  token_economics: {
+  token_economics?: {
     session_tokens: number;
     discovery_tokens: number;
     efficiency: string;
