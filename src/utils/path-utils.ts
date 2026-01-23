@@ -83,7 +83,8 @@ export class PathUtils {
    * Convert to platform-specific path
    */
   static toPlatform(filePath: string): string {
-    return filePath.split('/').join(path.sep);
+    // Replace all forward slashes with platform separator
+    return filePath.replace(/\//g, path.sep);
   }
 
   /**
