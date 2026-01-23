@@ -38,21 +38,22 @@ const OBSERVATION_LOGGER = join(PLUGIN_ROOT, 'dist', 'services', 'observation-lo
 process.stderr.write = () => {};
 
 async function main() {
-  // Get tool information from stdin
-  const toolInput = await readStdin();
-
-  // Skip observation capture if logger service doesn't exist
-  if (!existsSync(OBSERVATION_LOGGER)) {
-    process.exit(0); // Continue without observation capture
-  }
-
   // Find plugin root if not set
   if (!process.env.CLAUDE_PLUGIN_ROOT) {
     const foundRoot = findPluginRoot(__dirname);
     if (!foundRoot) {
-      process.exit(0);
+      process.exit(0); // Silent exit if plugin root not found
     }
     process.env.CLAUDE_PLUGIN_ROOT = foundRoot;
+  }
+
+  // Get tool information from stdin
+  const toolInput = await readStdin();
+
+  // Skip observation capture if logger service doesn't exist
+  const observationLoggerPath = join(process.env.CLAUDE_PLUGIN_ROOT, 'dist', 'services', 'observation-logger.js');
+  if (!existsSync(observationLoggerPath)) {
+    process.exit(0); // Continue without observation capture
   }
 
   // Extract tool name from first argument or environment
@@ -64,7 +65,7 @@ async function main() {
 
   if (relevantTools.includes(toolName)) {
     try {
-      execSync(`node "${OBSERVATION_LOGGER}" log "${toolName}" "Tool executed: ${toolName}"`, {
+      execSync(`node "${observationLoggerPath}" log "${toolName}" "Tool executed: ${toolName}"`, {
         cwd: PROJECT_ROOT,
         stdio: 'pipe'
       });
