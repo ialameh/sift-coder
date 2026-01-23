@@ -22,6 +22,45 @@ const PROJECT_ROOT = process.env.CLAUDE_PROJECT_DIR || process.cwd();
 const STATE_DIR = join(PROJECT_ROOT, '.claude', 'siftcoder-state');
 const CONTEXT_SERVICE = join(PROJECT_ROOT, 'services', 'context-builder.ts');
 
+// Find plugin root directory (where package.json is)
+function findPluginRoot(startDir) {
+  let currentDir = startDir;
+  while (currentDir !== dirname(currentDir)) {
+    if (existsSync(join(currentDir, 'package.json'))) {
+      return currentDir;
+    }
+    currentDir = dirname(currentDir);
+  }
+  return null;
+}
+
+// Ensure dependencies are installed
+function ensureDependencies(pluginRoot) {
+  if (!pluginRoot) {
+    return false;
+  }
+
+  const nodeModulesPath = join(pluginRoot, 'node_modules');
+  const packageJsonPath = join(pluginRoot, 'package.json');
+
+  // Check if node_modules exists
+  if (!existsSync(nodeModulesPath)) {
+    try {
+      // Run npm install silently
+      execSync('npm install --ignore-scripts --no-audit --no-fund', {
+        cwd: pluginRoot,
+        stdio: 'ignore'
+      });
+      return true;
+    } catch (error) {
+      // Failed to install, but continue anyway
+      return false;
+    }
+  }
+
+  return false;
+}
+
 // Suppress normal echo, only output context
 process.stderr.write = () => {};
 
