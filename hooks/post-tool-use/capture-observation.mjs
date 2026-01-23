@@ -16,6 +16,18 @@ import { dirname, join } from 'path';
 import { existsSync, readFileSync } from 'fs';
 import { execSync } from 'child_process';
 
+// Find plugin root directory (where package.json is)
+function findPluginRoot(startDir) {
+  let currentDir = startDir;
+  while (currentDir !== dirname(currentDir)) {
+    if (existsSync(join(currentDir, 'package.json'))) {
+      return currentDir;
+    }
+    currentDir = dirname(currentDir);
+  }
+  return null;
+}
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = process.env.CLAUDE_PROJECT_DIR || process.cwd();
 const PLUGIN_ROOT = process.env.CLAUDE_PLUGIN_ROOT || findPluginRoot(__dirname);
