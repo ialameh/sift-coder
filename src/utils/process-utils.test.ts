@@ -507,6 +507,14 @@ describe('ProcessUtils', () => {
     it('should handle large output', async () => {
       // Generate a moderately large string using echo
       const testString = 'x'.repeat(1000);
+
+      // Register mock command
+      mockExecutor.mockCommand(`echo ${testString}`, {
+        exitCode: 0,
+        stdout: testString + '\n',
+        stderr: ''
+      });
+
       const result = await ProcessUtils.exec(`echo ${testString}`);
 
       expect(result.exitCode).toBe(0);
