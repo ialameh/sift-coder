@@ -147,7 +147,7 @@ describe('QualityGates', () => {
       ProcessUtils.commandExists = jest.fn().mockResolvedValue(true);
       ProcessUtils.exec = jest.fn().mockResolvedValue({
         exitCode: 1,
-        stdout: '3 errors, 2 warnings',
+        stdout: 'error error error warning warning',
         stderr: 'Linting failed'
       });
 
