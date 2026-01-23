@@ -195,6 +195,13 @@ describe('TokenMonitor', () => {
       FileUtils.exists.mockResolvedValue(true);
       FileUtils.readFile.mockResolvedValue(content);
 
+      // Override token counter to return specific token count
+      TokenCounter.count.mockReturnValue({
+        tokens: 100_000,
+        method: 'exact',
+        characters: content.length
+      });
+
       tokenMonitor = new TokenMonitor({ contextWindow: 200_000 });
       const result = await tokenMonitor.calculateSessionTokens();
 
