@@ -34,16 +34,21 @@ describe('ProcessUtils', () => {
       const mockExec = mockChildProcess.exec as jest.Mock;
       mockExec.mockImplementation((command: string, options: any, callback: any) => {
         const cb = typeof options === 'function' ? options : callback;
+        // Log to verify mock is being called
+        console.log('Mock exec called with:', command);
         if (command === 'node -e "console.log(\'hello\')"') {
+          console.log('Returning success for hello command');
           cb(null, { stdout: 'hello\n' }, '');
         } else {
-          cb(null, { stdout: '' }, '');
+          console.log('Returning default for command:', command);
+          cb(new Error('Command not found in mock'), { stdout: '' }, 'Command not found');
         }
         return { kill: jest.fn() };
       });
 
       const result = await ProcessUtils.exec('node -e "console.log(\'hello\')"');
 
+      console.log('Result:', result);
       expect(result.exitCode).toBe(0);
       expect(result.stdout.trim()).toBe('hello');
       expect(result.stderr).toBe('');
