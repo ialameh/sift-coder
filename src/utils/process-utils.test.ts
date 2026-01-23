@@ -18,13 +18,13 @@ describe('ProcessUtils', () => {
   let mockExecutor: MockProcessExecutor;
 
   beforeEach(() => {
-    jest.clearAllMocks();
     mockExecutor = new MockProcessExecutor();
-    mockExecutor.createExecMock();
+    // Only create spawn mock, we'll set up exec mocks in tests
     mockExecutor.createSpawnMock();
   });
 
   afterEach(() => {
+    jest.clearAllMocks();
     mockExecutor.reset();
   });
 
