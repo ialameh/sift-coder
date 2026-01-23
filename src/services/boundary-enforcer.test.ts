@@ -341,8 +341,8 @@ describe('BoundaryEnforcer', () => {
       boundaryEnforcer = new BoundaryEnforcer();
       await boundaryEnforcer.addProtected('node_modules/**');
 
-      const saved = mockStateManager.saveBoundaries.mock.calls[0][0];
-      expect(saved.protected).toEqual(['node_modules/**']);
+      // Should NOT call saveBoundaries since pattern already exists
+      expect(mockStateManager.saveBoundaries).not.toHaveBeenCalled();
     });
   });
 
