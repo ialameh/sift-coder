@@ -10,7 +10,6 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { execSync } from 'child_process';
-import { fileURLToPath } from 'url';
 import { calculateSessionTokens } from './token-monitor.js';
 
 const STATE_DIR = process.env.SIFTCODER_STATE_DIR || '.claude/siftcoder-state';
