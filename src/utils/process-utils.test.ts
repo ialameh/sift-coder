@@ -534,12 +534,17 @@ describe('ProcessUtils', () => {
     });
 
     it('should handle stderr output', async () => {
-      // Use a command that produces stderr
+      // Register mock command that produces stderr
+      mockExecutor.mockCommand('sh -c "echo error >&2"', {
+        exitCode: 0,
+        stdout: '',
+        stderr: 'error\n'
+      });
+
       const result = await ProcessUtils.exec('sh -c "echo error >&2"');
 
       expect(result.exitCode).toBe(0);
-      // Note: stderr might be captured in stdout in some shells
-      expect(result.stderr || result.stdout).toContain('error');
+      expect(result.stderr).toContain('error');
     });
   });
 });
