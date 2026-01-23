@@ -18,6 +18,7 @@ describe('ProcessUtils', () => {
   let mockExecutor: MockProcessExecutor;
 
   beforeEach(() => {
+    jest.clearAllMocks();
     mockExecutor = new MockProcessExecutor();
     mockExecutor.createExecMock();
     mockExecutor.createSpawnMock();
@@ -29,13 +30,17 @@ describe('ProcessUtils', () => {
 
   describe('exec', () => {
     it('should execute command successfully', async () => {
-      // Register the mock command and recreate the exec mock
-      mockExecutor.mockCommand('node -e "console.log(\'hello\')"', {
-        exitCode: 0,
-        stdout: 'hello\n',
-        stderr: ''
+      // Set up mock directly
+      const mockExec = mockChildProcess.exec as jest.Mock;
+      mockExec.mockImplementation((command: string, options: any, callback: any) => {
+        const cb = typeof options === 'function' ? options : callback;
+        if (command === 'node -e "console.log(\'hello\')"') {
+          cb(null, { stdout: 'hello\n' }, '');
+        } else {
+          cb(null, { stdout: '' }, '');
+        }
+        return { kill: jest.fn() };
       });
-      mockExecutor.createExecMock(); // Recreate mock with registered commands
 
       const result = await ProcessUtils.exec('node -e "console.log(\'hello\')"');
 
