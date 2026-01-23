@@ -36,21 +36,23 @@ const StateManager = require('../services/state-manager.js').StateManager;
 
 describe('HookManager', () => {
   let hookManager: HookManager;
-  let mockStateManager: any;
 
   beforeEach(() => {
-    // Create mock StateManager
-    mockStateManager = {
+    jest.clearAllMocks();
+
+    // Setup StateManager mock
+    StateManager.mockImplementation(() => ({
       init: jest.fn().mockResolvedValue(undefined),
       getStateDir: jest.fn(() => '/test/state'),
       loadCurrentTask: jest.fn().mockResolvedValue(null),
-      log: jest.fn().mockResolvedValue(undefined)
-    };
-
-    StateManager.mockImplementation(() => mockStateManager);
-
-    // Mock PathUtils
-    PathUtils.join = jest.fn((...args: string[]) => args.join('/'));
+      log: jest.fn().mockResolvedValue(undefined),
+      get: jest.fn(),
+      set: jest.fn(),
+      loadFeatures: jest.fn(),
+      saveFeatures: jest.fn(),
+      loadBoundaries: jest.fn(),
+      saveBoundaries: jest.fn()
+    }));
   });
 
   afterEach(() => {
