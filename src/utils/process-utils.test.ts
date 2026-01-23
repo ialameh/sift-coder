@@ -44,7 +44,13 @@ describe('ProcessUtils', () => {
     });
 
     it('should execute command with options', async () => {
-      // Test with actual command - using current directory
+      // Register the mock command
+      mockExecutor.mockCommand('node -e "console.log(\'test\')"', {
+        exitCode: 0,
+        stdout: 'test\n',
+        stderr: ''
+      });
+
       const result = await ProcessUtils.exec('node -e "console.log(\'test\')"', { cwd: process.cwd(), timeout: 5000 });
 
       expect(result.exitCode).toBe(0);
