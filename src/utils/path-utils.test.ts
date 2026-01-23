@@ -292,7 +292,10 @@ describe('PathUtils', () => {
       const result = PathUtils.toPlatform('a/b/c/d/file.ts');
 
       expect(result).toBeTruthy();
-      expect(result).not.toContain('/');
+      // On Unix, path should use forward slashes
+      // On Windows, path should use backslashes
+      const path = require('path');
+      expect(result).toContain(path.sep);
     });
   });
 
