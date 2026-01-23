@@ -6,7 +6,7 @@
     "name": "Sam Alameh",
     "email": "issam@alameh.com"
   },
-  "source": ".",
+  "source": "./",
   "category": "development",
   "homepage": "https://github.com/ialameh/sift-coder"
 }
