@@ -214,9 +214,9 @@ describe('AutoCheckpointService', () => {
       service = new AutoCheckpointService('/test/project');
       childProcess.execSync = jest.fn()
         .mockReturnValueOnce('') // git rev-parse
-        .mockReturnValueOnce('') // git diff --quiet
-        .mockReturnValueOnce('abc123\n')
-        .mockReturnValueOnce('');
+        .mockImplementationOnce(() => { throw new Error('Changes exist'); }) // git diff --quiet
+        .mockReturnValueOnce('abc123\n') // git rev-parse HEAD
+        .mockReturnValueOnce(''); // git diff-tree
 
       await service.createCheckpoint({
         trigger: 'subtask_complete',
