@@ -12,13 +12,12 @@ jest.mock('../services/state-manager.js', () => ({
     init: jest.fn().mockResolvedValue(undefined),
     getStateDir: jest.fn(() => '/test/state'),
     loadCurrentTask: jest.fn().mockResolvedValue(null),
+    saveCurrentTask: jest.fn().mockResolvedValue(undefined),
     log: jest.fn().mockResolvedValue(undefined),
     get: jest.fn(),
     set: jest.fn(),
     loadFeatures: jest.fn(),
     saveFeatures: jest.fn(),
-    loadCurrentTask: jest.fn(),
-    saveCurrentTask: jest.fn(),
     loadBoundaries: jest.fn(),
     saveBoundaries: jest.fn()
   }))
@@ -32,7 +31,17 @@ jest.mock('../utils/path-utils.js', () => ({
   }
 }));
 
+// Mock FileUtils with class structure
+jest.mock('../utils/file-utils.js', () => ({
+  FileUtils: {
+    exists: jest.fn().mockResolvedValue(true),
+    readJSON: jest.fn().mockResolvedValue({}),
+    writeJSON: jest.fn().mockResolvedValue(undefined)
+  }
+}));
+
 const StateManager = require('../services/state-manager.js').StateManager;
+const FileUtils = require('../utils/file-utils.js').FileUtils;
 
 describe('HookManager', () => {
   let hookManager: HookManager;
