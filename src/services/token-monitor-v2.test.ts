@@ -115,12 +115,7 @@ describe('TokenMonitor', () => {
                path.includes('current-task.json');
       });
 
-      FileUtils.readFile.mockImplementation((path: string) => {
-        if (path.includes('implementation-log')) return 'log content\n';
-        if (path.includes('session.json')) return '{"id": "session1"}';
-        if (path.includes('current-task.json')) return '{"task": "test"}';
-        return '';
-      });
+      FileUtils.readFile.mockResolvedValue('log content\n');
 
       tokenMonitor = new TokenMonitor();
       const result = await tokenMonitor.calculateSessionTokens();
