@@ -1,5 +1,5 @@
 module.exports = {
-  preset: 'ts-jest/presets/default-esm',
+  preset: 'ts-jest',
   testEnvironment: 'node',
   roots: ['<rootDir>/src'],
   testMatch: ['**/__tests__/**/*.ts', '**/?(*.)+(spec|test).ts'],
@@ -8,9 +8,10 @@ module.exports = {
     '^.+\\.ts$': [
       'ts-jest',
       {
-        useESM: true,
         tsconfig: {
-          module: 'ESNext',
+          module: 'esnext',
+          esModuleInterop: true,
+          allowSyntheticDefaultImports: true,
           noUnusedLocals: false,
           noUnusedParameters: false
         }
