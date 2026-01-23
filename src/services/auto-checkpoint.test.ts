@@ -507,7 +507,10 @@ describe('AutoCheckpointService', () => {
         .mockImplementation((cmd: string) => {
           execCalls.push([cmd]);
           if (cmd.includes('rev-parse --git-dir')) return '';
-          if (cmd.includes('diff --quiet')) throw new Error('Has changes');
+          if (cmd.includes('diff --quiet')) {
+            // Must throw to indicate changes exist
+            throw new Error('Has changes');
+          }
           if (cmd.includes('rev-parse HEAD')) return 'abc123\n';
           if (cmd.includes('diff-tree')) return '';
           return '';
