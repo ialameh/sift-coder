@@ -3,7 +3,7 @@
  * Tests for cross-platform process utilities
  */
 
-// Mock child_process BEFORE importing ProcessUtils
+// Mock child_process AND util.promisify BEFORE importing ProcessUtils
 jest.mock('child_process', () => {
   const actualChildProcess = jest.requireActual('child_process');
   return {
@@ -12,6 +12,23 @@ jest.mock('child_process', () => {
     spawn: jest.fn(),
   };
 });
+
+jest.mock('util', () => ({
+  promisify: jest.fn((fn) => {
+    // Return a promisified version that uses our mock
+    return (...args: any[]) => {
+      return new Promise((resolve, reject) => {
+        fn(...args, (error: any, stdout: any, stderr: any) => {
+          if (error) {
+            reject(error);
+          } else {
+            resolve({ stdout, stderr });
+          }
+        });
+      });
+    };
+  }),
+}));
 
 import { ProcessUtils, ExecResult } from './process-utils';
 import { MockProcessExecutor } from './test-helpers';
