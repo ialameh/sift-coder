@@ -414,7 +414,7 @@ describe('AutoCheckpointService', () => {
         });
 
       const result1 = await service.createCheckpoint({ featureId: 'feat-1' });
-      await new Promise(resolve => setTimeout(resolve, 10)); // Small delay
+      await new Promise(resolve => setTimeout(resolve, 1100)); // Delay over 1 second to ensure different timestamp
       const result2 = await service.createCheckpoint({ featureId: 'feat-2' });
 
       expect(result1?.id).not.toBe(result2?.id);
