@@ -11,8 +11,14 @@ module.exports = {
         useESM: true,
         tsconfig: {
           module: 'ESNext',
+          target: 'ES2022',
+          esModuleInterop: true,
+          allowSyntheticDefaultImports: true,
+          moduleResolution: 'bundler',
           noUnusedLocals: false,
-          noUnusedParameters: false
+          noUnusedParameters: false,
+          skipLibCheck: true,
+          strict: false
         }
       }
     ]
