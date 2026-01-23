@@ -66,7 +66,7 @@ describe('ProcessUtils', () => {
         return { kill: jest.fn() };
       });
 
-      const result = await ProcessUtils.exec('node -e "console.log(\'hello\'')"');
+      const result = await ProcessUtils.exec(`node -e "console.log('hello')"`);
       console.log('Result:', JSON.stringify(result, null, 2));
 
       expect(result.exitCode).toBe(0);
