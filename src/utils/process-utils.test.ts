@@ -475,6 +475,13 @@ describe('ProcessUtils', () => {
     it('should handle different platforms for exec', async () => {
       const originalPlatform = process.platform;
 
+      // Register mock command
+      mockExecutor.mockCommand('echo test', {
+        exitCode: 0,
+        stdout: 'test\n',
+        stderr: ''
+      });
+
       // Test on current platform
       const result = await ProcessUtils.exec('echo test');
       expect(result.exitCode).toBe(0);
