@@ -5,47 +5,31 @@
 
 import { StateManager, Feature, FeaturesState, Boundaries, CurrentTask } from './state-manager';
 import { MockFileSystem, TestDataFactory } from '../utils/test-helpers';
+import * as path from 'path';
 
-// Mock fs and path in jest.setup.ts
-import * as FileUtils from '../utils/file-utils.js';
-import * as PathUtils from '../utils/path-utils.js';
-
-// Mock the functions we need
-jest.mock('../utils/file-utils.js', () => ({
-  exists: jest.fn(),
-  readFile: jest.fn(),
-  writeFile: jest.fn(),
-  writeJSON: jest.fn(),
-  mkdir: jest.fn(),
-  readJSON: jest.fn(),
-  deleteFile: jest.fn(),
-  appendFile: jest.fn(),
-  listFiles: jest.fn(),
-  stat: jest.fn()
-}));
-
+// Setup path mocking for all tests
 jest.mock('../utils/path-utils.js', () => ({
   getStateDir: jest.fn(() => '/test/project/.claude/siftcoder-state'),
   join: jest.fn((...args: string[]) => args.join('/')),
-  dirname: jest.fn((path: string) => path.dirname(path)),
-  basename: jest.fn((path: string, ext?: string) => path.basename(path, ext)),
-  toUnix: jest.fn((path: string) => path.split(path.sep).join('/'))
+  dirname: jest.fn((p: string) => path.dirname(p)),
+  basename: jest.fn((p: string, e?: string) => path.basename(p, e)),
+  toUnix: jest.fn((p: string) => p.split(path.sep).join('/'))
 }));
-
-import path from 'path';
 
 describe('StateManager', () => {
   let mockFs: MockFileSystem;
   let stateManager: StateManager;
 
   beforeEach(() => {
+    jest.clearAllMocks();
+
+    // Setup PathUtils mock
+    (require('../utils/path-utils.js') as any).getStateDir.mockReturnValue('/test/project/.claude/siftcoder-state');
+    (require('../utils/path-utils.js') as any).join.mockImplementation((...args: string[]) => args.join('/'));
+
     // Create a real mock filesystem
     mockFs = new MockFileSystem();
     mockFs.createFsPromisesMock();
-
-    // Setup PathUtils mock
-    (PathUtils.getStateDir as jest.Mock).mockReturnValue('/test/project/.claude/siftcoder-state');
-    (PathUtils.join as jest.Mock).mockImplementation((...args: string[]) => args.join('/'));
 
     stateManager = new StateManager('/test/project');
   });
@@ -69,6 +53,7 @@ describe('StateManager', () => {
     it('should initialize state directory with default files', async () => {
       await stateManager.init();
 
+      const FileUtils = require('../utils/file-utils.js');
       expect(FileUtils.mkdir).toHaveBeenCalledWith('/test/project/.claude/siftcoder-state');
       expect(FileUtils.mkdir).toHaveBeenCalledWith('/test/project/.claude/siftcoder-state/knowledge');
       expect(FileUtils.mkdir).toHaveBeenCalledWith('/test/project/.claude/siftcoder-state/checkpoints');
@@ -76,6 +61,7 @@ describe('StateManager', () => {
     });
 
     it('should create features.json if not exists', async () => {
+      const FileUtils = require('../utils/file-utils.js');
       (FileUtils.exists as jest.Mock).mockResolvedValue(false);
 
       await stateManager.init();
@@ -97,6 +83,7 @@ describe('StateManager', () => {
     });
 
     it('should create config.json if not exists', async () => {
+      const FileUtils = require('../utils/file-utils.js');
       (FileUtils.exists as jest.Mock).mockResolvedValue(false);
 
       await stateManager.init();
@@ -111,6 +98,7 @@ describe('StateManager', () => {
     });
 
     it('should create session.json if not exists', async () => {
+      const FileUtils = require('../utils/file-utils.js');
       (FileUtils.exists as jest.Mock).mockResolvedValue(false);
 
       await stateManager.init();
@@ -125,6 +113,7 @@ describe('StateManager', () => {
     });
 
     it('should not overwrite existing files', async () => {
+      const FileUtils = require('../utils/file-utils.js');
       (FileUtils.exists as jest.Mock).mockResolvedValue(true);
 
       await stateManager.init();
@@ -135,6 +124,7 @@ describe('StateManager', () => {
 
   describe('get', () => {
     it('should get config value', async () => {
+      const FileUtils = require('../utils/file-utils.js');
       (FileUtils.exists as jest.Mock).mockResolvedValue(true);
       (FileUtils.readJSON as jest.Mock).mockResolvedValue({ key1: 'value1', key2: 'value2' });
 
@@ -144,6 +134,7 @@ describe('StateManager', () => {
     });
 
     it('should return undefined if config file does not exist', async () => {
+      const FileUtils = require('../utils/file-utils.js');
       (FileUtils.exists as jest.Mock).mockResolvedValue(false);
 
       const result = await stateManager.get('key1');
@@ -152,6 +143,7 @@ describe('StateManager', () => {
     });
 
     it('should return undefined for non-existing key', async () => {
+      const FileUtils = require('../utils/file-utils.js');
       (FileUtils.exists as jest.Mock).mockResolvedValue(true);
       (FileUtils.readJSON as jest.Mock).mockResolvedValue({ key1: 'value1' });
 
@@ -163,6 +155,7 @@ describe('StateManager', () => {
 
   describe('set', () => {
     it('should set config value', async () => {
+      const FileUtils = require('../utils/file-utils.js');
       (FileUtils.exists as jest.Mock).mockResolvedValue(false);
 
       await stateManager.set('key1', 'value1');
@@ -174,6 +167,7 @@ describe('StateManager', () => {
     });
 
     it('should update existing config', async () => {
+      const FileUtils = require('../utils/file-utils.js');
       (FileUtils.exists as jest.Mock).mockResolvedValue(true);
       (FileUtils.readJSON as jest.Mock).mockResolvedValue({ key1: 'value1' });
 
@@ -186,6 +180,7 @@ describe('StateManager', () => {
     });
 
     it('should overwrite existing key', async () => {
+      const FileUtils = require('../utils/file-utils.js');
       (FileUtils.exists as jest.Mock).mockResolvedValue(true);
       (FileUtils.readJSON as jest.Mock).mockResolvedValue({ key1: 'old_value' });
 
@@ -200,6 +195,7 @@ describe('StateManager', () => {
 
   describe('loadFeatures', () => {
     it('should load features state', async () => {
+      const FileUtils = require('../utils/file-utils.js');
       (FileUtils.exists as jest.Mock).mockResolvedValue(true);
       const mockFeatures: FeaturesState = {
         version: '1.0.0',
@@ -220,6 +216,7 @@ describe('StateManager', () => {
     });
 
     it('should initialize if features.json does not exist', async () => {
+      const FileUtils = require('../utils/file-utils.js');
       (FileUtils.exists as jest.Mock).mockResolvedValue(false);
       (FileUtils.mkdir as jest.Mock).mockResolvedValue(undefined);
       (FileUtils.writeJSON as jest.Mock).mockResolvedValue(undefined);
@@ -239,6 +236,7 @@ describe('StateManager', () => {
 
   describe('saveFeatures', () => {
     it('should save features state', async () => {
+      const FileUtils = require('../utils/file-utils.js');
       const mockFeatures: FeaturesState = {
         version: '1.0.0',
         features: {},
@@ -256,6 +254,7 @@ describe('StateManager', () => {
 
   describe('addFeature', () => {
     it('should add feature and return id', async () => {
+      const FileUtils = require('../utils/file-utils.js');
       (FileUtils.readJSON as jest.Mock).mockResolvedValue({
         version: '1.0.0',
         features: {},
@@ -272,6 +271,7 @@ describe('StateManager', () => {
     });
 
     it('should set created_at and updated_at timestamps', async () => {
+      const FileUtils = require('../utils/file-utils.js');
       (FileUtils.readJSON as jest.Mock).mockResolvedValue({
         version: '1.0.0',
         features: {},
@@ -293,6 +293,7 @@ describe('StateManager', () => {
 
   describe('completeFeature', () => {
     it('should mark feature as complete', async () => {
+      const FileUtils = require('../utils/file-utils.js');
       const feature = TestDataFactory.createFeature({ id: 'feat-1', status: 'in_progress' });
       (FileUtils.readJSON as jest.Mock).mockResolvedValue({
         version: '1.0.0',
@@ -307,6 +308,7 @@ describe('StateManager', () => {
     });
 
     it('should throw error for non-existing feature', async () => {
+      const FileUtils = require('../utils/file-utils.js');
       (FileUtils.readJSON as jest.Mock).mockResolvedValue({
         version: '1.0.0',
         features: {},
@@ -317,6 +319,7 @@ describe('StateManager', () => {
     });
 
     it('should update updated_at timestamp', async () => {
+      const FileUtils = require('../utils/file-utils.js');
       const feature = TestDataFactory.createFeature({ id: 'feat-1' });
       (FileUtils.readJSON as jest.Mock).mockResolvedValue({
         version: '1.0.0',
@@ -334,6 +337,7 @@ describe('StateManager', () => {
 
   describe('startFeature', () => {
     it('should start working on a feature', async () => {
+      const FileUtils = require('../utils/file-utils.js');
       const feature = TestDataFactory.createFeature({ id: 'feat-1', status: 'pending' });
       (FileUtils.readJSON as jest.Mock).mockResolvedValue({
         version: '1.0.0',
@@ -348,6 +352,7 @@ describe('StateManager', () => {
     });
 
     it('should throw error for non-existing feature', async () => {
+      const FileUtils = require('../utils/file-utils.js');
       (FileUtils.readJSON as jest.Mock).mockResolvedValue({
         version: '1.0.0',
         features: {},
@@ -360,6 +365,7 @@ describe('StateManager', () => {
 
   describe('loadCurrentTask', () => {
     it('should load current task', async () => {
+      const FileUtils = require('../utils/file-utils.js');
       const mockTask = TestDataFactory.createCurrentTask();
       (FileUtils.exists as jest.Mock).mockResolvedValue(true);
       (FileUtils.readJSON as jest.Mock).mockResolvedValue(mockTask);
@@ -370,6 +376,7 @@ describe('StateManager', () => {
     });
 
     it('should return null if task file does not exist', async () => {
+      const FileUtils = require('../utils/file-utils.js');
       (FileUtils.exists as jest.Mock).mockResolvedValue(false);
 
       const result = await stateManager.loadCurrentTask();
@@ -380,6 +387,7 @@ describe('StateManager', () => {
 
   describe('saveCurrentTask', () => {
     it('should save current task', async () => {
+      const FileUtils = require('../utils/file-utils.js');
       const mockTask = TestDataFactory.createCurrentTask();
 
       await stateManager.saveCurrentTask(mockTask);
@@ -396,6 +404,7 @@ describe('StateManager', () => {
 
   describe('startTask', () => {
     it('should start new task', async () => {
+      const FileUtils = require('../utils/file-utils.js');
       await stateManager.startTask('build', 'feat-1');
 
       expect(FileUtils.writeJSON).toHaveBeenCalledWith(
@@ -411,6 +420,7 @@ describe('StateManager', () => {
 
   describe('completeTask', () => {
     it('should delete current task file', async () => {
+      const FileUtils = require('../utils/file-utils.js');
       (FileUtils.exists as jest.Mock).mockResolvedValue(true);
 
       await stateManager.completeTask();
@@ -419,6 +429,7 @@ describe('StateManager', () => {
     });
 
     it('should handle missing task file', async () => {
+      const FileUtils = require('../utils/file-utils.js');
       (FileUtils.exists as jest.Mock).mockResolvedValue(false);
 
       await expect(stateManager.completeTask()).resolves.not.toThrow();
@@ -427,6 +438,7 @@ describe('StateManager', () => {
 
   describe('loadBoundaries', () => {
     it('should load boundaries', async () => {
+      const FileUtils = require('../utils/file-utils.js');
       const mockBoundaries = TestDataFactory.createBoundaries();
       (FileUtils.exists as jest.Mock).mockResolvedValue(true);
       (FileUtils.readJSON as jest.Mock).mockResolvedValue(mockBoundaries);
@@ -437,6 +449,7 @@ describe('StateManager', () => {
     });
 
     it('should return null if boundaries file does not exist', async () => {
+      const FileUtils = require('../utils/file-utils.js');
       (FileUtils.exists as jest.Mock).mockResolvedValue(false);
 
       const result = await stateManager.loadBoundaries();
@@ -447,6 +460,7 @@ describe('StateManager', () => {
 
   describe('saveBoundaries', () => {
     it('should save boundaries with timestamp', async () => {
+      const FileUtils = require('../utils/file-utils.js');
       const mockBoundaries = TestDataFactory.createBoundaries();
 
       await stateManager.saveBoundaries(mockBoundaries);
@@ -463,6 +477,7 @@ describe('StateManager', () => {
 
   describe('log', () => {
     it('should log event to implementation log', async () => {
+      const FileUtils = require('../utils/file-utils.js');
       await stateManager.log('test_event', { key: 'value' });
 
       expect(FileUtils.appendFile).toHaveBeenCalledWith(
@@ -472,6 +487,7 @@ describe('StateManager', () => {
     });
 
     it('should include timestamp in log entry', async () => {
+      const FileUtils = require('../utils/file-utils.js');
       await stateManager.log('event', {});
 
       const logEntry = (FileUtils.appendFile as jest.Mock).mock.calls[0][1] as string;
@@ -489,12 +505,14 @@ describe('StateManager', () => {
 
   describe('Error handling', () => {
     it('should handle file system errors gracefully', async () => {
+      const FileUtils = require('../utils/file-utils.js');
       (FileUtils.mkdir as jest.Mock).mockRejectedValue(new Error('Permission denied'));
 
       await expect(stateManager.init()).rejects.toThrow();
     });
 
     it('should handle JSON parse errors', async () => {
+      const FileUtils = require('../utils/file-utils.js');
       (FileUtils.exists as jest.Mock).mockResolvedValue(true);
       (FileUtils.readJSON as jest.Mock).mockRejectedValue(new Error('Invalid JSON'));
 
