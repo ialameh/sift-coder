@@ -57,6 +57,9 @@ describe('BoundaryEnforcer', () => {
     PathUtils.join.mockImplementation((...args: string[]) => args.join('/'));
     FileUtils.match.mockReturnValue(true);
     FileUtils.exists.mockResolvedValue(true);
+
+    // Ensure saveBoundaries mock is properly set up
+    mockStateManager.saveBoundaries.mockResolvedValue(undefined);
   });
 
   describe('constructor', () => {
