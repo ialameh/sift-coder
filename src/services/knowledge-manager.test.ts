@@ -34,8 +34,15 @@ describe('KnowledgeManagerService', () => {
     mockFs = new MockFileSystem();
     mockFs.createFsPromisesMock();
 
-    PathUtils.getStateDir = jest.fn(() => '/test/state');
-    PathUtils.join = jest.fn((...args: string[]) => args.join('/'));
+    // Setup PathUtils mock
+    PathUtils.getStateDir.mockReturnValue('/test/state');
+    PathUtils.join.mockImplementation((...args: string[]) => args.join('/'));
+
+    // Setup FileUtils mock
+    FileUtils.mkdir.mockResolvedValue(undefined);
+    FileUtils.exists.mockResolvedValue(false);
+    FileUtils.readJSON.mockResolvedValue({});
+    FileUtils.writeJSON.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
