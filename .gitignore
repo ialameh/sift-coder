@@ -1,11 +1,32 @@
-# Local directories - not part of the plugin
+# Dependencies
+node_modules/
+
+# Local state directories
+.claude/
+.claude-plugin/
 claude-mem/
 siftcoder-website/
 
-# Marketing materials (internal use only)
-marketing/
+# Source files (not needed - dist/ contains compiled output)
+src/
+agents/
+commands/
+skills/
+schemas/
 
-# Implementation documentation (internal, not user-facing)
+# Test files (not needed for npm package)
+jest.config.cjs
+jest.setup.ts
+tsconfig.test.json
+**/*.test.ts
+**/*.spec.ts
+__tests__/
+
+# Development config files
+.eslintrc.js
+.mcp.json
+
+# Internal implementation documentation (not user-facing)
 AUTONOMOUS-MODE-SUMMARY.md
 CHANGELOG.md
 FILES_CREATED.md
@@ -15,48 +36,21 @@ QUICKSTART_ANALYSIS.md
 V2_IMPLEMENTATION_COMPLETE.md
 website-content-strategy.md
 
+# Marketing materials (internal use)
+marketing/
+
 # System files
 .DS_Store
 *.swp
 *.swo
 *~
+*.tmp
+*.log
 
 # IDE files
 .vscode/
 .idea/
 
-# Temporary files
-*.tmp
-*.log
-
-# Source maps (always ignore)
+# Source maps
 *.js.map
 *.d.ts.map
-
-# Skills (documentation-only, ignore compiled)
-skills/**/skill.js
-skills/**/skill.d.ts
-
-# JavaScript/TypeScript declaration files (include dist/)
-*.js
-*.d.ts
-!dist/**/*.js
-!dist/**/*.d.ts
-!jest.config.js
-!.eslintrc.js
-
-# Dependencies
-node_modules/
-
-# State directory
-.claude/siftcoder-state/
-
-# Python cache (no longer used)
-.mypy_cache/
-__pycache__/
-*.pyc
-*.pyo
-
-# Python dependencies (no longer used)
-requirements.txt
-*.egg-info/
