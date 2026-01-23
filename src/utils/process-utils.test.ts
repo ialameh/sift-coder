@@ -564,13 +564,17 @@ describe('ProcessUtils', () => {
     });
 
     it('should handle stderr output', async () => {
-      // Register mock command that produces stderr and recreate the exec mock
-      mockExecutor.mockCommand('sh -c "echo error >&2"', {
-        exitCode: 0,
-        stdout: '',
-        stderr: 'error\n'
+      const mockExec = mockChildProcess.exec as jest.Mock;
+
+      mockExec.mockImplementation((command: string, options: any, callback: any) => {
+        const cb = typeof options === 'function' ? options : callback;
+        if (command === 'sh -c "echo error >&2"') {
+          cb(null, { stdout: '' }, 'error\n');
+        } else {
+          cb(null, { stdout: '' }, '');
+        }
+        return { kill: jest.fn() };
       });
-      mockExecutor.createExecMock(); // Recreate mock with registered commands
 
       const result = await ProcessUtils.exec('sh -c "echo error >&2"');
 
