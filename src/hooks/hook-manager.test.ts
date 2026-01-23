@@ -45,15 +45,17 @@ const FileUtils = require('../utils/file-utils.js').FileUtils;
 
 describe('HookManager', () => {
   let hookManager: HookManager;
+  let mockStateManager: any;
 
   beforeEach(() => {
     jest.clearAllMocks();
 
-    // Setup StateManager mock
-    StateManager.mockImplementation(() => ({
+    // Create mock StateManager instance
+    mockStateManager = {
       init: jest.fn().mockResolvedValue(undefined),
       getStateDir: jest.fn(() => '/test/state'),
       loadCurrentTask: jest.fn().mockResolvedValue(null),
+      saveCurrentTask: jest.fn().mockResolvedValue(undefined),
       log: jest.fn().mockResolvedValue(undefined),
       get: jest.fn(),
       set: jest.fn(),
@@ -61,7 +63,15 @@ describe('HookManager', () => {
       saveFeatures: jest.fn(),
       loadBoundaries: jest.fn(),
       saveBoundaries: jest.fn()
-    }));
+    };
+
+    // Setup StateManager mock
+    StateManager.mockImplementation(() => mockStateManager);
+
+    // Setup FileUtils mock
+    FileUtils.exists.mockResolvedValue(true);
+    FileUtils.readJSON.mockResolvedValue({});
+    FileUtils.writeJSON.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
