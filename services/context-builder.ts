@@ -208,6 +208,11 @@ async function calculateQualityTrends(): Promise<QualityTrend | null> {
   for (const checkpoint of checkpoints) {
     const qr = checkpoint.quality_results;
 
+    // Skip if no quality_results
+    if (!qr) {
+      continue;
+    }
+
     // Format stats
     if (qr.format) {
       formatTotal++;
