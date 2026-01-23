@@ -9,7 +9,7 @@ import { MockFileSystem, TestDataFactory } from '../utils/test-helpers';
 // Mock dependencies with proper structure
 jest.mock('../utils/path-utils.js', () => ({
   PathUtils: {
-    getStateDir: jest.fn(() => '/test/state'),
+    getStateDir: jest.fn(() => '/test/state/.claude/siftcoder-state'),
     join: jest.fn((...args: string[]) => args.join('/'))
   }
 }));
