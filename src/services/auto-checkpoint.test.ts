@@ -351,13 +351,13 @@ describe('AutoCheckpointService', () => {
       service = new AutoCheckpointService('/test/project');
       childProcess.execSync = jest.fn()
         .mockReturnValueOnce('') // git rev-parse
-        .mockReturnValueOnce('') // git diff --quiet
-        .mockReturnValue('abc123\n')
-        .mockReturnValueOnce('')
-        .mockReturnValueOnce('') // git rev-parse
-        .mockReturnValueOnce('') // git diff --quiet
-        .mockReturnValue('def456\n')
-        .mockReturnValueOnce('');
+        .mockImplementationOnce(() => { throw new Error('Changes exist'); }) // git diff --quiet
+        .mockReturnValue('abc123\n') // git rev-parse HEAD (called multiple times)
+        .mockReturnValueOnce('') // git diff-tree (first checkpoint)
+        .mockReturnValueOnce('') // git rev-parse (second checkpoint)
+        .mockImplementationOnce(() => { throw new Error('Changes exist'); }) // git diff --quiet (second checkpoint)
+        .mockReturnValue('def456\n') // git rev-parse HEAD (second checkpoint)
+        .mockReturnValueOnce(''); // git diff-tree (second checkpoint)
 
       const result1 = await service.createCheckpoint({ featureId: 'feat-1' });
       await new Promise(resolve => setTimeout(resolve, 10)); // Small delay
