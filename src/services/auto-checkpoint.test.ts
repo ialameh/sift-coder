@@ -576,10 +576,17 @@ describe('AutoCheckpointService', () => {
       for (const projectRoot of projects) {
         service = new AutoCheckpointService(projectRoot);
         childProcess.execSync = jest.fn()
-          .mockReturnValueOnce('') // git rev-parse
-          .mockImplementationOnce(() => { throw new Error('Changes exist'); }) // git diff --quiet
-          .mockReturnValueOnce('abc123\n') // git rev-parse HEAD
-          .mockReturnValueOnce(''); // git diff-tree
+          .mockImplementation((cmd: string) => {
+            if (cmd.includes('rev-parse --git-dir')) return '';
+            if (cmd.includes('diff --quiet')) {
+              throw new Error('Changes exist'); // Throws to indicate changes exist
+            }
+            if (cmd.includes('rev-parse HEAD')) return 'abc123\n';
+            if (cmd.includes('diff-tree')) return '';
+            if (cmd.includes('git add')) return '';
+            if (cmd.includes('git commit')) return '[checkpoint abc123] Test\n';
+            return '';
+          });
 
         const result = await service.createCheckpoint({});
 
