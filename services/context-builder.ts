@@ -107,7 +107,7 @@ async function getRecentCheckpoints(limit: number = 3): Promise<CheckpointData[]
 
     // Sort by creation date (newest first) and limit
     checkpoints.sort((a, b) =>
-      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
 
     return checkpoints.slice(0, limit);
