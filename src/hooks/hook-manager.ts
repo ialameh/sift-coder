@@ -102,7 +102,10 @@ export class HookManager {
 }
 
 // CLI interface for hook execution
-const isMainModule = process.argv[1] === new URL(import.meta.url).pathname;
+// Check if this file is being run directly (CLI mode)
+const isMainModule = process.argv[1]?.endsWith('/hook-manager.js') ||
+                        process.argv[1]?.endsWith('hook-manager.js') ||
+                        process.argv[1]?.endsWith('\\hook-manager.js');
 if (isMainModule) {
   const hookType = process.argv[2] as HookType;
 
