@@ -4,7 +4,6 @@
  */
 
 import { Mock } from 'jest-mock';
-import { Dirent } from 'fs';
 
 /**
  * Mock file system helpers
