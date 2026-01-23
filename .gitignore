@@ -3,7 +3,6 @@ node_modules/
 
 # Local state directories
 .claude/
-.claude-plugin/
 claude-mem/
 siftcoder-website/
 
