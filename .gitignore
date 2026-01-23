@@ -29,11 +29,19 @@ website-content-strategy.md
 *.tmp
 *.log
 
-# Build output
-dist/
-*.js
+# Source maps (always ignore)
 *.js.map
+*.d.ts.map
+
+# Skills (documentation-only, ignore compiled)
+skills/**/skill.js
+skills/**/skill.d.ts
+
+# JavaScript/TypeScript declaration files (include dist/)
+*.js
 *.d.ts
+!dist/**/*.js
+!dist/**/*.d.ts
 !jest.config.js
 !.eslintrc.js
 
