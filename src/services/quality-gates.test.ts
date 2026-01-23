@@ -4,12 +4,10 @@
  */
 
 import { QualityGates, GateResult, QualityResults, GateStatus } from './quality-gates';
-import { ProcessUtils } from '../utils/process-utils.js';
 
-// Mock static methods
-jest.spyOn(ProcessUtils, 'exec');
-jest.spyOn(ProcessUtils, 'commandExists');
-jest.spyOn(ProcessUtils, 'spawn');
+// Mock ProcessUtils
+jest.mock('../utils/process-utils.js');
+const ProcessUtils = require('../utils/process-utils.js');
 
 describe('QualityGates', () => {
   let qualityGates: QualityGates;
