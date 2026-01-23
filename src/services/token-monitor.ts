@@ -8,8 +8,6 @@
  */
 
 import fs from 'fs/promises';
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { encode } from 'gpt-tokenizer';
 
 const STATE_DIR = process.env.SIFTCODER_STATE_DIR || '.claude/siftcoder-state';
