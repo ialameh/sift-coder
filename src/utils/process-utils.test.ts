@@ -29,16 +29,10 @@ describe('ProcessUtils', () => {
 
   describe('exec', () => {
     it('should execute command successfully', async () => {
-      const mockExec = mockChildProcess.exec as jest.Mock;
-      mockExec.mockImplementation((command: string, options: any, callback: any) => {
-        callback(null, { stdout: 'success output' }, '');
-        return { kill: jest.fn() };
-      });
-
       const result = await ProcessUtils.exec('echo hello');
 
       expect(result.exitCode).toBe(0);
-      expect(result.stdout).toBe('success output');
+      expect(result.stdout.trim()).toBe('hello');
       expect(result.stderr).toBe('');
     });
 
