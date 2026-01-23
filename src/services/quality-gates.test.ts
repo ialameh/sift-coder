@@ -4,22 +4,12 @@
  */
 
 import { QualityGates, GateResult, QualityResults, GateStatus } from './quality-gates';
-
-// Mock ProcessUtils with proper factory
-const mockExec = jest.fn();
-const mockCommandExists = jest.fn();
-const mockSpawn = jest.fn();
-
-jest.mock('../utils/process-utils.js', () => ({
-  ProcessUtils: {
-    exec: mockExec,
-    commandExists: mockCommandExists,
-    spawn: mockSpawn
-  }
-}), { virtual: true });
-
-// Import after mock
 import { ProcessUtils } from '../utils/process-utils.js';
+
+// Mock static methods
+jest.spyOn(ProcessUtils, 'exec');
+jest.spyOn(ProcessUtils, 'commandExists');
+jest.spyOn(ProcessUtils, 'spawn');
 
 describe('QualityGates', () => {
   let qualityGates: QualityGates;
