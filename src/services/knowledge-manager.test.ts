@@ -102,7 +102,8 @@ describe('KnowledgeManagerService', () => {
     it('should add a pattern', async () => {
       service = new KnowledgeManagerService('/test/project');
       FileUtils.mkdir = jest.fn().mockResolvedValue(undefined);
-      FileUtils.exists = jest.fn().mockResolvedValue(false);
+      // Files exist so init() won't create them
+      FileUtils.exists = jest.fn().mockResolvedValue(true);
       FileUtils.writeJSON = jest.fn().mockResolvedValue(undefined);
       FileUtils.readJSON = jest.fn().mockResolvedValue([]);
 
@@ -115,6 +116,7 @@ describe('KnowledgeManagerService', () => {
 
       expect(id).toBe('pattern-1');
 
+      // Should be first call to writeJSON (since files existed, init() didn't write)
       const savedPattern = FileUtils.writeJSON.mock.calls[0][1][0];
       expect(savedPattern.title).toBe('Test Pattern');
       expect(savedPattern.id).toBe('pattern-1');
