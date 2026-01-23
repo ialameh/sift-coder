@@ -152,16 +152,27 @@ EOF
 
 ## Installation
 
+> **Important:** SiftCoder is **not available via npm marketplace**. Installation requires cloning the Git repository and building locally.
+
 ### Prerequisites
 - Claude Code CLI installed and configured
+- Node.js 18+ and npm installed
+- Git installed
 
 ### Install SiftCoder
 
 ```bash
-# Navigate to the plugin directory
-cd /path/to/sift-coder
+# 1. Clone the repository
+git clone https://github.com/ialameh/sift-coder.git
+cd sift-coder
 
-# In Claude Code, run:
+# 2. Install dependencies
+npm install
+
+# 3. Build the project
+npm run build
+
+# 4. In Claude Code, run:
 /plugin
 ```
 
@@ -176,7 +187,7 @@ You should see `sift-coder` in the list.
 
 **Restart Claude Code** to load all 103 commands.
 
-[Detailed installation guide](installation.md)
+[Full installation guide in main README](../../README.md#installation)
 
 ---
 
