@@ -105,10 +105,17 @@ describe('AutoCheckpointService', () => {
     it('should create checkpoint with manual trigger by default', async () => {
       service = new AutoCheckpointService('/test/project');
       childProcess.execSync = jest.fn()
-        .mockReturnValueOnce('') // git rev-parse
-        .mockImplementationOnce(() => { throw new Error('Changes exist'); }) // git diff --quiet (throws for changes)
-        .mockReturnValueOnce('abc123\n') // git rev-parse HEAD
-        .mockReturnValueOnce('file1.ts\nfile2.ts\n'); // git diff-tree
+        .mockImplementation((cmd: string) => {
+          if (cmd.includes('rev-parse --git-dir')) return '';
+          if (cmd.includes('diff --quiet')) {
+            throw new Error('Changes exist'); // Throws to indicate changes exist
+          }
+          if (cmd.includes('rev-parse HEAD')) return 'abc123\n';
+          if (cmd.includes('diff-tree')) return 'file1.ts\nfile2.ts\n';
+          if (cmd.includes('git add')) return '';
+          if (cmd.includes('git commit')) return '[checkpoint abc123] Test\n';
+          return '';
+        });
 
       const result = await service.createCheckpoint({
         featureId: 'feat-1'
