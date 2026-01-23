@@ -1,0 +1,25 @@
+{
+  "name": "siftcoder",
+  "version": "1.0.0",
+  "description": "Autonomous multi-agent coding workflows with 90+ specialized commands for development, testing, documentation, security, debugging, and Salesforce-specific workflows",
+  "author": {
+    "name": "Sam Alameh",
+    "email": "local@local.dev",
+    "url": "https://github.com/ialameh"
+  },
+  "homepage": "https://www.siftcoder.com",
+  "repository": "https://github.com/ialameh/sift-coder",
+  "license": "MIT",
+  "keywords": [
+    "autonomous",
+    "multi-agent",
+    "workflow",
+    "testing",
+    "documentation",
+    "salesforce",
+    "security",
+    "debugging",
+    "refactoring",
+    "ci-cd"
+  ]
+}

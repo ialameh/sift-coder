@@ -1,0 +1,54 @@
+# Local directories - not part of the plugin
+claude-mem/
+siftcoder-website/
+
+# Marketing materials (internal use only)
+marketing/
+
+# Implementation documentation (internal, not user-facing)
+AUTONOMOUS-MODE-SUMMARY.md
+CHANGELOG.md
+FILES_CREATED.md
+IMPLEMENTATION_SUMMARY.md
+MIGRATION_V2.md
+QUICKSTART_ANALYSIS.md
+V2_IMPLEMENTATION_COMPLETE.md
+website-content-strategy.md
+
+# System files
+.DS_Store
+*.swp
+*.swo
+*~
+
+# IDE files
+.vscode/
+.idea/
+
+# Temporary files
+*.tmp
+*.log
+
+# Build output
+dist/
+*.js
+*.js.map
+*.d.ts
+!jest.config.js
+!.eslintrc.js
+
+# Dependencies
+node_modules/
+
+# State directory
+.claude/siftcoder-state/
+
+# Python cache (no longer used)
+.mypy_cache/
+__pycache__/
+*.pyc
+*.pyo
+
+# Python dependencies (no longer used)
+requirements.txt
+*.egg-info/

@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "siftcoder-mcp": {
+      "command": "siftcoder-mcp",
+      "args": [],
+      "env": {
+        "OLLAMA_URL": "http://localhost:11434",
+        "EMBEDDING_MODEL": "nomic-embed-text"
+      },
+      "description": "Semantic knowledge search with LanceDB and Ollama embeddings",
+      "optional": true
+    },
+    "contextdigger": {
+      "command": "contextdigger",
+      "args": ["mcp"],
+      "description": "Enhanced codebase intelligence with area discovery and visualization",
+      "optional": true
+    }
+  }
+}
