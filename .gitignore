@@ -8,9 +8,6 @@ siftcoder-website/
 
 # Source files (not needed - dist/ contains compiled output)
 src/
-agents/
-commands/
-skills/
 schemas/
 
 # Test files (not needed for npm package)
