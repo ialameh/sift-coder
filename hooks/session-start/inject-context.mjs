@@ -65,6 +65,10 @@ function ensureDependencies(pluginRoot) {
 process.stderr.write = () => {};
 
 async function main() {
+  // First, ensure dependencies are installed (for git-based installations)
+  const pluginRoot = findPluginRoot(__dirname);
+  const dependenciesInstalled = ensureDependencies(pluginRoot);
+
   // Check if context builder service exists
   if (!existsSync(CONTEXT_SERVICE)) {
     // Fallback: simple context injection without service
