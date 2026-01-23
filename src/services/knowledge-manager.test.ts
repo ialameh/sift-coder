@@ -160,7 +160,7 @@ describe('KnowledgeManagerService', () => {
     it('should add a gotcha', async () => {
       service = new KnowledgeManagerService('/test/project');
       FileUtils.mkdir = jest.fn().mockResolvedValue(undefined);
-      FileUtils.exists = jest.fn().mockResolvedValue(false);
+      FileUtils.exists = jest.fn().mockResolvedValue(true);
       FileUtils.writeJSON = jest.fn().mockResolvedValue(undefined);
       FileUtils.readJSON = jest.fn().mockResolvedValue([]);
 
