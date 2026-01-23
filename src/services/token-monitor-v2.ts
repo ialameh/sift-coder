@@ -195,7 +195,10 @@ ${usage.recommendation}
 }
 
 // CLI interface
-const isMainModule = process.argv[1] === new URL(import.meta.url).pathname;
+// Check if this file is being run directly (CLI mode)
+const isMainModule = process.argv[1]?.endsWith('/token-monitor.js') ||
+                        process.argv[1]?.endsWith('token-monitor.js') ||
+                        process.argv[1]?.endsWith('\\token-monitor.js');
 if (isMainModule) {
   const command = process.argv[2];
 
