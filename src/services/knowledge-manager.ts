@@ -188,7 +188,12 @@ export class KnowledgeManagerService {
 }
 
 // CLI interface
-if (import.meta.url === `file://${process.argv[1]}`) {
+// Check if this file is being run directly (CLI mode)
+const isMainModule = process.argv[1]?.endsWith('/knowledge-manager.js') ||
+                        process.argv[1]?.endsWith('knowledge-manager.js') ||
+                        process.argv[1]?.endsWith('\\knowledge-manager.js');
+
+if (isMainModule) {
   const service = new KnowledgeManagerService();
   const command = process.argv[2] || 'help';
 
