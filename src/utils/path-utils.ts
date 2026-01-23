@@ -29,10 +29,13 @@ export class PathUtils {
   }
 
   /**
-   * Get directory name
+   * Get directory name (cross-platform)
+   * Handles both Unix and Windows path separators
    */
   static dirname(filePath: string): string {
-    return path.dirname(filePath);
+    // Convert Windows paths to Unix for Node's path.dirname to work correctly
+    const unixPath = this.toUnix(filePath);
+    return path.dirname(unixPath);
   }
 
   /**
