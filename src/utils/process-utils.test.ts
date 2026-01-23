@@ -1,0 +1,567 @@
+/**
+ * ProcessUtils Tests
+ * Tests for cross-platform process utilities
+ */
+
+import { ProcessUtils, ExecResult } from './process-utils';
+import { MockProcessExecutor } from './test-helpers';
+
+// Mock child_process
+jest.mock('child_process');
+const mockChildProcess = require('child_process');
+
+describe('ProcessUtils', () => {
+  let mockExecutor: MockProcessExecutor;
+
+  beforeEach(() => {
+    mockExecutor = new MockProcessExecutor();
+    mockExecutor.createExecMock();
+    mockExecutor.createSpawnMock();
+  });
+
+  afterEach(() => {
+    mockExecutor.reset();
+  });
+
+  describe('exec', () => {
+    it('should execute command successfully', async () => {
+      const mockExec = mockChildProcess.exec as jest.Mock;
+      mockExec.mockImplementation((command: string, options: any, callback: any) => {
+        callback(null, { stdout: 'success output' }, '');
+        return { kill: jest.fn() };
+      });
+
+      const result = await ProcessUtils.exec('echo hello');
+
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toBe('success output');
+      expect(result.stderr).toBe('');
+    });
+
+    it('should execute command with options', async () => {
+      const mockExec = mockChildProcess.exec as jest.Mock;
+      mockExec.mockImplementation((command: string, options: any, callback: any) => {
+        expect(options.cwd).toBe('/test/dir');
+        expect(options.timeout).toBe(5000);
+        callback(null, { stdout: 'output' }, '');
+        return { kill: jest.fn() };
+      });
+
+      const result = await ProcessUtils.exec('echo test', { cwd: '/test/dir', timeout: 5000 });
+
+      expect(result.exitCode).toBe(0);
+    });
+
+    it('should handle command errors', async () => {
+      const mockExec = mockChildProcess.exec as jest.Mock;
+      const mockError = new Error('Command failed');
+      (mockError as any).code = 1;
+      (mockError as any).stdout = '';
+      (mockError as any).stderr = 'error message';
+
+      mockExec.mockImplementation((command: string, options: any, callback: any) => {
+        callback(mockError, { stdout: '' }, 'error message');
+        return { kill: jest.fn() };
+      });
+
+      const result = await ProcessUtils.exec('failing-command');
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toBe('error message');
+    });
+
+    it('should use default timeout if not specified', async () => {
+      const mockExec = mockChildProcess.exec as jest.Mock;
+      mockExec.mockImplementation((command: string, options: any, callback: any) => {
+        expect(options.timeout).toBe(30000);
+        callback(null, { stdout: '' }, '');
+        return { kill: jest.fn() };
+      });
+
+      await ProcessUtils.exec('echo test');
+
+      expect(mockExec).toHaveBeenCalled();
+    });
+
+    it('should set maxBuffer to 10MB', async () => {
+      const mockExec = mockChildProcess.exec as jest.Mock;
+      mockExec.mockImplementation((command: string, options: any, callback: any) => {
+        expect(options.maxBuffer).toBe(10 * 1024 * 1024);
+        callback(null, { stdout: '' }, '');
+        return { kill: jest.fn() };
+      });
+
+      await ProcessUtils.exec('echo test');
+
+      expect(mockExec).toHaveBeenCalled();
+    });
+
+    it('should hide window on Windows', async () => {
+      const mockExec = mockChildProcess.exec as jest.Mock;
+      mockExec.mockImplementation((command: string, options: any, callback: any) => {
+        expect(options.windowsHide).toBe(true);
+        callback(null, { stdout: '' }, '');
+        return { kill: jest.fn() };
+      });
+
+      await ProcessUtils.exec('echo test');
+
+      expect(mockExec).toHaveBeenCalled();
+    });
+  });
+
+  describe('spawn', () => {
+    it('should spawn process with streaming output', async () => {
+      const mockSpawn = mockChildProcess.spawn as jest.Mock;
+      const stdoutData: string[] = [];
+      const stderrData: string[] = [];
+
+      mockSpawn.mockReturnValue({
+        stdout: {
+          on: jest.fn((event: string, handler: (data: string) => void) => {
+            if (event === 'data') {
+              handler('line 1\n');
+              handler('line 2\n');
+            }
+          })
+        },
+        stderr: {
+          on: jest.fn()
+        },
+        on: jest.fn((event: string, handler: (code: number) => void) => {
+          if (event === 'close') {
+            handler(0);
+          }
+        }),
+        kill: jest.fn()
+      });
+
+      const exitCode = await ProcessUtils.spawn('echo', ['test'], {
+        onStdout: (data) => stdoutData.push(data),
+        onStderr: (data) => stderrData.push(data)
+      });
+
+      expect(exitCode).toBe(0);
+      expect(stdoutData).toEqual(['line 1\n', 'line 2\n']);
+    });
+
+    it('should use cmd.exe on Windows', async () => {
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+
+      const mockSpawn = mockChildProcess.spawn as jest.Mock;
+      mockSpawn.mockReturnValue({
+        stdout: { on: jest.fn() },
+        stderr: { on: jest.fn() },
+        on: jest.fn((event: string, handler: (code: number) => void) => {
+          if (event === 'close') handler(0);
+        }),
+        kill: jest.fn()
+      });
+
+      await ProcessUtils.spawn('echo', ['test']);
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        'cmd.exe',
+        ['/c', 'echo', 'test'],
+        expect.objectContaining({
+          stdio: ['ignore', 'pipe', 'pipe']
+        })
+      );
+
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+    });
+
+    it('should use /bin/sh on Unix', async () => {
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: 'linux' });
+
+      const mockSpawn = mockChildProcess.spawn as jest.Mock;
+      mockSpawn.mockReturnValue({
+        stdout: { on: jest.fn() },
+        stderr: { on: jest.fn() },
+        on: jest.fn((event: string, handler: (code: number) => void) => {
+          if (event === 'close') handler(0);
+        }),
+        kill: jest.fn()
+      });
+
+      await ProcessUtils.spawn('echo', ['test']);
+
+      expect(mockSpawn).toHaveBeenCalledWith(
+        '/bin/sh',
+        ['-c', 'echo test'],
+        expect.objectContaining({
+          stdio: ['ignore', 'pipe', 'pipe']
+        })
+      );
+
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+    });
+
+    it('should handle process errors', async () => {
+      const mockSpawn = mockChildProcess.spawn as jest.Mock;
+      mockSpawn.mockReturnValue({
+        stdout: { on: jest.fn() },
+        stderr: { on: jest.fn() },
+        on: jest.fn((event: string, handler: any) => {
+          if (event === 'error') {
+            handler(new Error('Spawn failed'));
+          }
+        }),
+        kill: jest.fn()
+      });
+
+      await expect(ProcessUtils.spawn('invalid-command', [])).rejects.toThrow('Spawn failed');
+    });
+
+    it('should handle stderr streaming', async () => {
+      const mockSpawn = mockChildProcess.spawn as jest.Mock;
+      const stderrData: string[] = [];
+
+      mockSpawn.mockReturnValue({
+        stdout: { on: jest.fn() },
+        stderr: {
+          on: jest.fn((event: string, handler: (data: string) => void) => {
+            if (event === 'data') {
+              handler('error output\n');
+            }
+          })
+        },
+        on: jest.fn((event: string, handler: (code: number) => void) => {
+          if (event === 'close') handler(1);
+        }),
+        kill: jest.fn()
+      });
+
+      await ProcessUtils.spawn('command', [], {
+        onStderr: (data) => stderrData.push(data)
+      });
+
+      expect(stderrData).toEqual(['error output\n']);
+    });
+  });
+
+  describe('commandExists', () => {
+    it('should return true if command exists on Unix', async () => {
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: 'linux' });
+
+      const mockExec = mockChildProcess.exec as jest.Mock;
+      mockExec.mockImplementation((command: string, options: any, callback: any) => {
+        if (command.startsWith('which')) {
+          callback(null, { stdout: '/usr/bin/node\n' }, '');
+        } else {
+          callback(null, { stdout: '' }, '');
+        }
+        return { kill: jest.fn() };
+      });
+
+      const result = await ProcessUtils.commandExists('node');
+
+      expect(result).toBe(true);
+      expect(mockExec).toHaveBeenCalledWith('which node', expect.anything());
+
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+    });
+
+    it('should return false if command does not exist', async () => {
+      const mockExec = mockChildProcess.exec as jest.Mock;
+      mockExec.mockImplementation((command: string, options: any, callback: any) => {
+        const error = new Error('Command not found');
+        (error as any).code = 1;
+        callback(error, { stdout: '' }, '');
+        return { kill: jest.fn() };
+      });
+
+      const result = await ProcessUtils.commandExists('nonexistent-command');
+
+      expect(result).toBe(false);
+    });
+
+    it('should use "where" on Windows', async () => {
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+
+      const mockExec = mockChildProcess.exec as jest.Mock;
+      mockExec.mockImplementation((command: string, options: any, callback: any) => {
+        if (command.startsWith('where')) {
+          callback(null, { stdout: 'C:\\node.exe\n' }, '');
+        }
+        return { kill: jest.fn() };
+      });
+
+      await ProcessUtils.commandExists('node');
+
+      expect(mockExec).toHaveBeenCalledWith('where node', expect.anything());
+
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+    });
+
+    it('should handle errors gracefully', async () => {
+      const mockExec = mockChildProcess.exec as jest.Mock;
+      mockExec.mockImplementation((command: string, options: any, callback: any) => {
+        callback(new Error('System error'), { stdout: '' }, '');
+        return { kill: jest.fn() };
+      });
+
+      const result = await ProcessUtils.commandExists('node');
+
+      expect(result).toBe(false);
+    });
+  });
+
+  describe('getEnv', () => {
+    it('should get environment variable', () => {
+      process.env.TEST_VAR = 'test value';
+
+      const result = ProcessUtils.getEnv('TEST_VAR');
+
+      expect(result).toBe('test value');
+    });
+
+    it('should return undefined for non-existing variable', () => {
+      const result = ProcessUtils.getEnv('NONEXISTENT_VAR');
+
+      expect(result).toBeUndefined();
+    });
+
+    it('should return fallback if variable not set', () => {
+      const result = ProcessUtils.getEnv('NONEXISTENT_VAR', 'default');
+
+      expect(result).toBe('default');
+    });
+
+    it('should return value even if fallback provided', () => {
+      process.env.TEST_VAR = 'actual value';
+
+      const result = ProcessUtils.getEnv('TEST_VAR', 'fallback');
+
+      expect(result).toBe('actual value');
+    });
+  });
+
+  describe('setEnv', () => {
+    it('should set environment variable', () => {
+      ProcessUtils.setEnv('NEW_VAR', 'new value');
+
+      expect(process.env.NEW_VAR).toBe('new value');
+    });
+
+    it('should overwrite existing variable', () => {
+      process.env.EXISTING_VAR = 'old value';
+
+      ProcessUtils.setEnv('EXISTING_VAR', 'new value');
+
+      expect(process.env.EXISTING_VAR).toBe('new value');
+    });
+
+    it('should set empty string', () => {
+      ProcessUtils.setEnv('EMPTY_VAR', '');
+
+      expect(process.env.EMPTY_VAR).toBe('');
+    });
+  });
+
+  describe('getPlatform', () => {
+    it('should return platform info for Linux', () => {
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: 'linux' });
+
+      const result = ProcessUtils.getPlatform();
+
+      expect(result.platform).toBe('linux');
+      expect(result.isLinux).toBe(true);
+      expect(result.isWindows).toBe(false);
+      expect(result.isMac).toBe(false);
+
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+    });
+
+    it('should return platform info for Windows', () => {
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+
+      const result = ProcessUtils.getPlatform();
+
+      expect(result.platform).toBe('win32');
+      expect(result.isWindows).toBe(true);
+      expect(result.isLinux).toBe(false);
+      expect(result.isMac).toBe(false);
+
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+    });
+
+    it('should return platform info for macOS', () => {
+      const originalPlatform = process.platform;
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+
+      const result = ProcessUtils.getPlatform();
+
+      expect(result.platform).toBe('darwin');
+      expect(result.isMac).toBe(true);
+      expect(result.isWindows).toBe(false);
+      expect(result.isLinux).toBe(false);
+
+      Object.defineProperty(process, 'platform', { value: originalPlatform });
+    });
+  });
+
+  describe('exit', () => {
+    it('should exit process with code', () => {
+      const mockExit = jest.spyOn(process, 'exit').mockImplementation(() => {
+        throw new Error('process.exit was called');
+      });
+
+      expect(() => ProcessUtils.exit(1)).toThrow('process.exit was called');
+      expect(mockExit).toHaveBeenCalledWith(1);
+
+      mockExit.mockRestore();
+    });
+
+    it('should default to exit code 0', () => {
+      const mockExit = jest.spyOn(process, 'exit').mockImplementation(() => {
+        throw new Error('process.exit was called');
+      });
+
+      expect(() => ProcessUtils.exit()).toThrow('process.exit was called');
+      expect(mockExit).toHaveBeenCalledWith(0);
+
+      mockExit.mockRestore();
+    });
+  });
+
+  describe('Error handling', () => {
+    it('should handle timeout errors', async () => {
+      const mockExec = mockChildProcess.exec as jest.Mock;
+      const mockError = new Error('Command timed out');
+      (mockError as any).code = 'ETIMEDOUT';
+      (mockError as any).killed = true;
+
+      mockExec.mockImplementation((command: string, options: any, callback: any) => {
+        callback(mockError, { stdout: '' }, '');
+        return { kill: jest.fn() };
+      });
+
+      const result = await ProcessUtils.exec('sleep 10', { timeout: 100 });
+
+      expect(result.exitCode).toBeDefined();
+    });
+
+    it('should handle ENOENT errors', async () => {
+      const mockExec = mockChildProcess.exec as jest.Mock;
+      const mockError = new Error('Command not found');
+      (mockError as any).code = 'ENOENT';
+
+      mockExec.mockImplementation((command: string, options: any, callback: any) => {
+        callback(mockError, { stdout: '' }, '');
+        return { kill: jest.fn() };
+      });
+
+      const result = await ProcessUtils.exec('nonexistent-command');
+
+      expect(result.exitCode).toBeDefined();
+    });
+
+    it('should handle spawn errors', async () => {
+      const mockSpawn = mockChildProcess.spawn as jest.Mock;
+      mockSpawn.mockReturnValue({
+        stdout: { on: jest.fn() },
+        stderr: { on: jest.fn() },
+        on: jest.fn((event: string, handler: any) => {
+          if (event === 'error') {
+            handler(new Error('ENOENT: spawn failed'));
+          }
+        }),
+        kill: jest.fn()
+      });
+
+      await expect(ProcessUtils.spawn('invalid', [])).rejects.toThrow();
+    });
+  });
+
+  describe('Cross-platform compatibility', () => {
+    it('should handle different platforms for exec', async () => {
+      const mockExec = mockChildProcess.exec as jest.Mock;
+      mockExec.mockImplementation((command: string, options: any, callback: any) => {
+        callback(null, { stdout: 'output' }, '');
+        return { kill: jest.fn() };
+      });
+
+      // Test on Linux
+      Object.defineProperty(process, 'platform', { value: 'linux' });
+      const linuxResult = await ProcessUtils.exec('echo test');
+      expect(linuxResult.exitCode).toBe(0);
+
+      // Test on Windows
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+      const windowsResult = await ProcessUtils.exec('echo test');
+      expect(windowsResult.exitCode).toBe(0);
+
+      // Test on macOS
+      Object.defineProperty(process, 'platform', { value: 'darwin' });
+      const macResult = await ProcessUtils.exec('echo test');
+      expect(macResult.exitCode).toBe(0);
+
+      // Reset to original platform
+      Object.defineProperty(process, 'platform', { value: process.platform || 'linux' });
+    });
+
+    it('should use appropriate shell commands per platform', async () => {
+      const mockExec = mockChildProcess.exec as jest.Mock;
+      mockExec.mockImplementation((command: string, options: any, callback: any) => {
+        callback(null, { stdout: '' }, '');
+        return { kill: jest.fn() };
+      });
+
+      // Test commandExists uses correct command per platform
+      Object.defineProperty(process, 'platform', { value: 'win32' });
+      await ProcessUtils.commandExists('node');
+      expect(mockExec).toHaveBeenCalledWith(expect.stringContaining('where'), expect.anything());
+
+      Object.defineProperty(process, 'platform', { value: 'linux' });
+      await ProcessUtils.commandExists('node');
+      expect(mockExec).toHaveBeenCalledWith(expect.stringContaining('which'), expect.anything());
+    });
+  });
+
+  describe('Output handling', () => {
+    it('should handle large output', async () => {
+      const mockExec = mockChildProcess.exec as jest.Mock;
+      const largeOutput = 'x'.repeat(1000000);
+
+      mockExec.mockImplementation((command: string, options: any, callback: any) => {
+        callback(null, { stdout: largeOutput }, '');
+        return { kill: jest.fn() };
+      });
+
+      const result = await ProcessUtils.exec('cat large-file.txt');
+
+      expect(result.stdout).toBe(largeOutput);
+    });
+
+    it('should handle empty output', async () => {
+      const mockExec = mockChildProcess.exec as jest.Mock;
+      mockExec.mockImplementation((command: string, options: any, callback: any) => {
+        callback(null, { stdout: '' }, '');
+        return { kill: jest.fn() };
+      });
+
+      const result = await ProcessUtils.exec('echo -n ""');
+
+      expect(result.stdout).toBe('');
+    });
+
+    it('should handle stderr output', async () => {
+      const mockExec = mockChildProcess.exec as jest.Mock;
+      mockExec.mockImplementation((command: string, options: any, callback: any) => {
+        callback(null, { stdout: 'stdout' }, 'stderr');
+        return { kill: jest.fn() };
+      });
+
+      const result = await ProcessUtils.exec('command 2>&1');
+
+      expect(result.stderr).toBe('stderr');
+    });
+  });
+});
