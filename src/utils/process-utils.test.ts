@@ -24,7 +24,7 @@ jest.mock('child_process', () => ({
 const mockChildProcess = require('child_process');
 
 // Setup promisify mock to use our mocked exec
-(promisify as jest.Mock).mockImplementation((fn: any) => {
+(promisify as any).mockImplementation((fn: any) => {
   if (fn.name === 'execCallback' || fn === mockChildProcess.exec) {
     return async (command: string, options: any) => {
       return new Promise((resolve, reject) => {
