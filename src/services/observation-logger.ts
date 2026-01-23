@@ -220,7 +220,7 @@ function extractLearning(observation: ObservationEntry): ObservationEntry['learn
 
     gotchaPatterns.forEach(pattern => {
       if (narrative.includes(pattern) && !learning.gotchas.some(g => g.includes(pattern))) {
-        const gotcha = observation.observation.narrative;
+        const gotcha = observation.observation.narrative || '';
         learning.gotchas.push(gotcha.substring(0, 100));
       }
     });
