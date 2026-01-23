@@ -305,7 +305,11 @@ export class StateManager {
 }
 
 // CLI interface
-const isMainModule = process.argv[1] === new URL(import.meta.url).pathname;
+// Check if this file is being run directly (CLI mode)
+// Works with both Jest and production
+const isMainModule = process.argv[1]?.endsWith('/state-manager.js') ||
+                        process.argv[1]?.endsWith('state-manager.js') ||
+                        process.argv[1]?.endsWith('\\state-manager.js');
 if (isMainModule) {
   const command = process.argv[2];
   const args = process.argv.slice(3);
