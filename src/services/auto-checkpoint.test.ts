@@ -176,8 +176,11 @@ describe('AutoCheckpointService', () => {
     it('should return null if no changes to commit', async () => {
       service = new AutoCheckpointService('/test/project');
       childProcess.execSync = jest.fn()
-        .mockReturnValueOnce('') // git rev-parse
-        .mockReturnValueOnce(''); // git diff --quiet (no changes)
+        .mockImplementation((cmd: string) => {
+          if (cmd.includes('rev-parse --git-dir')) return '';
+          if (cmd.includes('diff --quiet')) return ''; // No error = no changes
+          return '';
+        });
 
       const result = await service.createCheckpoint({});
 
