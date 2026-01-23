@@ -75,7 +75,8 @@ export class PathUtils {
    * Useful for pattern matching and cross-platform consistency
    */
   static toUnix(filePath: string): string {
-    return filePath.split(path.sep).join('/');
+    // Replace all backslashes with forward slashes
+    return filePath.replace(/\\/g, '/');
   }
 
   /**
