@@ -386,13 +386,15 @@ export async function injectContext(): Promise<void> {
     console.log('');
   }
 
-  // Token economics
+  // Token economics (if available in checkpoint)
   if (recentCheckpoints.length > 0) {
     const latest = recentCheckpoints[0];
-    console.log('### Token Economics');
-    console.log(`- **Session**: ${latest.token_economics.session_tokens.toLocaleString()} tokens`);
-    console.log(`- **Discovery**: ${latest.token_economics.discovery_tokens.toLocaleString()} tokens (${latest.token_economics.efficiency} efficiency)`);
-    console.log('');
+    if (latest.token_economics) {
+      console.log('### Token Economics');
+      console.log(`- **Session**: ${latest.token_economics.session_tokens.toLocaleString()} tokens`);
+      console.log(`- **Discovery**: ${latest.token_economics.discovery_tokens.toLocaleString()} tokens (${latest.token_economics.efficiency} efficiency)`);
+      console.log('');
+    }
   }
 
   // Resuming from
