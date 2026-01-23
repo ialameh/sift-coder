@@ -139,10 +139,13 @@ export class PathUtils {
   }
 
   /**
-   * Parse path into components
+   * Parse path into components (cross-platform)
+   * Handles both Unix and Windows path separators
    */
   static parse(filePath: string) {
-    return path.parse(filePath);
+    // Convert Windows paths to Unix for Node's path.parse to work correctly
+    const unixPath = this.toUnix(filePath);
+    return path.parse(unixPath);
   }
 
   /**
