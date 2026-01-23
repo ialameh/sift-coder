@@ -3,15 +3,6 @@
  * Tests for cross-platform process utilities
  */
 
-// Mock util.promisify BEFORE importing anything else
-jest.mock('util', () => {
-  const mockPromisify = jest.fn();
-  return {
-    promisify: mockPromisify,
-  };
-});
-
-import { promisify } from 'util';
 import { ProcessUtils, ExecResult } from './process-utils';
 import { MockProcessExecutor } from './test-helpers';
 
@@ -22,26 +13,6 @@ jest.mock('child_process', () => ({
 }));
 
 const mockChildProcess = require('child_process');
-
-// Setup promisify mock to use our mocked exec
-(promisify as any).mockImplementation((fn: any) => {
-  if (fn.name === 'execCallback' || fn === mockChildProcess.exec) {
-    return async (command: string, options: any) => {
-      return new Promise((resolve, reject) => {
-        mockChildProcess.exec(command, options, (error: any, stdout: any, stderr: any) => {
-          if (error) {
-            reject(error);
-          } else {
-            resolve({ stdout, stderr });
-          }
-        });
-      });
-    };
-  }
-  // For other functions, use the real promisify
-  const realUtil = jest.requireActual('util');
-  return realUtil.promisify(fn);
-});
 
 describe('ProcessUtils', () => {
   let mockExecutor: MockProcessExecutor;
