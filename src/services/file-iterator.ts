@@ -11,9 +11,8 @@ import fs from 'fs/promises';
 import path from 'path';
 import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
-import { calculateSessionTokens, checkTokenStatus } from './token-monitor.js';
+import { calculateSessionTokens } from './token-monitor.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const STATE_DIR = process.env.SIFTCODER_STATE_DIR || '.claude/siftcoder-state';
 const ITERATION_STATE_FILE = path.join(STATE_DIR, 'file-iteration.json');
 const INSIGHTS_FILE = path.join(STATE_DIR, 'insights.json');
