@@ -5,10 +5,28 @@
 
 import { ProcessUtils, ExecResult } from './process-utils';
 import { MockProcessExecutor } from './test-helpers';
+import * as childProcess from 'child_process';
 
 // Mock child_process
 jest.mock('child_process');
 const mockChildProcess = require('child_process');
+
+// Mock util.promisify to intercept exec calls
+jest.mock('util', () => ({
+  promisify: jest.fn((fn: any) => {
+    return async (command: string, options: any) => {
+      return new Promise((resolve, reject) => {
+        fn(command, options, (error: any, stdout: any, stderr: any) => {
+          if (error) {
+            reject(error);
+          } else {
+            resolve({ stdout, stderr });
+          }
+        });
+      });
+    };
+  }),
+}));
 
 describe('ProcessUtils', () => {
   let mockExecutor: MockProcessExecutor;
