@@ -264,9 +264,9 @@ describe('ProcessUtils', () => {
       mockExec.mockImplementation((command: string, options: any, callback: any) => {
         const cb = typeof options === 'function' ? options : callback;
         if (command === checkCommand) {
-          cb(null, { stdout: '/usr/bin/node\n' }, '');
+          cb(null, '/usr/bin/node\n', '');
         } else {
-          cb(null, { stdout: '' }, '');
+          cb(null, '', '');
         }
         return { kill: jest.fn() };
       });
