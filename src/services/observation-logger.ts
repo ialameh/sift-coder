@@ -87,7 +87,7 @@ async function initializeSession(): Promise<string> {
   const sessionFile = path.join(STATE_DIR, 'session.json');
   try {
     const sessionData = JSON.parse(await fs.readFile(sessionFile, 'utf-8'));
-    sessionId = sessionData.id;
+    sessionId = sessionData.id || `sess_${Date.now()}`;
     currentPhase = sessionData.workflow_phase || 'PLANNING';
     currentAgent = sessionData.agent || 'siftcoder-orchestrator';
     currentFeature = sessionData.feature || '';
@@ -99,7 +99,7 @@ async function initializeSession(): Promise<string> {
     await saveSessionState();
   }
 
-  return sessionId;
+  return sessionId!;
 }
 
 /**
