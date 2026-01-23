@@ -316,9 +316,9 @@ export async function queryObservations(filters?: {
     if (filters?.phase) {
       observations = observations.filter(obs => obs.workflow?.phase === filters.phase);
     }
-    if (filters?.concept) {
+    if (filters?.concept !== undefined) {
       observations = observations.filter(obs =>
-        obs.learning?.concepts?.includes(filters.concept)
+        obs.learning?.concepts?.includes(filters.concept!)
       );
     }
     if (filters?.limit) {
