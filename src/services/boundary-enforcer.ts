@@ -181,7 +181,8 @@ export class BoundaryEnforcer {
 }
 
 // CLI interface
-if (require.main === module) {
+const isMainModule = process.argv[1] === new URL(import.meta.url).pathname;
+if (isMainModule) {
   const command = process.argv[2];
   const args = process.argv.slice(3);
 
