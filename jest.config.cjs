@@ -5,18 +5,9 @@ module.exports = {
   testMatch: ['**/__tests__/**/*.ts', '**/?(*.)+(spec|test).ts'],
   setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
   transform: {
-    '^.+\\.ts$': [
-      'ts-jest',
-      {
-        tsconfig: {
-          module: 'esnext',
-          esModuleInterop: true,
-          allowSyntheticDefaultImports: true,
-          noUnusedLocals: false,
-          noUnusedParameters: false
-        }
-      }
-    ]
+    '^.+\\.ts$': ['ts-jest', {
+      tsconfig: 'tsconfig.test.json'
+    }]
   },
   collectCoverageFrom: [
     'src/**/*.ts',
