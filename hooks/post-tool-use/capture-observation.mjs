@@ -34,6 +34,15 @@ async function main() {
     process.exit(0); // Continue without observation capture
   }
 
+  // Find plugin root if not set
+  if (!process.env.CLAUDE_PLUGIN_ROOT) {
+    const foundRoot = findPluginRoot(__dirname);
+    if (!foundRoot) {
+      process.exit(0);
+    }
+    process.env.CLAUDE_PLUGIN_ROOT = foundRoot;
+  }
+
   // Extract tool name from first argument or environment
   const toolName = process.argv[2] || process.env.TOOL_NAME || '';
   const toolInputStr = toolInput || '';
