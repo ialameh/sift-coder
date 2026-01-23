@@ -297,7 +297,7 @@ describe('AutoCheckpointService', () => {
       });
 
       expect(FileUtils.appendFile).toHaveBeenCalledWith(
-        '/test/state/.claude/siftcoder-state/implementation-log.jsonl',
+        '/test/state/implementation-log.jsonl',
         expect.stringContaining('"event":"checkpoint_created"')
       );
     });
