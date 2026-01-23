@@ -29,7 +29,13 @@ describe('ProcessUtils', () => {
 
   describe('exec', () => {
     it('should execute command successfully', async () => {
-      // Use node command which should be available
+      // Register the mock command
+      mockExecutor.mockCommand('node -e "console.log(\'hello\')"', {
+        exitCode: 0,
+        stdout: 'hello\n',
+        stderr: ''
+      });
+
       const result = await ProcessUtils.exec('node -e "console.log(\'hello\')"');
 
       expect(result.exitCode).toBe(0);
