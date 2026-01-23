@@ -48,9 +48,15 @@ export class PathUtils {
   }
 
   /**
-   * Get base name
+   * Get base name (cross-platform)
+   * Handles edge cases like root directory
    */
   static basename(filePath: string, ext?: string): string {
+    // Handle root directory edge case
+    if (filePath === '/' || filePath === '\\') {
+      return filePath;
+    }
+
     return path.basename(filePath, ext);
   }
 
