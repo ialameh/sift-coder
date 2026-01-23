@@ -259,14 +259,17 @@ describe('ProcessUtils', () => {
 
   describe('commandExists', () => {
     it('should return true if command exists on Unix', async () => {
-      // Mock the which command and recreate the exec mock
+      const mockExec = mockChildProcess.exec as jest.Mock;
       const checkCommand = process.platform === 'win32' ? 'where node' : 'which node';
-      mockExecutor.mockCommand(checkCommand, {
-        exitCode: 0,
-        stdout: '/usr/bin/node\n',
-        stderr: ''
+      mockExec.mockImplementation((command: string, options: any, callback: any) => {
+        const cb = typeof options === 'function' ? options : callback;
+        if (command === checkCommand) {
+          cb(null, { stdout: '/usr/bin/node\n' }, '');
+        } else {
+          cb(null, { stdout: '' }, '');
+        }
+        return { kill: jest.fn() };
       });
-      mockExecutor.createExecMock(); // Recreate mock with registered commands
 
       const result = await ProcessUtils.commandExists('node');
       expect(result).toBe(true);
