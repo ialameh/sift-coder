@@ -1,17 +1,21 @@
 module.exports = {
-  preset: 'ts-jest',
+  preset: 'ts-jest/presets/default-esm',
   testEnvironment: 'node',
   roots: ['<rootDir>/src'],
   testMatch: ['**/__tests__/**/*.ts', '**/?(*.)+(spec|test).ts'],
   setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
   transform: {
-    '^.+\\.ts$': ['ts-jest', {
-      tsconfig: {
-        module: 'ESNext',
-        noUnusedLocals: false,
-        noUnusedParameters: false
+    '^.+\\.ts$': [
+      'ts-jest',
+      {
+        useESM: true,
+        tsconfig: {
+          module: 'ESNext',
+          noUnusedLocals: false,
+          noUnusedParameters: false
+        }
       }
-    }]
+    ]
   },
   collectCoverageFrom: [
     'src/**/*.ts',
