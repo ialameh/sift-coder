@@ -358,8 +358,8 @@ describe('SuggestService', () => {
     it('should be case insensitive', async () => {
       const result = await service.suggestRequest('BUILD Feature');
 
-      expect(result.keywords).toContain('build');
-      expect(result.keywords).toContain('add');
+      expect(result.keywords).toContain('action');  // Category
+      expect(result.keywords).toContain('build');   // Matched word
     });
 
     it('should handle multiple keywords', async () => {
