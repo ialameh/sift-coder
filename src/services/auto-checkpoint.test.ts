@@ -396,15 +396,22 @@ describe('AutoCheckpointService', () => {
   describe('Checkpoint ID generation', () => {
     it('should generate unique checkpoint IDs', async () => {
       service = new AutoCheckpointService('/test/project');
+      let callCount = 0;
       childProcess.execSync = jest.fn()
-        .mockReturnValueOnce('') // git rev-parse
-        .mockImplementationOnce(() => { throw new Error('Changes exist'); }) // git diff --quiet
-        .mockReturnValue('abc123\n') // git rev-parse HEAD (called multiple times)
-        .mockReturnValueOnce('') // git diff-tree (first checkpoint)
-        .mockReturnValueOnce('') // git rev-parse (second checkpoint)
-        .mockImplementationOnce(() => { throw new Error('Changes exist'); }) // git diff --quiet (second checkpoint)
-        .mockReturnValue('def456\n') // git rev-parse HEAD (second checkpoint)
-        .mockReturnValueOnce(''); // git diff-tree (second checkpoint)
+        .mockImplementation((cmd: string) => {
+          if (cmd.includes('rev-parse --git-dir')) return '';
+          if (cmd.includes('diff --quiet')) {
+            throw new Error('Changes exist'); // Throws to indicate changes exist
+          }
+          if (cmd.includes('rev-parse HEAD')) {
+            callCount++;
+            return callCount === 1 ? 'abc123\n' : 'def456\n';
+          }
+          if (cmd.includes('diff-tree')) return '';
+          if (cmd.includes('git add')) return '';
+          if (cmd.includes('git commit')) return '[checkpoint] Test\n';
+          return '';
+        });
 
       const result1 = await service.createCheckpoint({ featureId: 'feat-1' });
       await new Promise(resolve => setTimeout(resolve, 10)); // Small delay
