@@ -40,20 +40,23 @@ describe('BoundaryEnforcer', () => {
   let mockStateManager: any;
 
   beforeEach(() => {
-    // Create mock StateManager
+    jest.clearAllMocks();
+
+    // Create mock StateManager instance
     mockStateManager = {
-      loadBoundaries: jest.fn(),
-      saveBoundaries: jest.fn(),
+      loadBoundaries: jest.fn().mockResolvedValue(null),
+      saveBoundaries: jest.fn().mockResolvedValue(undefined),
       getStateDir: jest.fn(() => '/test/state')
     };
 
+    // Setup StateManager mock
     StateManager.mockImplementation(() => mockStateManager);
-    PathUtils.toUnix = jest.fn((path: string) => path.replace(/\\/g, '/'));
-    FileUtils.match = jest.fn();
-  });
 
-  afterEach(() => {
-    jest.clearAllMocks();
+    // Setup PathUtils and FileUtils mocks
+    PathUtils.toUnix.mockImplementation((path: string) => path.replace(/\\/g, '/'));
+    PathUtils.join.mockImplementation((...args: string[]) => args.join('/'));
+    FileUtils.match.mockReturnValue(true);
+    FileUtils.exists.mockResolvedValue(true);
   });
 
   describe('constructor', () => {
