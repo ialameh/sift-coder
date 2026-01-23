@@ -26,9 +26,13 @@ jest.mock('../utils/file-utils.js', () => ({
     readJSON: jest.fn().mockResolvedValue({}),
     writeJSON: jest.fn().mockResolvedValue(undefined),
     deleteFile: jest.fn().mockResolvedValue(undefined),
-    appendFile: jest.fn().mockResolvedValue(undefined)
+    appendFile: jest.fn().mockResolvedValue(undefined),
+    match: jest.fn(),
+    stat: jest.fn(),
+    copyFile: jest.fn(),
+    moveFile: jest.fn()
   }
-}));
+}), { virtual: true });
 
 describe('StateManager', () => {
   let mockFs: MockFileSystem;
