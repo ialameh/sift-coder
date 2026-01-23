@@ -18,8 +18,9 @@ import { execSync } from 'child_process';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = process.env.CLAUDE_PROJECT_DIR || process.cwd();
+const PLUGIN_ROOT = process.env.CLAUDE_PLUGIN_ROOT || findPluginRoot(__dirname);
 const STATE_DIR = join(PROJECT_ROOT, '.claude', 'siftcoder-state');
-const OBSERVATION_LOGGER = join(PROJECT_ROOT, 'services', 'observation-logger.ts');
+const OBSERVATION_LOGGER = join(PLUGIN_ROOT, 'dist', 'services', 'observation-logger.js');
 
 // Suppress normal output, only log errors
 process.stderr.write = () => {};
