@@ -40,13 +40,20 @@ describe('TokenMonitor', () => {
   let tokenMonitor: TokenMonitor;
 
   beforeEach(() => {
-    PathUtils.getStateDir = jest.fn(() => '/test/state');
-    PathUtils.join = jest.fn((...args: string[]) => args.join('/'));
-    FileUtils.exists = jest.fn();
-    FileUtils.readFile = jest.fn();
+    jest.clearAllMocks();
 
-    // Default token counter mock
-    TokenCounter.count = jest.fn((text: string) => ({
+    // Setup PathUtils mock
+    PathUtils.getStateDir.mockReturnValue('/test/state');
+    PathUtils.join.mockImplementation((...args: string[]) => args.join('/'));
+
+    // Setup FileUtils mock
+    FileUtils.exists.mockResolvedValue(false);
+    FileUtils.readFile.mockResolvedValue('');
+    FileUtils.readJSON.mockResolvedValue({});
+    FileUtils.writeJSON.mockResolvedValue(undefined);
+
+    // Setup TokenCounter mock
+    TokenCounter.count.mockImplementation((text: string) => ({
       tokens: Math.ceil(text.length / 4),
       method: 'exact',
       characters: text.length
