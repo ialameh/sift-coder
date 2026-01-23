@@ -245,9 +245,12 @@ Investigate First → Understand the Problem → Define Boundaries → Fix Safel
 
 ## Installation
 
+> **Note:** SiftCoder is **not available via npm marketplace**. Installation requires cloning the Git repository and building locally.
+
 ### Prerequisites
 - Claude Code CLI installed and configured
 - Node.js 18+ and npm installed
+- Git installed
 - Restart Claude Code after installation
 
 ### Method 1: Git Clone (Recommended)
