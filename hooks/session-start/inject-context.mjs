@@ -72,10 +72,16 @@ process.stderr.write = () => {};
 async function main() {
   // First, ensure dependencies are installed (for git-based installations)
   const pluginRoot = findPluginRoot(__dirname);
+
+  if (!pluginRoot) {
+    process.exit(0); // Silent exit if plugin root not found
+  }
+
   const dependenciesInstalled = ensureDependencies(pluginRoot);
 
   // Check if context builder service exists
-  if (!existsSync(CONTEXT_SERVICE)) {
+  const contextServicePath = join(pluginRoot, 'dist', 'services', 'context-builder.js');
+  if (!existsSync(contextServicePath)) {
     // Fallback: simple context injection without service
     const sessionFile = join(STATE_DIR, 'session.json');
     if (existsSync(sessionFile)) {
@@ -100,7 +106,7 @@ async function main() {
 
   // Use context builder service
   try {
-    execSync(`tsx "${CONTEXT_SERVICE}" inject-context`, {
+    execSync(`node "${contextServicePath}" inject-context`, {
       cwd: PROJECT_ROOT,
       stdio: 'inherit'
     });
