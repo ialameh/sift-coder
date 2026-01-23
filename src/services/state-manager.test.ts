@@ -18,6 +18,18 @@ jest.mock('../utils/path-utils.js', () => ({
   }
 }));
 
+// Mock FileUtils class
+jest.mock('../utils/file-utils.js', () => ({
+  FileUtils: {
+    mkdir: jest.fn().mockResolvedValue(undefined),
+    exists: jest.fn().mockResolvedValue(true),
+    readJSON: jest.fn().mockResolvedValue({}),
+    writeJSON: jest.fn().mockResolvedValue(undefined),
+    deleteFile: jest.fn().mockResolvedValue(undefined),
+    appendFile: jest.fn().mockResolvedValue(undefined)
+  }
+}));
+
 describe('StateManager', () => {
   let mockFs: MockFileSystem;
   let stateManager: StateManager;
