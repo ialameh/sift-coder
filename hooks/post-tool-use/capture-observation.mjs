@@ -19,11 +19,15 @@ import { execSync } from 'child_process';
 // Find plugin root directory (where package.json is)
 function findPluginRoot(startDir) {
   let currentDir = startDir;
-  while (currentDir !== dirname(currentDir)) {
+  const rootCheckLimit = 10; // Prevent infinite loops
+  let checks = 0;
+
+  while (currentDir !== dirname(currentDir) && checks < rootCheckLimit) {
     if (existsSync(join(currentDir, 'package.json'))) {
       return currentDir;
     }
     currentDir = dirname(currentDir);
+    checks++;
   }
   return null;
 }
