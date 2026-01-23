@@ -31,7 +31,7 @@ jest.mock('fs', () => {
 
 // Mock fs/promises
 jest.mock('fs/promises', () => {
-  const actual = jest.requireActual('fs/promises');
+  const actual = jest.requireActual('fs/promises') as any;
   return {
     ...actual,
     access: jest.fn(),
