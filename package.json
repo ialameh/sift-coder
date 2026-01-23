@@ -2,7 +2,7 @@
   "name": "@siftcoder/core",
   "version": "2.0.0",
   "type": "module",
-  "description": "Cross-platform autonomous multi-agent coding workflows for Claude Code",
+  "description": "Cross-platform autonomous multi-agent coding workflows for Claude Code - Git installation only",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
@@ -25,11 +25,12 @@
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "clean": "rm -rf dist",
-    "prepare": "npm run build",
-    "prepublishOnly": "npm run clean && npm run build && npm test",
-    "prepack": "npm run build",
-    "pack": "npm pack --dry-run",
-    "publish:dry": "npm publish --dry-run"
+    "postinstall": "npm run build"
+  },
+  "installation": {
+    "method": "git",
+    "repository": "https://github.com/ialameh/sift-coder.git",
+    "note": "Install via git clone - npm marketplace installation is not supported"
   },
   "files": [
     "dist",
