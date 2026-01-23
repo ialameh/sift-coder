@@ -26,8 +26,9 @@ describe('StateManager', () => {
     jest.clearAllMocks();
 
     // Setup PathUtils mock
-    (require('../utils/path-utils.js') as any).getStateDir.mockReturnValue('/test/project/.claude/siftcoder-state');
-    (require('../utils/path-utils.js') as any).join.mockImplementation((...args: string[]) => args.join('/'));
+    const PathUtils = require('../utils/path-utils.js').PathUtils;
+    PathUtils.getStateDir.mockReturnValue('/test/project/.claude/siftcoder-state');
+    PathUtils.join.mockImplementation((...args: string[]) => args.join('/'));
 
     // Create a real mock filesystem
     mockFs = new MockFileSystem();
