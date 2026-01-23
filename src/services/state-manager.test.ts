@@ -18,9 +18,9 @@ jest.mock('../utils/path-utils.js', () => ({
   }
 }));
 
-// Mock FileUtils class - export default so require() returns FileUtils directly
-jest.mock('../utils/file-utils.js', () => {
-  const mockFileUtils = {
+// Mock FileUtils class
+jest.mock('../utils/file-utils.js', () => ({
+  FileUtils: {
     mkdir: jest.fn().mockResolvedValue(undefined),
     exists: jest.fn().mockResolvedValue(true),
     readJSON: jest.fn().mockResolvedValue({}),
@@ -31,13 +31,8 @@ jest.mock('../utils/file-utils.js', () => {
     stat: jest.fn(),
     copyFile: jest.fn(),
     moveFile: jest.fn()
-  };
-  return {
-    __esModule: true,
-    default: mockFileUtils,
-    FileUtils: mockFileUtils
-  };
-}, { virtual: true });
+  }
+}));
 
 describe('StateManager', () => {
   let mockFs: MockFileSystem;
