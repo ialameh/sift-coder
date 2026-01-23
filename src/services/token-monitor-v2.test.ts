@@ -552,9 +552,9 @@ describe('TokenMonitor', () => {
         contextWindow: 200_000
       });
 
-      // Should use custom warn, default checkpoint and critical
-      expect(tokenMonitor.checkTokenStatus(150_000)).toBe('checkpoint');
-      expect(tokenMonitor.checkTokenStatus(185_000)).toBe('critical');
+      // Should use custom warn (100k), default checkpoint (185k), default critical (195k)
+      expect(tokenMonitor.checkTokenStatus(150_000)).toBe('warn'); // Between warn and checkpoint
+      expect(tokenMonitor.checkTokenStatus(190_000)).toBe('critical'); // Above critical
     });
   });
 
