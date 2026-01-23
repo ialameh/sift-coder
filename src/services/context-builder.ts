@@ -15,7 +15,6 @@
 
 import fs from 'fs/promises';
 import path from 'path';
-import { fileURLToPath } from 'url';
 
 const STATE_DIR = process.env.SIFTCODER_STATE_DIR || '.claude/siftcoder-state';
 
