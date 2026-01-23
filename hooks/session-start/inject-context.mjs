@@ -19,8 +19,9 @@ import { execSync } from 'child_process';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = process.env.CLAUDE_PROJECT_DIR || process.cwd();
+const PLUGIN_ROOT = process.env.CLAUDE_PLUGIN_ROOT || findPluginRoot(__dirname);
 const STATE_DIR = join(PROJECT_ROOT, '.claude', 'siftcoder-state');
-const CONTEXT_SERVICE = join(PROJECT_ROOT, 'services', 'context-builder.ts');
+const CONTEXT_SERVICE = join(PLUGIN_ROOT, 'dist', 'services', 'context-builder.js');
 
 // Find plugin root directory (where package.json is)
 function findPluginRoot(startDir) {
