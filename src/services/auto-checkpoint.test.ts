@@ -106,7 +106,7 @@ describe('AutoCheckpointService', () => {
       service = new AutoCheckpointService('/test/project');
       childProcess.execSync = jest.fn()
         .mockReturnValueOnce('') // git rev-parse
-        .mockReturnValueOnce('') // git diff --quiet
+        .mockImplementationOnce(() => { throw new Error('Changes exist'); }) // git diff --quiet (throws for changes)
         .mockReturnValueOnce('abc123\n') // git rev-parse HEAD
         .mockReturnValueOnce('file1.ts\nfile2.ts\n'); // git diff-tree
 
