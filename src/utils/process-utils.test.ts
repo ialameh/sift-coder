@@ -498,13 +498,14 @@ describe('ProcessUtils', () => {
     it('should use appropriate shell commands per platform', async () => {
       const originalPlatform = process.platform;
 
-      // Register mock for commandExists
+      // Register mock for commandExists and recreate the exec mock
       const checkCommand = process.platform === 'win32' ? 'where node' : 'which node';
       mockExecutor.mockCommand(checkCommand, {
         exitCode: 0,
         stdout: '/usr/bin/node\n',
         stderr: ''
       });
+      mockExecutor.createExecMock(); // Recreate mock with registered commands
 
       // Test that commandExists works on current platform
       const result = await ProcessUtils.commandExists('node');
