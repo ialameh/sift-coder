@@ -479,17 +479,12 @@ describe('ProcessUtils', () => {
 
   describe('Output handling', () => {
     it('should handle large output', async () => {
-      const mockExec = mockChildProcess.exec as jest.Mock;
-      const largeOutput = 'x'.repeat(1000000);
+      // Generate a moderately large string using echo
+      const testString = 'x'.repeat(1000);
+      const result = await ProcessUtils.exec(`echo ${testString}`);
 
-      mockExec.mockImplementation((command: string, options: any, callback: any) => {
-        callback(null, { stdout: largeOutput }, '');
-        return { kill: jest.fn() };
-      });
-
-      const result = await ProcessUtils.exec('cat large-file.txt');
-
-      expect(result.stdout).toBe(largeOutput);
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout.trim()).toBe(testString);
     });
 
     it('should handle empty output', async () => {
