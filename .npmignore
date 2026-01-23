@@ -1,0 +1,47 @@
+# Source files
+src/
+**/*.ts
+!dist/**/*.d.ts
+
+# Development files
+.tsconfig.json
+.eslintrc.js
+.jest.config.js
+
+# Documentation (keep README)
+*.md
+!README.md
+
+# Plugin-specific (not needed in npm package)
+.claude/
+.claude-plugin/
+.mcp.json
+
+# CI/CD
+.github/
+
+# Development
+node_modules/
+*.log
+
+# Testing
+**/*.test.ts
+**/*.spec.ts
+coverage/
+.nyc_output/
+
+# Marketing (not needed in package)
+marketing/
+
+# Build artifacts that aren't dist
+*.map
+
+# Git
+.git/
+.gitignore
+
+# Other
+.DS_Store
+*.swp
+*.swo
+*~
