@@ -42,6 +42,14 @@ describe('StateManager', () => {
     PathUtils.getStateDir.mockReturnValue('/test/project/.claude/siftcoder-state');
     PathUtils.join.mockImplementation((...args: string[]) => args.join('/'));
 
+    // Setup FileUtils mock
+    const FileUtils = require('../utils/file-utils.js').FileUtils;
+    FileUtils.mkdir.mockResolvedValue(undefined);
+    FileUtils.exists.mockResolvedValue(true);
+    FileUtils.readJSON.mockResolvedValue({});
+    FileUtils.writeJSON.mockResolvedValue(undefined);
+    FileUtils.deleteFile.mockResolvedValue(undefined);
+
     // Create a real mock filesystem
     mockFs = new MockFileSystem();
     mockFs.createFsPromisesMock();
