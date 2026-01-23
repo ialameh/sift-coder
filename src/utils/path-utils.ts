@@ -57,9 +57,19 @@ export class PathUtils {
   }
 
   /**
-   * Check if path is absolute
+   * Check if path is absolute (cross-platform)
+   * Handles both Unix (/path) and Windows (C:\path, C:/path) absolute paths
    */
   static isAbsolute(filePath: string): boolean {
+    // Check Unix-style absolute paths
+    if (filePath.startsWith('/')) {
+      return true;
+    }
+    // Check Windows-style absolute paths (C:\, D:/, etc.)
+    if (/^[A-Za-z]:[\\/]/.test(filePath)) {
+      return true;
+    }
+    // Fallback to Node's path.isAbsolute for platform-specific checks
     return path.isAbsolute(filePath);
   }
 
