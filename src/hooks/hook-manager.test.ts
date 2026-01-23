@@ -6,14 +6,33 @@
 import { HookManager, HookContext } from './hook-manager';
 import { MockFileSystem, TestDataFactory } from '../utils/test-helpers';
 
-// Mock dependencies
-jest.mock('../services/state-manager.js');
-jest.mock('../utils/file-utils.js');
-jest.mock('../utils/path-utils.js');
+// Mock StateManager with class structure
+jest.mock('../services/state-manager.js', () => ({
+  StateManager: jest.fn().mockImplementation(() => ({
+    init: jest.fn().mockResolvedValue(undefined),
+    getStateDir: jest.fn(() => '/test/state'),
+    loadCurrentTask: jest.fn().mockResolvedValue(null),
+    log: jest.fn().mockResolvedValue(undefined),
+    get: jest.fn(),
+    set: jest.fn(),
+    loadFeatures: jest.fn(),
+    saveFeatures: jest.fn(),
+    loadCurrentTask: jest.fn(),
+    saveCurrentTask: jest.fn(),
+    loadBoundaries: jest.fn(),
+    saveBoundaries: jest.fn()
+  }))
+}));
 
-const StateManager = require('../services/state-manager.js');
-const FileUtils = require('../utils/file-utils.js');
-const PathUtils = require('../utils/path-utils.js');
+// Mock PathUtils with class structure
+jest.mock('../utils/path-utils.js', () => ({
+  PathUtils: {
+    join: jest.fn((...args: string[]) => args.join('/')),
+    getStateDir: jest.fn(() => '/test/state')
+  }
+}));
+
+const StateManager = require('../services/state-manager.js').StateManager;
 
 describe('HookManager', () => {
   let hookManager: HookManager;
