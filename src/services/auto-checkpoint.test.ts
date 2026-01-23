@@ -461,7 +461,7 @@ describe('AutoCheckpointService', () => {
       await service.createCheckpoint({});
 
       expect(FileUtils.mkdir).toHaveBeenCalledWith(
-        '/test/state/.claude/siftcoder-state/checkpoints'
+        '/test/state/checkpoints'
       );
     });
 
