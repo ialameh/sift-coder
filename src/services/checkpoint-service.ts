@@ -378,11 +378,11 @@ export async function listCheckpoints(filters?: CheckpointFilters): Promise<any[
     if (filters?.phase) {
       checkpoints = checkpoints.filter(cp => cp.workflow_phase === filters.phase);
     }
-    if (filters?.since) {
-      checkpoints = checkpoints.filter(cp => new Date(cp.created_at) >= filters.since);
+    if (filters?.since !== undefined) {
+      checkpoints = checkpoints.filter(cp => new Date(cp.created_at) >= filters.since!);
     }
-    if (filters?.until) {
-      checkpoints = checkpoints.filter(cp => new Date(cp.created_at) <= filters.until);
+    if (filters?.until !== undefined) {
+      checkpoints = checkpoints.filter(cp => new Date(cp.created_at) <= filters.until!);
     }
     if (filters?.limit) {
       checkpoints = checkpoints.slice(0, filters.limit);
