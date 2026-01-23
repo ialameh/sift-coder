@@ -285,7 +285,7 @@ describe('StateManager', () => {
       });
 
       const savedCall = (FileUtils.writeJSON as jest.Mock).mock.calls[0];
-      const feature = Object.values(savedCall[1].features)[0];
+      const feature = Object.values(savedCall[1].features)[0] as any;
       expect(feature.created_at).toBeTruthy();
       expect(feature.updated_at).toBeTruthy();
     });
