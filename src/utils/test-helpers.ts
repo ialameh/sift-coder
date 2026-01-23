@@ -312,7 +312,7 @@ export class MockProcessExecutor {
   createExecMock() {
     const { exec } = require('child_process');
 
-    (exec as Mock).mockImplementation((command: string, options: any, callback: any) => {
+    (exec as any).mockImplementation((command: string, options: any, callback: any) => {
       // Handle both exec(command, callback) and exec(command, options, callback)
       const cb = typeof options === 'function' ? options : callback;
 
