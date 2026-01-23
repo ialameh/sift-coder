@@ -56,7 +56,7 @@ describe('ProcessUtils', () => {
       mockExec.mockImplementation((command: string, options: any, callback: any) => {
         const cb = typeof options === 'function' ? options : callback;
         console.log('Mock called with command:', command);
-        if (command === 'node -e "console.log(\'hello\')"') {
+        if (command === `node -e "console.log('hello')"`) {
           console.log('Calling callback with success');
           cb(null, 'hello\n', '');
         } else {
