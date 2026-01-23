@@ -361,6 +361,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
 
       logObservation({
         timestamp: new Date().toISOString(),
+        session_id: await initializeSession(),
         agent: currentAgent,
         workflow: {
           feature: currentFeature,
