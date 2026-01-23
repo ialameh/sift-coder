@@ -126,7 +126,7 @@ export async function calculateSessionTokens(): Promise<TokenUsage> {
     return {
       tokens,
       characters,
-      method,
+      method: method as 'exact' | 'estimate',
       status,
       threshold_percent: thresholdPercent,
       recommendation
