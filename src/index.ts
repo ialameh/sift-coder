@@ -21,6 +21,7 @@ import { KnowledgeManagerService } from './services/knowledge-manager.js';
 import { McpIntegrationService } from './services/mcp-integration.js';
 import { ShouldContinueService } from './services/should-continue.js';
 import { SyncToGlmService } from './services/sync-to-glm.js';
+import { SuggestService } from './services/suggest-service.js';
 
 // Hooks
 import { HookManager, type HookContext } from './hooks/hook-manager.js';
@@ -52,6 +53,7 @@ export { KnowledgeManagerService };
 export { McpIntegrationService };
 export { ShouldContinueService };
 export { SyncToGlmService };
+export { SuggestService };
 
 // Convenience factory functions
 export const createStateManager = (projectRoot?: string) => new StateManager(projectRoot);
