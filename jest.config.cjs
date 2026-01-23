@@ -1,5 +1,5 @@
 module.exports = {
-  preset: 'ts-jest',
+  preset: 'ts-jest/presets/default-esm',
   testEnvironment: 'node',
   roots: ['<rootDir>/src'],
   testMatch: ['**/__tests__/**/*.ts', '**/?(*.)+(spec|test).ts'],
@@ -8,15 +8,9 @@ module.exports = {
     '^.+\\.ts$': [
       'ts-jest',
       {
-        astTransformers: {
-          before: [
-            'ts-jest/dist/legacy-compiler/transformers/import-meta-downlevel-async'
-          ]
-        },
+        useESM: true,
         tsconfig: {
-          target: 'ES2022',
-          module: 'ES2022',
-          moduleResolution: 'node',
+          module: 'ESNext',
           noUnusedLocals: false,
           noUnusedParameters: false
         }
