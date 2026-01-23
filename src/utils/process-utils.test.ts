@@ -489,13 +489,16 @@ describe('ProcessUtils', () => {
     it('should handle different platforms for exec', async () => {
       const originalPlatform = process.platform;
 
-      // Register mock command and recreate the exec mock
-      mockExecutor.mockCommand('echo test', {
-        exitCode: 0,
-        stdout: 'test\n',
-        stderr: ''
+      const mockExec = mockChildProcess.exec as jest.Mock;
+      mockExec.mockImplementation((command: string, options: any, callback: any) => {
+        const cb = typeof options === 'function' ? options : callback;
+        if (command === 'echo test') {
+          cb(null, { stdout: 'test\n' }, '');
+        } else {
+          cb(null, { stdout: '' }, '');
+        }
+        return { kill: jest.fn() };
       });
-      mockExecutor.createExecMock(); // Recreate mock with registered commands
 
       // Test on current platform
       const result = await ProcessUtils.exec('echo test');
