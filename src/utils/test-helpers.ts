@@ -121,7 +121,7 @@ export class MockFileSystem {
     });
 
     // Mock stat
-    (fs.stat as Mock).mockImplementation((path: string) => {
+    (fs.stat as any).mockImplementation((path: string) => {
       if (this.files.has(path)) {
         return Promise.resolve({
           isFile: () => true,
@@ -139,13 +139,13 @@ export class MockFileSystem {
     });
 
     // Mock unlink
-    (fs.unlink as Mock).mockImplementation((path: string) => {
+    (fs.unlink as any).mockImplementation((path: string) => {
       this.files.delete(path);
       return Promise.resolve();
     });
 
     // Mock copyFile
-    (fs.copyFile as Mock).mockImplementation((src: string, dest: string) => {
+    (fs.copyFile as any).mockImplementation((src: string, dest: string) => {
       const content = this.files.get(src);
       if (content === undefined) {
         throw new Error(`Source file not found: ${src}`);
@@ -155,7 +155,7 @@ export class MockFileSystem {
     });
 
     // Mock rename
-    (fs.rename as Mock).mockImplementation((src: string, dest: string) => {
+    (fs.rename as any).mockImplementation((src: string, dest: string) => {
       const content = this.files.get(src);
       if (content === undefined) {
         throw new Error(`Source file not found: ${src}`);
@@ -166,7 +166,7 @@ export class MockFileSystem {
     });
 
     // Mock appendFile
-    (fs.appendFile as Mock).mockImplementation((path: string, content: string) => {
+    (fs.appendFile as any).mockImplementation((path: string, content: string) => {
       const existing = this.files.get(path) || '';
       this.files.set(path, existing + content);
       return Promise.resolve();
