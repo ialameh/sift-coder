@@ -5,5 +5,7 @@
   "author": {
     "name": "Sam Alameh",
     "email": "issam@alameh.com"
-  }
+  },
+  "skills": "./skills",
+  "commands": "./commands"
 }
