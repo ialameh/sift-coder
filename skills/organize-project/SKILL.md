@@ -1,3 +1,9 @@
+---
+name: organize-project
+description: Automatically organize a project folder into the Sift monorepo structure
+version: 1.0.0
+---
+
 # Organize Project Skill
 
 Automatically organize a project folder into the Sift monorepo structure.

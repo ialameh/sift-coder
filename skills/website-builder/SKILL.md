@@ -1,3 +1,9 @@
+---
+name: website-builder
+description: Build beautiful, modern websites from codebase or from scratch
+version: 1.0.0
+---
+
 # Website Builder Skill
 
 Build beautiful, modern websites from your codebase or from scratch.

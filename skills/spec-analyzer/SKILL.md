@@ -1,3 +1,9 @@
+---
+name: spec-analyzer
+description: Extract testable features from natural language specifications
+version: 1.0.0
+---
+
 # Spec Analyzer Skill
 
 Extract testable features from natural language specifications.

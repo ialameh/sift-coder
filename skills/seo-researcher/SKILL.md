@@ -1,3 +1,9 @@
+---
+name: seo-researcher
+description: Research search trends, keywords, and user intent to inform feature development and content strategy
+version: 1.0.0
+---
+
 # SEO Researcher Skill
 
 Research search trends, keywords, and user intent to inform feature development and content strategy.

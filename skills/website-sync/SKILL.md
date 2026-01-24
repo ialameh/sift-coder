@@ -1,3 +1,9 @@
+---
+name: website-sync
+description: Keep generated websites synchronized with codebase changes
+version: 1.0.0
+---
+
 # Website Sync Skill
 
 Keep generated websites synchronized with codebase changes.

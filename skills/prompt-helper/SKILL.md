@@ -1,3 +1,9 @@
+---
+name: prompt-helper
+description: Interactive assistant that guides users through crafting effective prompts for SiftCoder commands
+version: 1.0.0
+---
+
 # Prompt Helper Skill
 
 ## Overview

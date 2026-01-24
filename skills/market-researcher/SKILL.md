@@ -1,3 +1,9 @@
+---
+name: market-researcher
+description: Conduct comprehensive market research including competitor analysis, market trends, and user demand signals
+version: 1.0.0
+---
+
 # Market Researcher Skill
 
 Conduct comprehensive market research including competitor analysis, market trends, and user demand signals.

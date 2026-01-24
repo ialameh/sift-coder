@@ -1,3 +1,9 @@
+---
+name: siftcoder-workflow
+description: Full autonomous multi-agent workflow for implementing features
+version: 1.0.0
+---
+
 # siftcoder Workflow Skill
 
 Full autonomous multi-agent workflow for implementing features.

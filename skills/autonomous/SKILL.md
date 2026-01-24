@@ -1,3 +1,9 @@
+---
+name: autonomous
+description: Full autonomous mode for "fire & forget" autonomous project completion
+version: 1.0.0
+---
+
 # SiftCoder Full Autonomous Mode
 
 **"Fire & Forget" autonomous project completion**

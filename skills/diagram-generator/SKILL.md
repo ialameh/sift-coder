@@ -1,3 +1,9 @@
+---
+name: diagram-generator
+description: Generate visual documentation including Mermaid diagrams, code maps, and architecture visualizations
+version: 1.0.0
+---
+
 # Diagram Generator Skill
 
 Generate visual documentation including Mermaid diagrams, code maps, and architecture visualizations.

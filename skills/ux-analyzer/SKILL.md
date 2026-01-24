@@ -1,3 +1,9 @@
+---
+name: ux-analyzer
+description: Analyze user experience patterns, best practices, and accessibility requirements
+version: 1.0.0
+---
+
 # UX Analyzer Skill
 
 Analyze user experience patterns, best practices, and accessibility requirements for specific domains and applications.

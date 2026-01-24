@@ -1,3 +1,9 @@
+---
+name: gap-analyzer
+description: Detect gaps between specification and implementation, and identify undocumented features
+version: 1.0.0
+---
+
 # Gap Analyzer Skill
 
 Detect gaps between specification and implementation, and identify undocumented features.

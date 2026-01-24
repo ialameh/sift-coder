@@ -1,3 +1,9 @@
+---
+name: agentic-executor
+description: Reusable capabilities for autonomous multi-file operations
+version: 1.0.0
+---
+
 # Agentic Executor Skill
 
 **Reusable capabilities for autonomous multi-file operations.**

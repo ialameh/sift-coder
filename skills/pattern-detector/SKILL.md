@@ -1,3 +1,9 @@
+---
+name: pattern-detector
+description: Detect and document code patterns, conventions, and architectural styles in existing codebases
+version: 1.0.0
+---
+
 # Pattern Detector Skill
 
 Detect and document code patterns, conventions, and architectural styles in existing codebases.

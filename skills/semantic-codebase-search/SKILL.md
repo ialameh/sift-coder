@@ -1,3 +1,9 @@
+---
+name: semantic-codebase-search
+description: Vector-based code discovery using LanceDB and Ollama embeddings
+version: 1.0.0
+---
+
 # Semantic Codebase Search Skill
 
 **Vector-based code discovery using LanceDB and Ollama embeddings.**

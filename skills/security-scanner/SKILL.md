@@ -1,3 +1,9 @@
+---
+name: security-scanner
+description: Comprehensive security analysis for codebases
+version: 1.0.0
+---
+
 # Security Scanner Skill
 
 Comprehensive security analysis for codebases.

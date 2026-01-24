@@ -1,3 +1,9 @@
+---
+name: suggest
+description: Analyzes natural language requests and suggests the most appropriate SiftCoder command to use
+version: 1.0.0
+---
+
 # Suggest Command
 
 Analyzes your natural language request and suggests the most appropriate SiftCoder command to use.

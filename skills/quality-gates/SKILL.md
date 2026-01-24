@@ -1,3 +1,9 @@
+---
+name: quality-gates
+description: Automated code quality validation with configurable checks
+version: 1.0.0
+---
+
 # Quality Gates Skill
 
 Automated code quality validation with configurable checks.
