@@ -20,12 +20,22 @@
             "type": "command",
             "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/post-tool-use/capture-observation.mjs",
             "timeout": 2
+          },
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/post-tool-use/suggest-compact.mjs",
+            "timeout": 1
           }
         ]
       },
       {
         "matcher": "Write|Edit",
         "hooks": [
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/post-tool-use/detect-console-logs.mjs",
+            "timeout": 2
+          },
           {
             "type": "command",
             "command": "node ${CLAUDE_PLUGIN_ROOT}/dist/services/auto-checkpoint.js auto_threshold ${CLAUDE_PROJECT_DIR}",

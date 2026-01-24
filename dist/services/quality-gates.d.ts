@@ -20,7 +20,8 @@ export interface QualityResults {
 }
 export declare class QualityGates {
     private projectRoot;
-    constructor(projectRoot?: string);
+    private coverageThreshold;
+    constructor(projectRoot?: string, coverageThreshold?: number);
     /**
      * Run all quality gates
      */
@@ -37,6 +38,14 @@ export declare class QualityGates {
      * Run type checker (TypeScript)
      */
     runTypeCheck(): Promise<GateResult>;
+    /**
+     * Run coverage check (if test script exists)
+     */
+    runCoverageCheck(): Promise<GateResult>;
+    /**
+     * Check if package.json has a specific script
+     */
+    private hasScript;
     /**
      * Format results for display
      */

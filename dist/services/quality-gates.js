@@ -4,10 +4,14 @@
  * Cross-platform (Windows, Mac, Linux)
  */
 import { ProcessUtils } from '../utils/process-utils.js';
+import { existsSync, readFileSync } from 'fs';
+import { join } from 'path';
 export class QualityGates {
     projectRoot;
-    constructor(projectRoot) {
+    coverageThreshold;
+    constructor(projectRoot, coverageThreshold = 80) {
         this.projectRoot = projectRoot || process.cwd();
+        this.coverageThreshold = coverageThreshold;
     }
     /**
      * Run all quality gates
@@ -178,6 +182,87 @@ export class QualityGates {
         }
     }
     /**
+     * Run coverage check (if test script exists)
+     */
+    async runCoverageCheck() {
+        const startTime = Date.now();
+        try {
+            // Check if test:coverage script exists
+            const hasCoverageScript = await this.hasScript('test:coverage');
+            if (!hasCoverageScript) {
+                return {
+                    status: 'skipped',
+                    message: 'No test:coverage script found',
+                    time_ms: Date.now() - startTime
+                };
+            }
+            // Check if TDDService is available
+            const tddServicePath = join(this.projectRoot, 'dist', 'services', 'tdd-service.js');
+            if (!existsSync(tddServicePath)) {
+                return {
+                    status: 'skipped',
+                    message: 'TDDService not built',
+                    time_ms: Date.now() - startTime
+                };
+            }
+            // Import TDDService dynamically
+            const { TDDService } = await import('../services/tdd-service.js');
+            const tddService = new TDDService(this.projectRoot, { coverageThreshold: this.coverageThreshold });
+            const result = await tddService.verifyCoverage(this.coverageThreshold);
+            const timeTaken = Date.now() - startTime;
+            if (!result.coverage) {
+                return {
+                    status: 'skipped',
+                    message: 'No coverage data available',
+                    time_ms: timeTaken
+                };
+            }
+            // Check if coverage meets threshold
+            const coverage = result.coverage;
+            const meetsThreshold = coverage.lines >= this.coverageThreshold &&
+                coverage.branches >= this.coverageThreshold &&
+                coverage.functions >= this.coverageThreshold &&
+                coverage.statements >= this.coverageThreshold;
+            if (meetsThreshold) {
+                return {
+                    status: 'passed',
+                    message: `Coverage ${coverage.lines}% (threshold: ${this.coverageThreshold}%)`,
+                    time_ms: timeTaken
+                };
+            }
+            else {
+                return {
+                    status: 'failed',
+                    message: `Coverage below threshold: L${coverage.lines}% B${coverage.branches}% F${coverage.functions}% S${coverage.statements}% (required: ${this.coverageThreshold}%)`,
+                    time_ms: timeTaken
+                };
+            }
+        }
+        catch (error) {
+            return {
+                status: 'skipped',
+                message: `Coverage check skipped: ${error.message}`,
+                time_ms: Date.now() - startTime
+            };
+        }
+    }
+    /**
+     * Check if package.json has a specific script
+     */
+    async hasScript(scriptName) {
+        try {
+            const pkgPath = join(this.projectRoot, 'package.json');
+            if (!existsSync(pkgPath)) {
+                return false;
+            }
+            const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+            return !!pkg.scripts?.[scriptName];
+        }
+        catch {
+            return false;
+        }
+    }
+    /**
      * Format results for display
      */
     formatResults(results) {
@@ -229,6 +314,11 @@ if (isMainModule) {
                 console.log(JSON.stringify(result, null, 2));
                 process.exit(result.status === 'failed' ? 1 : 0);
             }
+            case 'coverage': {
+                const result = await gates.runCoverageCheck();
+                console.log(JSON.stringify(result, null, 2));
+                process.exit(result.status === 'failed' ? 1 : 0);
+            }
             default:
                 console.error(`
 Usage: node quality-gates.js <command>
@@ -238,10 +328,12 @@ Commands:
   format       Run format check only
   lint         Run linter only
   type-check   Run type checker only
+  coverage     Run coverage check only
 
 Examples:
   node quality-gates.js all
   node quality-gates.js format
+  node quality-gates.js coverage
         `);
                 process.exit(1);
         }

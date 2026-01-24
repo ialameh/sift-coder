@@ -1,0 +1,224 @@
+{
+  "mcpServers": [
+    {
+      "name": "github",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_GITHUB_PAT_HERE"
+      },
+      "description": "GitHub operations - PRs, issues, repos, code search",
+      "category": "development",
+      "autoDetect": {
+        "files": [".git/config"],
+        "patterns": ["github.com"]
+      }
+    },
+    {
+      "name": "supabase",
+      "command": "npx",
+      "args": ["-y", "@supabase/mcp-server-supabase@latest"],
+      "env": {
+        "SUPABASE_ACCESS_TOKEN": "YOUR_SUPABASE_TOKEN_HERE"
+      },
+      "description": "Supabase database operations, queries, management",
+      "category": "database",
+      "autoDetect": {
+        "files": ["supabase/config.toml"],
+        "dependencies": ["@supabase/supabase-js"]
+      }
+    },
+    {
+      "name": "filesystem",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/projects"],
+      "description": "Filesystem operations - read, write, search files",
+      "category": "filesystem",
+      "autoDetect": {
+        "patterns": ["."]
+      }
+    },
+    {
+      "name": "memory",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"],
+      "description": "Persistent memory across sessions - remember facts, preferences",
+      "category": "productivity",
+      "recommended": true
+    },
+    {
+      "name": "sequential-thinking",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sequential-thinking"],
+      "description": "Chain-of-thought reasoning - break down complex problems",
+      "category": "productivity",
+      "recommended": true
+    },
+    {
+      "name": "brave-search",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-brave-search"],
+      "env": {
+        "BRAVE_API_KEY": "YOUR_BRAVE_API_KEY_HERE"
+      },
+      "description": "Web search using Brave Search API",
+      "category": "search",
+      "autoDetect": {
+        "patterns": ["API_KEY", "api"]
+      }
+    },
+    {
+      "name": "postgres",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-postgres"],
+      "env": {
+        "POSTGRES_CONNECTION_STRING": "postgresql://user:password@localhost:5432/dbname"
+      },
+      "description": "PostgreSQL database operations - query, manage schemas",
+      "category": "database",
+      "autoDetect": {
+        "files": ["postgresql.conf", "pg_hba.conf"],
+        "dependencies": ["pg", "postgres"]
+      }
+    },
+    {
+      "name": "sqlite",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-sqlite", "--db-path", "./database.db"],
+      "description": "SQLite database operations",
+      "category": "database",
+      "autoDetect": {
+        "files": ["*.db", "*.sqlite", "*.sqlite3"],
+        "dependencies": ["sqlite3", "better-sqlite3"]
+      }
+    },
+    {
+      "name": "puppeteer",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-puppeteer"],
+      "description": "Web automation - scrape pages, take screenshots, PDF generation",
+      "category": "automation",
+      "autoDetect": {
+        "dependencies": ["puppeteer", "playwright"]
+      }
+    },
+    {
+      "name": "fetch",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-fetch"],
+      "description": "HTTP client - make requests, inspect responses",
+      "category": "network",
+      "recommended": true
+    },
+    {
+      "name": "slack",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-slack"],
+      "env": {
+        "SLACK_READ_TOKEN": "YOUR_SLACK_READ_TOKEN_HERE",
+        "SLACK_WRITE_TOKEN": "YOUR_SLACK_WRITE_TOKEN_HERE"
+      },
+      "description": "Slack integration - send messages, read channels",
+      "category": "communication",
+      "autoDetect": {
+        "files": ["slack.json"],
+        "dependencies": ["@slack/web-api"]
+      }
+    },
+    {
+      "name": "everart",
+      "command": "npx",
+      "args": ["-y", "@everctx/mcp-server-everart"],
+      "env": {
+        "EVERART_API_KEY": "YOUR_EVERART_API_KEY_HERE"
+      },
+      "description": "Image generation using EverArt API",
+      "category": "ai",
+      "autoDetect": {
+        "patterns": ["image", "art", "generation"]
+      }
+    },
+    {
+      "name": "exa",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-exa"],
+      "env": {
+        "EXA_API_KEY": "YOUR_EXA_API_KEY_HERE"
+      },
+      "description": "AI-powered web search with Exa",
+      "category": "search",
+      "autoDetect": {
+        "patterns": ["search", "ai"]
+      }
+    },
+    {
+      "name": "google-maps",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-google-maps"],
+      "env": {
+        "GOOGLE_MAPS_API_KEY": "YOUR_GOOGLE_MAPS_API_KEY_HERE"
+      },
+      "description": "Google Maps integration - geocoding, directions, places",
+      "category": "api",
+      "autoDetect": {
+        "dependencies": ["@googlemaps/google-maps-services-js"]
+      }
+    },
+    {
+      "name": "kubernetes",
+      "command": "npx",
+      "args": ["-y", "@joehoel/mcp-server-kubernetes"],
+      "description": "Kubernetes cluster management - pods, services, deployments",
+      "category": "devops",
+      "autoDetect": {
+        "files": ["kubeconfig", "*.yaml", "k8s/"],
+        "dependencies": ["@kubernetes/client-node"]
+      }
+    },
+    {
+      "name": "aws",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-aws"],
+      "env": {
+        "AWS_REGION": "us-east-1",
+        "AWS_ACCESS_KEY_ID": "YOUR_AWS_ACCESS_KEY_HERE",
+        "AWS_SECRET_ACCESS_KEY": "YOUR_AWS_SECRET_KEY_HERE"
+      },
+      "description": "AWS services - S3, EC2, Lambda, DynamoDB, etc.",
+      "category": "cloud",
+      "autoDetect": {
+        "dependencies": ["@aws-sdk/client-*"]
+      }
+    },
+    {
+      "name": "docker",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-docker"],
+      "description": "Docker container management - images, containers, volumes",
+      "category": "devops",
+      "autoDetect": {
+        "files": ["Dockerfile", "docker-compose.yml", "docker-compose.yaml"]
+      }
+    },
+    {
+      "name": "git",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-git"],
+      "description": "Git operations - commits, branches, diffs, history",
+      "category": "development",
+      "autoDetect": {
+        "files": [".git/config"]
+      }
+    },
+    {
+      "name": "typescript-eslint",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-typescript-eslint"],
+      "description": "TypeScript and ESLint code analysis, linting, fixes",
+      "category": "development",
+      "autoDetect": {
+        "files": ["tsconfig.json", ".eslintrc*", "eslint.config.*"]
+      }
+    }
+  ]
+}
