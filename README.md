@@ -2,7 +2,7 @@
 
 **Autonomous Multi-Agent Coding Workflows for Claude Code**
 
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/ialameh/sift-coder)
+[![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](https://github.com/ialameh/sift-coder)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude%20Code-Plugin-purple.svg)](https://claude.ai)
 [![Website](https://img.shields.io/badge/website-siftcoder.com-brightgreen.svg)](https://www.siftcoder.com)
@@ -328,7 +328,7 @@ cat > /path/to/local-marketplace/.claude-plugin/marketplace.json << 'EOF'
       "name": "sift-coder",
       "source": "./plugins/sift-coder",
       "description": "Autonomous multi-agent coding workflows",
-      "version": "1.0.0",
+      "version": "2.0.0",
       "author": {
         "name": "Sam Alameh"
       },
@@ -354,12 +354,12 @@ EOF
 
 1. **Copy plugin to Claude's plugin cache:**
 ```bash
-mkdir -p ~/.claude/plugins/cache/local/sift-coder/1.0.0
-cp -r /path/to/sift-coder/* ~/.claude/plugins/cache/local/sift-coder/1.0.0/
-cp -r /path/to/sift-coder/.claude-plugin ~/.claude/plugins/cache/local/sift-coder/1.0.0/
+mkdir -p ~/.claude/plugins/cache/local/sift-coder/2.0.0
+cp -r /path/to/sift-coder/* ~/.claude/plugins/cache/local/sift-coder/2.0.0/
+cp -r /path/to/sift-coder/.claude-plugin ~/.claude/plugins/cache/local/sift-coder/2.0.0/
 
 # Optional: Pre-install dependencies in the cache directory
-cd ~/.claude/plugins/cache/local/sift-coder/1.0.0
+cd ~/.claude/plugins/cache/local/sift-coder/2.0.0
 npm install --ignore-scripts
 ```
 
@@ -371,8 +371,8 @@ Add to `~/.claude/plugins/installed_plugins.json`:
   "sift-coder@local": [
     {
       "scope": "user",
-      "installPath": "/Users/YOUR_USERNAME/.claude/plugins/cache/local/sift-coder/1.0.0",
-      "version": "1.0.0",
+      "installPath": "/Users/YOUR_USERNAME/.claude/plugins/cache/local/sift-coder/2.0.0",
+      "version": "2.0.0",
       "installedAt": "2026-01-13T00:00:00.000Z",
       "lastUpdated": "2026-01-13T00:00:00.000Z"
     }
