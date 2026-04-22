@@ -9,6 +9,8 @@ siftcoder-website/
 # Source files (not needed - dist/ contains compiled output)
 src/
 schemas/
+!vendor/**/src/
+!vendor/**/schemas/
 
 # Test files (not needed for npm package)
 jest.config.cjs
