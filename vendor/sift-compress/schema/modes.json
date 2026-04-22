@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "defaultMode": "full",
+  "modes": [
+    {
+      "name": "lite",
+      "description": "Professional but tight. Drop filler and hedging; keep articles and grammar.",
+      "rules": "Drop pleasantries (sure/certainly/of course/happy to) and hedging (possibly/likely/might). Preserve grammar and articles. Technical terms exact. Code blocks unchanged.",
+      "independent": false,
+      "sinceVersion": 1
+    },
+    {
+      "name": "full",
+      "description": "Default sift-compress. Drop articles, fragments OK, short synonyms.",
+      "rules": "Drop articles (a/an/the), filler (just/really/basically/actually/simply), pleasantries, hedging. Fragments OK. Short synonyms (big not extensive; fix not 'implement a solution for'). Technical terms exact. Code blocks unchanged. Errors quoted exact.",
+      "independent": false,
+      "sinceVersion": 1
+    },
+    {
+      "name": "ultra",
+      "description": "Maximum compression. Abbreviate aggressively; arrows for causality.",
+      "rules": "Abbreviate (DB, auth, config, req, res, fn, impl, ctx). Strip conjunctions. Arrows for causality (X → Y). One word when one suffices. Never sacrifice technical accuracy.",
+      "independent": false,
+      "sinceVersion": 1
+    },
+    {
+      "name": "commit",
+      "description": "Conventional Commits message mode.",
+      "rules": "Use Conventional Commits. Subject ≤50 chars, imperative mood. Body wraps at 72. Footer for breaking-changes and refs only.",
+      "independent": true,
+      "sinceVersion": 1
+    },
+    {
+      "name": "review",
+      "description": "Terse code-review comments.",
+      "rules": "One-line comments: L<line>: <severity> <problem>. <fix>. Severity ∈ {nit, warn, block}.",
+      "independent": true,
+      "sinceVersion": 1
+    },
+    {
+      "name": "off",
+      "description": "Disabled. Normal prose resumes.",
+      "rules": null,
+      "independent": false,
+      "sinceVersion": 1,
+      "sentinel": true
+    }
+  ],
+  "aliases": [
+    { "from": "classical", "to": "ultra", "deprecated": false, "sinceVersion": 1 }
+  ]
+}

@@ -66,6 +66,11 @@
             "type": "command",
             "command": "node ${CLAUDE_PLUGIN_ROOT}/dist/services/should-continue.js",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/vendor/sift-compress/hooks/stop.js",
+            "timeout": 5
           }
         ]
       }
@@ -81,6 +86,22 @@
           {
             "type": "command",
             "command": "node ${CLAUDE_PLUGIN_ROOT}/dist/services/inject-knowledge.js",
+            "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/vendor/sift-compress/hooks/session-start.js",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/vendor/sift-compress/hooks/user-prompt-submit.js",
             "timeout": 5
           }
         ]
