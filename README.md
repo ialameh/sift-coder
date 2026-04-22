@@ -70,6 +70,7 @@ SiftCoder handles **real-world complexity** that other tools can't:
   - [WORKFLOW CONTROL](#workflow-control)
   - [SESSION & STATE](#session--state)
   - [COST & EFFICIENCY](#cost--efficiency)
+  - [OUTPUT COMPRESSION](#output-compression---sift-compress)
   - [CREATIVE & NOVEL](#creative--novel---ai-powered-insights)
   - [SALESFORCE DEVELOPMENT](#salesforce-development)
 - [Configuration](#configuration)
@@ -168,6 +169,7 @@ Investigate First → Understand the Problem → Define Boundaries → Fix Safel
 - **Self-Healing Loops**: Automatically fix build/test/lint failures with up to 3 retries
 - **Test-Driven Development**: Write tests first, then generate code that passes them
 - **Parallel Agent Swarms**: Run multiple agents on independent tasks simultaneously
+- **Output Compression (sift-compress)**: `/siftcoder:compress [lite|full|ultra|commit|review]` — measured, enforceable natural-language compression with session persistence, preserving code and technical accuracy
 
 ### Specialized Domains
 - **Salesforce Development**: 15+ commands for Apex, LWC, schemas, deployment, and architecture
@@ -1018,6 +1020,41 @@ Track and optimize token usage.
 
 ---
 
+### OUTPUT COMPRESSION - sift-compress
+
+Measured, enforceable output compression. Drops articles, filler, hedging, and pleasantries from natural-language output while keeping technical substance exact. Code, commits, PR descriptions, and security warnings stay as normal prose. Runtime is vendored under `vendor/sift-compress/` and wired into SessionStart, UserPromptSubmit, and Stop hooks — so the mode persists across turns and sessions via an event log at `~/.claude/.sift-compress/`.
+
+| Command | Description |
+|---------|-------------|
+| `/siftcoder:compress` | Activate default mode (`full`) — drop articles, filler, hedging; fragments OK. |
+| `/siftcoder:compress lite` | Professional but tight — drop filler and hedging, keep articles and grammar. |
+| `/siftcoder:compress full` | Default intensity. Drop articles, fragments OK, short synonyms. |
+| `/siftcoder:compress ultra` | Maximum compression — abbreviate aggressively, arrows for causality (X → Y). |
+| `/siftcoder:compress commit` | Conventional Commits message mode — subject ≤50 chars, imperative, body wraps at 72. |
+| `/siftcoder:compress review` | Terse code-review comment mode — `L<line>: <severity> <problem>. <fix>.` |
+| `/siftcoder:compress off` | Deactivate. Also responds to "stop sift-compress" or "normal mode". |
+
+**Examples:**
+```bash
+# Activate default
+/siftcoder:compress
+
+# Crank compression for long debug sessions
+/siftcoder:compress ultra
+
+# Switch to commit-message mode before drafting a commit
+/siftcoder:compress commit
+
+# Turn off
+/siftcoder:compress off
+```
+
+**Boundaries:** Compression applies to natural-language explanation only. Auto-clarity drops compression for security warnings, irreversible actions, and multi-step sequences where fragment order could be misread — then resumes after the clear part is done.
+
+**State:** Event log at `~/.claude/.sift-compress/events.jsonl`, cache at `~/.claude/.sift-compress/state.json`. Shared with the standalone `sift-compress` plugin if both are installed.
+
+---
+
 ### CREATIVE & NOVEL - AI-Powered Insights
 
 Innovative AI features that go beyond traditional development tools.
@@ -1345,6 +1382,7 @@ MIT License - see [LICENSE](LICENSE) for details.
 /siftcoder:security scan             # Full security audit
 /siftcoder:prompt                    # Get help crafting prompts
 /siftcoder:status                    # Show current progress
+/siftcoder:compress [mode]           # Activate output compression (full default)
 ```
 
 ### Workflow Control
