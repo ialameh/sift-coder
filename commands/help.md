@@ -113,6 +113,17 @@ software engineering lifecycle.
     /siftcoder:reverse-spec --format json
     /siftcoder:reverse-spec --area src/api
 
+/siftcoder:reverse-prompt
+  Generate a single ~150-word conversational prompt that
+  would rebuild this project from scratch via any AI agent.
+  Quick, deep, and focus modes. Local cache.
+
+  Examples:
+    /siftcoder:reverse-prompt
+    /siftcoder:reverse-prompt --mode deep
+    /siftcoder:reverse-prompt --focus "the auth flow"
+    /siftcoder:reverse-prompt --repo <github-url>
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
  BUILD - New Development
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

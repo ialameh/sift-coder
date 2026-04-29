@@ -13,6 +13,7 @@ The UNDERSTAND workflow contains commands for analyzing and capturing deep under
 | [`/understand`](#understand) | Analyze project structure | ⭐ Beginner | 2-30 min | Read-only |
 | [`/search`](#search) | Semantic codebase search | ⭐ Beginner | 1-5 min | Read-only |
 | [`/reverse-spec`](#reverse-spec) | Generate spec from code | ⭐⭐ Intermediate | 10-20 min | Read-only |
+| [`/reverse-prompt`](#reverse-prompt) | Generate one rebuild prompt | ⭐ Beginner | 5-90 sec | Read-only |
 
 ---
 
@@ -229,8 +230,72 @@ Created: specs/checkout-generated.md
 
 ---
 
+## /reverse-prompt
+
+Generate ONE conversational rebuild prompt (~120-200 words) that, pasted into any AI agent (Cursor, Claude Code, Codex, ChatGPT, v0), would rebuild the project from scratch.
+
+Distinct from `/reverse-spec`: that produces a verbose `SPECIFICATION.md`. This produces a single short paragraph an agent can act on directly.
+
+### Quick Overview
+
+- **Purpose**: One-paragraph rebuild prompt for any AI agent
+- **Difficulty**: ⭐ Beginner
+- **Time**: 5-90 sec (mode dependent)
+- **Mode**: Read-only
+
+### When to Use
+
+✅ Bootstrap a sister project in a different stack
+✅ Onboard collaborators with the lived project intent
+✅ Backstop documentation when README is thin
+✅ Periodic re-runs to spot identity drift over time
+
+### Modes
+
+| Mode  | Trigger              | Inputs                                                  | Latency  |
+|-------|----------------------|---------------------------------------------------------|----------|
+| quick | default              | manifest + root tree (depth 2) + README                 | seconds  |
+| deep  | `--mode deep`        | quick context + investigator-agent codebase summary     | 30-90s   |
+| focus | `--focus "<text>"`   | quick (or deep) context + user-supplied angle           | seconds+ |
+
+### Syntax
+
+```
+/siftcoder:reverse-prompt [--mode quick|deep|focus]
+                          [--focus "<text>"]
+                          [--repo <github-url>]
+                          [--output <path>]
+                          [--no-cache] [--list]
+```
+
+### Examples
+
+```
+/siftcoder:reverse-prompt
+/siftcoder:reverse-prompt --mode deep
+/siftcoder:reverse-prompt --focus "the auth flow only"
+/siftcoder:reverse-prompt --repo https://github.com/anthropics/claude-code
+/siftcoder:reverse-prompt --output ./PROMPT.txt
+/siftcoder:reverse-prompt --list
+```
+
+### Cache
+
+Local-only at `.claude/siftcoder-state/reverse-prompts/`. Keyed by `shortFingerprint(repoId::mode::focus)`. `--no-cache` forces regeneration; `--list` shows recent entries.
+
+### Output Style
+
+- ONE paragraph (or 2-3 short paragraphs)
+- 120-200 words
+- Plain language, conversational
+- Outcome focused — what it does for a user, not files
+- No bullet lists, no headings, no hyphens
+
+---
+
 ## See Also
 
 - [BUILD Workflow](build-workflow.md) - Create projects
 - [LEARN Workflow](learn-workflow.md) - Interactive learning
 - [MAINTAIN Workflow](maintain-workflow.md) - Fix and maintain
+- [Mode Patterns](../../10-advanced-topics/mode-patterns.md) - Quick/Deep/Focus design
