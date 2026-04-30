@@ -80,6 +80,11 @@
         "hooks": [
           {
             "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/session-start/spawn-daemon.mjs",
+            "timeout": 3
+          },
+          {
+            "type": "command",
             "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/session-start/inject-context.mjs",
             "timeout": 5
           },
@@ -103,6 +108,28 @@
             "type": "command",
             "command": "node ${CLAUDE_PLUGIN_ROOT}/vendor/sift-compress/hooks/user-prompt-submit.js",
             "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/pre-compact/inject-memories.mjs",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/notification/pin-incident.mjs",
+            "timeout": 2
           }
         ]
       }
