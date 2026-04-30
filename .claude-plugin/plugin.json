@@ -1,0 +1,21 @@
+{
+  "name": "siftcoder",
+  "version": "3.0.0",
+  "description": "Persistent project memory + local-LLM offload + Salesforce domain skills for Claude Code",
+  "author": {
+    "name": "Sam Alameh",
+    "email": "issam@alameh.com",
+    "url": "https://github.com/ialameh"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/ialameh/siftcoder",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ialameh/siftcoder.git"
+  },
+  "skills": "./skills",
+  "commands": "./commands",
+  "agents": "./agents",
+  "hooks": "./hooks/hooks.json",
+  "mcp": "./.mcp.json"
+}

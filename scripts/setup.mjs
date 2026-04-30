@@ -1,0 +1,66 @@
+#!/usr/bin/env node
+// Interactive setup: probes Ollama, captures Anthropic key, writes ~/.siftcoder/v3/config.json.
+
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import readline from 'node:readline/promises';
+import { stdin, stdout } from 'node:process';
+
+const NS = process.env.SIFTCODER_NS || 'v3';
+const CONFIG_DIR = path.join(os.homedir(), '.siftcoder', NS);
+const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
+
+async function probeOllama() {
+  try {
+    const r = await fetch('http://localhost:11434/api/tags', { signal: AbortSignal.timeout(1500) });
+    return r.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function run() {
+  fs.mkdirSync(CONFIG_DIR, { recursive: true });
+  console.log('SiftCoder v3 setup');
+  console.log('==================');
+
+  const rl = readline.createInterface({ input: stdin, output: stdout });
+
+  const ollama = await probeOllama();
+  console.log(`Ollama at http://localhost:11434: ${ollama ? 'reachable ✓' : 'not reachable'}`);
+
+  let anthropicKey = process.env.ANTHROPIC_API_KEY || '';
+  if (!anthropicKey) {
+    const a = await rl.question('ANTHROPIC_API_KEY (blank to skip): ');
+    anthropicKey = a.trim();
+  }
+
+  const cfg = {
+    siftcoder: {
+    namespace: NS,
+      memory: {
+        drainBackend: ollama ? 'ollama' : anthropicKey ? 'anthropic' : 'sampling',
+        embedder: ollama ? 'ollama' : 'deterministic',
+      },
+      ollama: {
+        endpoint: 'http://localhost:11434',
+        embedModel: 'nomic-embed-text',
+        summarizeModel: 'llama3.2:3b',
+      },
+      anthropic: { hasKey: Boolean(anthropicKey) },
+    },
+    createdAt: new Date().toISOString(),
+  };
+
+  fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2));
+  console.log(`\nWrote ${CONFIG_FILE}`);
+  console.log(`Recommended drain backend: ${cfg.siftcoder.memory.drainBackend}`);
+  console.log(`Recommended embedder:     ${cfg.siftcoder.memory.embedder}`);
+  console.log('\nNext: run `siftcoder start` (or restart Claude Code).');
+  rl.close();
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  await run();
+}

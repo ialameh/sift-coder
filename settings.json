@@ -1,0 +1,44 @@
+{
+  "siftcoder": {
+    "namespace": "v3",
+    "memory": {
+      "drainBackend": "auto",
+      "drainBackendCascade": ["ollama", "anthropic", "sampling"],
+      "embedder": "auto",
+      "embedderCascade": ["ollama", "cdg", "deterministic"],
+      "decay": {
+        "tauMs": 604800000,
+        "halfLifeDays": 7
+      },
+      "retrieval": {
+        "rrfK": 60,
+        "topK": 10,
+        "candidateK": 50
+      },
+      "consolidator": {
+        "tickMs": 30000,
+        "batchSize": 16
+      },
+      "summarizer": {
+        "modelHaiku": "claude-haiku-4-5-20251001",
+        "modelSonnet": "claude-sonnet-4-6",
+        "confidenceThreshold": 0.6
+      }
+    },
+    "hooks": {
+      "captureObservationBudgetMs": 250,
+      "injectMemoriesBudgetMs": 1500,
+      "boundaryEnforcerTimeoutMs": 5000,
+      "autoCheckpoint": {
+        "enabled": false,
+        "everyEdits": 25,
+        "everyMs": 1800000
+      }
+    },
+    "ollama": {
+      "endpoint": "http://localhost:11434",
+      "embedModel": "nomic-embed-text",
+      "summarizeModel": "llama3.2:3b"
+    }
+  }
+}

@@ -1,0 +1,15 @@
+src/
+tests/
+docs/
+coverage/
+.github/
+.vscode/
+.idea/
+*.test.ts
+*.tsbuildinfo
+vitest.config.ts
+tsconfig.json
+.eslintrc.json
+.prettierrc.json
+ARCHITECTURE.md
+CONTRIBUTING.md

@@ -1,0 +1,70 @@
+name: Feature request
+description: Suggest a new skill, command, agent, or capability
+title: "[feature] "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion. SiftCoder is opinionated — every skill must add value over native Claude Code.
+        Please show what's missing today, not just "it would be nice to have X".
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of capability?
+      options:
+        - New skill (workflow contract)
+        - New slash command (thin wrapper)
+        - New agent (subagent with a contract)
+        - New hook (memory / safety / observability)
+        - MCP tool
+        - Salesforce-domain rule
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What workflow is currently slow, painful, or impossible?
+      placeholder: When I'm doing X, today I have to manually do Y because no skill covers it
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: How would the new skill / command / agent solve it?
+    validations:
+      required: true
+
+  - type: textarea
+    id: value
+    attributes:
+      label: Value over native Claude Code
+      description: |
+        SiftCoder skills must beat plain Claude Code. Which of:
+        workflow ordering / subagent dispatch plan / output shape / anti-patterns / domain rules /
+        memory integration / tool-permission scope — does this add?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What did you try / consider that didn't fit?
+
+  - type: checkboxes
+    id: confirms
+    attributes:
+      label: Confirmations
+      options:
+        - label: I checked existing skills (`skills/*/SKILL.md`) and commands (`commands/*.md`)
+          required: true
+        - label: This is genuinely additive, not a duplicate of native Claude Code capability
+          required: true
