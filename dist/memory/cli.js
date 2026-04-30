@@ -149,8 +149,15 @@ async function main() {
 async function runLocal(args, dbPath) {
     const { Storage } = await import('./storage/storage.js');
     const { DeterministicEmbedder } = await import('./embedder.js');
-    const Database = (await import('better-sqlite3')).default;
-    const db = new Database(dbPath);
+    let db;
+    try {
+        const Database = (await import('better-sqlite3')).default;
+        db = new Database(dbPath);
+    }
+    catch {
+        const { openWasmDatabase } = await import('./storage/wasm-db.js');
+        db = await openWasmDatabase(dbPath);
+    }
     const storage = new Storage(db);
     const embedder = new DeterministicEmbedder(384);
     if (args.command === 'mine-golden') {

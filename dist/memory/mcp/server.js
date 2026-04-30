@@ -66,7 +66,13 @@ async function main() {
         storage = new Storage(new mod.default(paths.db));
     }
     catch {
-        storage = null;
+        try {
+            const wasm = await import('../storage/wasm-db.js');
+            storage = new Storage(await wasm.openWasmDatabase(paths.db));
+        }
+        catch {
+            storage = null;
+        }
     }
     const bridge = new StdioBridge();
     const sampling = new McpSamplingClient(bridge);
