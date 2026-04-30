@@ -12,6 +12,7 @@
  *   watch [--limit=N]                         Stream the events table; pretty-printed.
  *   savings [--json]                          Token + context savings report (JSON or pretty).
  *   ab [--turns=N] [--k=K] [--json]           A/B replay: full-history vs memory-backed token cost.
+ *   web [--open]                              Print the local web client URL with auth token; --open launches the browser.
  *   replay --session=&lt;id&gt; [--cwd=P]            Replay a Claude Code transcript .jsonl into memory.
  *           [--limit=N] [--dry-run] [--json]   Captures tool_use/tool_result pairs as historical events.
  *   transcripts [--cwd=P] [--limit=N]          List recent CC transcripts; same encoding as --cwd above.
@@ -86,6 +87,9 @@ async function main() {
         case 'savings':
         case 'ab':
             await runLocal(args, paths.db);
+            return;
+        case 'web':
+            await runWeb(args, paths.root);
             return;
         case 'note': {
             const text = args.positional.join(' ').trim();
@@ -273,6 +277,38 @@ async function runReplay(args, socketPath) {
     }
     else {
         process.stdout.write(`replay: ${path}\n  parsed=${frames.length}  sent=${sent}  errors=${errors}\n`);
+    }
+    process.exit(0);
+}
+async function runWeb(args, workspaceRoot) {
+    const { existsSync, readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const { homedir } = await import('node:os');
+    const { spawn } = await import('node:child_process');
+    const portFile = join(workspaceRoot, 'http.port');
+    if (!existsSync(portFile)) {
+        process.stderr.write('web: HTTP bridge is not running for this workspace.\n' +
+            '  enable it: stop the daemon, then re-spawn with SIFTCODER_HTTP=1 in env.\n' +
+            '  example:\n' +
+            '    kill $(cat ~/.siftcoder/workspaces/<key>/run.pid)\n' +
+            '    SIFTCODER_HTTP=1 node ${CLAUDE_PLUGIN_ROOT}/dist/memory/daemon/index.js &\n');
+        process.exit(2);
+    }
+    const port = readFileSync(portFile, 'utf8').trim();
+    const tokenPath = join(homedir(), '.siftcoder', 'auth.token');
+    if (!existsSync(tokenPath)) {
+        process.stderr.write('web: auth token not found at ' + tokenPath + '\n');
+        process.exit(2);
+    }
+    const token = readFileSync(tokenPath, 'utf8').trim();
+    const url = `http://127.0.0.1:${port}/?token=${encodeURIComponent(token)}`;
+    if (args.flags['open'] === 'true') {
+        const cmd = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open';
+        spawn(cmd, [url], { detached: true, stdio: 'ignore' }).unref();
+        process.stdout.write(`opened ${url}\n`);
+    }
+    else {
+        process.stdout.write(`${url}\n`);
     }
     process.exit(0);
 }
