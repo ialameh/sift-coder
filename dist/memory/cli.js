@@ -10,6 +10,7 @@
  *   eval [--k=N] [--rerank]                   Self-recall eval over mined golden set.
  *   mine-golden [--max=N]                     Print the mined golden set as JSON.
  *   watch [--limit=N]                         Stream the events table; pretty-printed.
+ *   savings [--json]                          Token + context savings report (JSON or pretty).
  *   note <text...> [--source=X] [--session=X] Capture a free-text note. Source defaults to "cli".
  *   ingest [--file=P|--stdin] [--tool=X]      Capture a typed event from a file or stdin.
  *                                             [--source=X] [--session=X]
@@ -78,6 +79,7 @@ async function main() {
         case 'eval':
         case 'mine-golden':
         case 'watch':
+        case 'savings':
             await runLocal(args, paths.db);
             return;
         case 'note': {
@@ -163,6 +165,18 @@ async function runLocal(args, dbPath) {
         const { renderWatchSnapshot } = await import('./tui.js');
         const limit = parseIntFlag(args.flags['limit'], 20);
         process.stdout.write(renderWatchSnapshot(storage, { limit }));
+        process.exit(0);
+    }
+    if (args.command === 'savings') {
+        const { computeSavings, renderSavings } = await import('./metrics.js');
+        const report = computeSavings(storage);
+        report.workspace.dbPath = dbPath;
+        if (args.flags['json'] === 'true') {
+            process.stdout.write(JSON.stringify({ ok: true, data: report }) + '\n');
+        }
+        else {
+            process.stdout.write(renderSavings(report));
+        }
         process.exit(0);
     }
 }

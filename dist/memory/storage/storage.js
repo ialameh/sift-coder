@@ -3,7 +3,7 @@
  * Capture path is synchronous and crash-safe; embeddings + FTS rank are layered on top.
  */
 import { createHash } from 'node:crypto';
-import { CORE_DDL, VEC_DDL } from './schema.js';
+import { CORE_DDL, MIGRATIONS, VEC_DDL } from './schema.js';
 export function hashInput(payload) {
     const json = JSON.stringify(payload);
     return createHash('sha256').update(json).digest('hex');
@@ -14,6 +14,12 @@ export class Storage {
     constructor(db, opts = {}) {
         this.db = db;
         db.exec(CORE_DDL);
+        for (const stmt of MIGRATIONS) {
+            try {
+                db.exec(stmt);
+            }
+            catch { /* migration already applied */ }
+        }
         let vec = false;
         if (opts.vecExtensionPath && db.loadExtension) {
             try {
@@ -35,8 +41,8 @@ export class Storage {
     recordEvent(input) {
         const inputHash = hashInput(input.payload);
         const result = this.db
-            .prepare('INSERT INTO events (ts, session_id, tool, input_hash, payload_json) VALUES (?, ?, ?, ?, ?)')
-            .run(input.ts, input.sessionId, input.tool, inputHash, JSON.stringify(input.payload));
+            .prepare('INSERT INTO events (ts, session_id, tool, input_hash, payload_json, tokens_est) VALUES (?, ?, ?, ?, ?, ?)')
+            .run(input.ts, input.sessionId, input.tool, inputHash, JSON.stringify(input.payload), input.tokensEst ?? 0);
         return Number(result.lastInsertRowid);
     }
     getEvent(id) {

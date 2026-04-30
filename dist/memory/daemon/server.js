@@ -9,6 +9,7 @@ import { hashInput } from '../storage/storage.js';
 import { redact } from '../privacy.js';
 import { hybridSearch } from '../retrieval.js';
 import { RegexSymbolExtractor, looksLikeCodePath } from '../symbols.js';
+import { approximate } from '../tokens.js';
 const defaultExtractor = new RegexSymbolExtractor();
 function extractCodePayload(payload) {
     if (!payload || typeof payload !== 'object')
@@ -73,13 +74,15 @@ export function buildHandler(deps) {
                         inputHash,
                         payload: stamped,
                     });
+                    const tokensEst = approximate(JSON.stringify(stamped));
                     const id = deps.storage.recordEvent({
                         ts,
                         sessionId: req.sessionId,
                         tool: req.tool,
                         payload: stamped,
+                        tokensEst,
                     });
-                    return { ok: true, data: { id } };
+                    return { ok: true, data: { id, tokensEst } };
                 }
                 case 'search': {
                     const k = req.k ?? 5;

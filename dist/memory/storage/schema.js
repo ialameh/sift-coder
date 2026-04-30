@@ -22,7 +22,8 @@ CREATE TABLE IF NOT EXISTS events (
   tool         TEXT NOT NULL,
   input_hash   TEXT NOT NULL,
   payload_json TEXT NOT NULL,
-  status       TEXT NOT NULL DEFAULT 'raw'
+  status       TEXT NOT NULL DEFAULT 'raw',
+  tokens_est   INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id, ts);
 CREATE INDEX IF NOT EXISTS idx_events_status  ON events(status);
@@ -92,6 +93,13 @@ CREATE TABLE IF NOT EXISTS summary_cache (
   created_at  INTEGER NOT NULL
 );
 `;
+/**
+ * Idempotent migrations applied after CORE_DDL. Each statement is wrapped in try/catch by Storage
+ * so re-runs are safe on existing databases.
+ */
+export const MIGRATIONS = [
+    `ALTER TABLE events ADD COLUMN tokens_est INTEGER NOT NULL DEFAULT 0`,
+];
 export const VEC_DDL = `
 CREATE VIRTUAL TABLE IF NOT EXISTS summaries_vec USING vec0(
   embedding float[384]

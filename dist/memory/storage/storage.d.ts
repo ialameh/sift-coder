@@ -35,6 +35,7 @@ export interface CaptureInput {
     sessionId: string;
     tool: string;
     payload: unknown;
+    tokensEst?: number;
 }
 export interface SearchHit {
     id: number;
