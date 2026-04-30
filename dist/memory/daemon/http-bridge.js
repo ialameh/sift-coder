@@ -22,6 +22,7 @@ import { homedir } from 'node:os';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { route } from '../web/router.js';
+import { initialPort, nextCandidate, MAX_RETRIES } from '../web/port.js';
 const TOKEN_PATH = join(homedir(), '.siftcoder', 'auth.token');
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const STATIC_DIR = join(__dirname, '..', 'web', 'static');
@@ -94,12 +95,38 @@ export function startHttpBridge(deps) {
         res.writeHead(out.status, out.headers);
         res.end(out.body);
     });
-    server.listen(deps.port ?? 0, '127.0.0.1', () => {
+    const choice = initialPort({
+        workspaceKey: deps.workspaceKey,
+        override: deps.port ?? process.env['SIFTCODER_HTTP_PORT'],
+    });
+    let candidate = choice.port;
+    let retries = 0;
+    function bind(port) {
+        server.listen(port, '127.0.0.1');
+    }
+    server.on('listening', () => {
         const addr = server.address();
         if (addr && typeof addr === 'object') {
             writeFileSync(join(deps.workspaceRoot, 'http.port'), String(addr.port));
         }
     });
+    server.on('error', (err) => {
+        if (err.code !== 'EADDRINUSE')
+            return;
+        if (choice.source === 'override') {
+            // User pinned a specific port and it's taken. Fall back to OS-assigned to keep working.
+            bind(0);
+            return;
+        }
+        if (retries >= MAX_RETRIES) {
+            bind(0);
+            return;
+        }
+        retries++;
+        candidate = nextCandidate(candidate);
+        bind(candidate);
+    });
+    bind(candidate);
     return server;
 }
 /* c8 ignore stop */
