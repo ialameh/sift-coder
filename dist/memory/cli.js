@@ -12,6 +12,9 @@
  *   watch [--limit=N]                         Stream the events table; pretty-printed.
  *   savings [--json]                          Token + context savings report (JSON or pretty).
  *   ab [--turns=N] [--k=K] [--json]           A/B replay: full-history vs memory-backed token cost.
+ *   replay --session=&lt;id&gt; [--cwd=P]            Replay a Claude Code transcript .jsonl into memory.
+ *           [--limit=N] [--dry-run] [--json]   Captures tool_use/tool_result pairs as historical events.
+ *   transcripts [--cwd=P] [--limit=N]          List recent CC transcripts; same encoding as --cwd above.
  *   note <text...> [--source=X] [--session=X] Capture a free-text note. Source defaults to "cli".
  *   ingest [--file=P|--stdin] [--tool=X]      Capture a typed event from a file or stdin.
  *                                             [--source=X] [--session=X]
@@ -100,6 +103,10 @@ async function main() {
             };
             break;
         }
+        case 'replay':
+        case 'transcripts':
+            await runReplay(args, paths.socket);
+            return;
         case 'ingest': {
             const filePath = args.flags['file'];
             const useStdin = args.flags['stdin'] === 'true' || !filePath;
@@ -200,6 +207,67 @@ function parseIntFlag(v, def) {
         return def;
     const n = parseInt(v, 10);
     return Number.isFinite(n) ? n : def;
+}
+async function runReplay(args, socketPath) {
+    const { parseTranscript, locateTranscript, listTranscripts, readTranscript } = await import('./replay.js');
+    if (args.command === 'transcripts') {
+        const cwd = args.flags['cwd'];
+        const limit = parseIntFlag(args.flags['limit'], 20);
+        const list = listTranscripts({ cwd, limit });
+        process.stdout.write(JSON.stringify({ ok: true, data: { transcripts: list } }) + '\n');
+        process.exit(0);
+    }
+    const sessionId = args.flags['session'];
+    if (!sessionId) {
+        process.stderr.write('replay: --session=<id> required\n');
+        process.exit(2);
+        return;
+    }
+    const cwd = args.flags['cwd'];
+    const path = locateTranscript(sessionId, cwd);
+    if (!path) {
+        process.stderr.write(`replay: transcript not found for session ${sessionId}\n`);
+        process.exit(2);
+        return;
+    }
+    const limit = parseIntFlag(args.flags['limit'], 0);
+    const content = readTranscript(path);
+    const frames = parseTranscript(content, sessionId, { limit: limit > 0 ? limit : undefined });
+    if (args.flags['dry-run'] === 'true') {
+        process.stdout.write(JSON.stringify({ ok: true, data: { frames: frames.length, sample: frames.slice(0, 3) } }) + '\n');
+        process.exit(0);
+    }
+    const { MemoryClient } = await import('./client.js');
+    const client = new MemoryClient({ socketPath, timeoutMs: 5000 });
+    let sent = 0;
+    let errors = 0;
+    for (const f of frames) {
+        try {
+            const res = await client.send({
+                kind: 'capture',
+                sessionId: f.sessionId,
+                tool: f.tool,
+                payload: f.payload,
+                ts: f.ts,
+                source: f.source,
+            });
+            if (res.ok)
+                sent++;
+            else
+                errors++;
+        }
+        catch {
+            errors++;
+        }
+    }
+    const summary = { transcript: path, parsed: frames.length, sent, errors };
+    if (args.flags['json'] === 'true') {
+        process.stdout.write(JSON.stringify({ ok: true, data: summary }) + '\n');
+    }
+    else {
+        process.stdout.write(`replay: ${path}\n  parsed=${frames.length}  sent=${sent}  errors=${errors}\n`);
+    }
+    process.exit(0);
 }
 async function readContent(filePath, useStdin) {
     if (filePath) {
