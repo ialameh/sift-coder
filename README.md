@@ -95,12 +95,14 @@ Comprehensive documentation is available in the [`documentation/`](./documentati
 - **[Advanced Topics](./documentation/10-advanced-topics/)** - Customization and expert-level techniques
 - **[Glossary](./documentation/11-glossary/)** - Terms and concepts
 - **[Appendices](./documentation/12-appendices/)** - Reference tables and cheatsheets
+- **[Memory System](./documentation/13-memory/)** - Persistent per-workspace memory: capture, drain, hybrid retrieval, provenance, web dashboard
 
 **Quick Links:**
 - 📚 [Full Documentation](./documentation/README.md)
 - 🚀 [Quick Start Guide](./documentation/01-getting-started/quick-start.md)
 - 🌳 [Command Decision Tree](./documentation/07-decision-guides/choosing-the-right-command.md)
 - 📋 [Command Cheatsheet](./documentation/12-appendices/index.md#command-cheatsheet)
+- 🧠 [Memory System Guide](./documentation/13-memory/index.md)
 
 ---
 
@@ -151,6 +153,7 @@ Investigate First → Understand the Problem → Define Boundaries → Fix Safel
 - **Autonomous Workflows**: Plan → Code → Review → Fix cycles that run automatically
 - **Smart Boundaries**: Protect files from accidental modification with scope management
 - **Session Persistence**: Checkpoints, handoffs, and cross-session memory
+- **Persistent Memory**: Per-workspace SQLite store w/ hybrid retrieval (BM25 + dense + RRF + decay), provenance graph, and a local-first Ollama backend. ~99% token reduction at 200-turn scale. See [Memory System Guide](./documentation/13-memory/index.md).
 - **Self-Healing Loops**: Automatically fix build, test, and lint failures
 
 ### Specialized Domains
@@ -1401,5 +1404,16 @@ MIT License - see [LICENSE](LICENSE) for details.
 /siftcoder:schema erd                # Generate entity diagrams
 /siftcoder:sf-deploy validate        # Validate deployment
 ```
+
+### Memory Commands
+```bash
+/siftcoder:mem-setup                 # First-time setup (orchestrator, narrated)
+/siftcoder:mem-check                 # Health check, auto-spawn daemon
+/siftcoder:mem-status                # Capture / drain / savings report
+/siftcoder:mem-backfill --all        # Import past Claude Code transcripts
+/siftcoder:mem-drain batch=64        # Summarize raw events
+/siftcoder:mem-web                   # Open browser dashboard
+```
+Full guide: [Memory System](./documentation/13-memory/index.md). Recommended: install Ollama (`brew install ollama && ollama pull llama3.2:3b && ollama pull nomic-embed-text`) for free, private, local summarization + embedding.
 
 ---
