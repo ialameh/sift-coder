@@ -11,6 +11,7 @@
  *   mine-golden [--max=N]                     Print the mined golden set as JSON.
  *   watch [--limit=N]                         Stream the events table; pretty-printed.
  *   savings [--json]                          Token + context savings report (JSON or pretty).
+ *   ab [--turns=N] [--k=K] [--json]           A/B replay: full-history vs memory-backed token cost.
  *   note <text...> [--source=X] [--session=X] Capture a free-text note. Source defaults to "cli".
  *   ingest [--file=P|--stdin] [--tool=X]      Capture a typed event from a file or stdin.
  *                                             [--source=X] [--session=X]
@@ -80,6 +81,7 @@ async function main() {
         case 'mine-golden':
         case 'watch':
         case 'savings':
+        case 'ab':
             await runLocal(args, paths.db);
             return;
         case 'note': {
@@ -165,6 +167,19 @@ async function runLocal(args, dbPath) {
         const { renderWatchSnapshot } = await import('./tui.js');
         const limit = parseIntFlag(args.flags['limit'], 20);
         process.stdout.write(renderWatchSnapshot(storage, { limit }));
+        process.exit(0);
+    }
+    if (args.command === 'ab') {
+        const { AbHarness, renderAb } = await import('./ab.js');
+        const turns = parseIntFlag(args.flags['turns'], 100);
+        const k = parseIntFlag(args.flags['k'], 5);
+        const r = await new AbHarness(storage, embedder).run({ turns, memoryK: k });
+        if (args.flags['json'] === 'true') {
+            process.stdout.write(JSON.stringify({ ok: true, data: r }) + '\n');
+        }
+        else {
+            process.stdout.write(renderAb(r));
+        }
         process.exit(0);
     }
     if (args.command === 'savings') {

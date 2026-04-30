@@ -18,6 +18,7 @@ export interface EventRow {
     inputHash: string;
     payloadJson: string;
     status: string;
+    tokensEst: number;
 }
 export interface SummaryRow {
     id: number;
