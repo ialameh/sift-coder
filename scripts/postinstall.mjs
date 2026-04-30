@@ -68,4 +68,18 @@ copyStaticWebAssets();
 
 ensureBinding();
 
+// Ensure WASM fallback dep is present (it's a runtime dep but the plugin cache may have been
+// installed from a prior package.json that did not list it). Best-effort install — failure is
+// non-fatal because we still have native better-sqlite3 in most cases.
+const wasmDepDir = join(root, 'node_modules/node-sqlite3-wasm');
+if (!existsSync(wasmDepDir)) {
+  console.log('[siftcoder postinstall] node-sqlite3-wasm missing; installing fallback dep...');
+  const r = tryQuiet('npm', ['install', 'node-sqlite3-wasm@^0.8.56', '--no-save', '--no-audit', '--no-fund']);
+  if (r.status === 0 && existsSync(wasmDepDir)) {
+    console.log('[siftcoder postinstall] WASM fallback dep installed');
+  } else {
+    console.warn('[siftcoder postinstall] could not install node-sqlite3-wasm; WASM fallback will be unavailable until npm install runs');
+  }
+}
+
 process.exit(0);

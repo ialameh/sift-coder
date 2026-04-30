@@ -3,8 +3,19 @@
  * is not installed.
  */
 export async function openWasmDatabase(path) {
-    const raw = await import('node-sqlite3-wasm');
+    let raw;
+    try {
+        raw = await import('node-sqlite3-wasm');
+    }
+    catch (e) {
+        /* c8 ignore next 5 -- Cache plugin install missing optional dep; bubble up actionable msg */
+        throw new Error('WASM SQLite fallback unavailable: node-sqlite3-wasm not installed. ' +
+            'Run /siftcoder:mem-check (or `npm install` in the plugin dir) to repair, ' +
+            `then retry. Underlying: ${e.message}`);
+    }
+    /* c8 ignore next -- ESM-CJS interop fallback: node-sqlite3-wasm currently exposes Database as named, but bundlers may move it under default */
     const Ctor = raw.Database ?? raw.default?.Database;
+    /* c8 ignore next 3 -- defensive guard for module-shape drift in node-sqlite3-wasm */
     if (typeof Ctor !== 'function') {
         throw new Error('node-sqlite3-wasm: Database constructor not found in module exports');
     }

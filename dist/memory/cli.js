@@ -86,7 +86,7 @@ async function main() {
         case 'watch':
         case 'savings':
         case 'ab':
-            await runLocal(args, paths.db);
+            await runLocal(args, paths.db, paths.key, cwd);
             return;
         case 'web':
             await runWeb(args, paths.root);
@@ -150,9 +150,28 @@ async function main() {
         process.exit(1);
     }
 }
-async function runLocal(args, dbPath) {
+async function runLocal(args, dbPath, workspaceKey, cwd) {
     const { Storage } = await import('./storage/storage.js');
     const { DeterministicEmbedder } = await import('./embedder.js');
+    const { existsSync } = await import('node:fs');
+    if (!existsSync(dbPath)) {
+        const json = args.flags['json'] === 'true';
+        const msg = {
+            ok: false,
+            error: 'no-data',
+            data: {
+                workspaceKey,
+                cwd,
+                dbPath,
+                hint: 'Memory has not captured anything for this workspace yet. Open Claude Code in this directory or run /siftcoder:memory:backfill.',
+            },
+        };
+        if (json)
+            process.stdout.write(JSON.stringify(msg) + '\n');
+        else
+            process.stderr.write(`siftcoder-mem cli: no DB for workspace ${workspaceKey} (${cwd}).\n  Hint: ${msg.data.hint}\n`);
+        process.exit(json ? 0 : 4);
+    }
     let db;
     try {
         const Database = (await import('better-sqlite3')).default;
@@ -164,6 +183,7 @@ async function runLocal(args, dbPath) {
     }
     const storage = new Storage(db);
     const embedder = new DeterministicEmbedder(384);
+    const banner = `workspace: ${workspaceKey}  (${cwd})\n`;
     if (args.command === 'mine-golden') {
         const { mineGolden } = await import('./eval-mine.js');
         const items = mineGolden(storage, { maxItems: parseIntFlag(args.flags['max'], 200) });
@@ -193,10 +213,10 @@ async function runLocal(args, dbPath) {
         const k = parseIntFlag(args.flags['k'], 5);
         const r = await new AbHarness(storage, embedder).run({ turns, memoryK: k });
         if (args.flags['json'] === 'true') {
-            process.stdout.write(JSON.stringify({ ok: true, data: r }) + '\n');
+            process.stdout.write(JSON.stringify({ ok: true, data: { workspaceKey, cwd, ...r } }) + '\n');
         }
         else {
-            process.stdout.write(renderAb(r));
+            process.stdout.write(banner + renderAb(r));
         }
         process.exit(0);
     }
@@ -205,10 +225,10 @@ async function runLocal(args, dbPath) {
         const report = computeSavings(storage);
         report.workspace.dbPath = dbPath;
         if (args.flags['json'] === 'true') {
-            process.stdout.write(JSON.stringify({ ok: true, data: report }) + '\n');
+            process.stdout.write(JSON.stringify({ ok: true, data: { workspaceKey, cwd, ...report } }) + '\n');
         }
         else {
-            process.stdout.write(renderSavings(report));
+            process.stdout.write(banner + renderSavings(report));
         }
         process.exit(0);
     }

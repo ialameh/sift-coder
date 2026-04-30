@@ -1,3 +1,4 @@
+export declare function sanitizeFtsQuery(q: string): string;
 export interface DBHandle {
     exec(sql: string): unknown;
     prepare(sql: string): {
