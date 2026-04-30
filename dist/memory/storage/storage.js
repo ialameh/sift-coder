@@ -47,7 +47,7 @@ export class Storage {
     }
     getEvent(id) {
         const row = this.db
-            .prepare('SELECT id, ts, session_id, tool, input_hash, payload_json, status FROM events WHERE id = ?')
+            .prepare('SELECT id, ts, session_id, tool, input_hash, payload_json, status, tokens_est FROM events WHERE id = ?')
             .get(id);
         if (!row)
             return null;
@@ -59,6 +59,7 @@ export class Storage {
             inputHash: row['input_hash'],
             payloadJson: row['payload_json'],
             status: row['status'],
+            tokensEst: row['tokens_est'] ?? 0,
         };
     }
     markEventStatus(id, status) {
@@ -66,7 +67,7 @@ export class Storage {
     }
     pendingEvents(limit = 32) {
         const rows = this.db
-            .prepare("SELECT id, ts, session_id, tool, input_hash, payload_json, status FROM events WHERE status = 'raw' ORDER BY id ASC LIMIT ?")
+            .prepare("SELECT id, ts, session_id, tool, input_hash, payload_json, status, tokens_est FROM events WHERE status = 'raw' ORDER BY id ASC LIMIT ?")
             .all(limit);
         return rows.map(r => ({
             id: r['id'],
@@ -76,6 +77,7 @@ export class Storage {
             inputHash: r['input_hash'],
             payloadJson: r['payload_json'],
             status: r['status'],
+            tokensEst: r['tokens_est'] ?? 0,
         }));
     }
     recordSummary(s) {
