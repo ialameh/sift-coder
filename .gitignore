@@ -37,6 +37,10 @@ website-content-strategy.md
 # Marketing materials (internal use)
 marketing/
 
+# Test artifacts
+coverage/
+test-results.json
+
 # System files
 .DS_Store
 *.swp
