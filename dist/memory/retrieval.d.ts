@@ -23,6 +23,7 @@ export interface HybridOptions {
     vectorWeight?: number;
     rerank?: boolean;
     asyncReranker?: AsyncReranker | null;
+    boostFn?: ((hit: HybridHit) => number) | null;
 }
 export interface HybridHit {
     id: number;

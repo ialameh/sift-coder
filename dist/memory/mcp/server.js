@@ -13,6 +13,7 @@ import { McpSamplingClient } from './sampling-client.js';
 import { Summarizer } from '../daemon/summarizer.js';
 import { DeterministicEmbedder } from '../embedder.js';
 import { Storage } from '../storage/storage.js';
+import { ProvenanceStore } from '../provenance.js';
 class StdioBridge {
     nextId = 1_000_000;
     pending = new Map();
@@ -71,7 +72,8 @@ async function main() {
     const sampling = new McpSamplingClient(bridge);
     const summarizer = storage ? new Summarizer(storage, sampling) : null;
     const embedder = new DeterministicEmbedder(384);
-    bridge.start(async (req) => dispatch(req, { client: memClient, storage, summarizer, embedder, drainBatch: 4 }));
+    const provenance = storage ? new ProvenanceStore(storage) : null;
+    bridge.start(async (req) => dispatch(req, { client: memClient, storage, summarizer, embedder, provenance, drainBatch: 4 }));
 }
 main().catch(err => {
     process.stderr.write(`siftcoder-mem mcp: ${err?.message ?? err}\n`);

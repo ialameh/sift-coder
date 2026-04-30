@@ -18,6 +18,7 @@ import { FileSink, Logger } from '../logger.js';
 import { buildHandler } from './server.js';
 import { startHttpBridge } from './http-bridge.js';
 import { CdgSymbolExtractor, AsyncFromSync } from '../cdg-adapter.js';
+import { CdgEmbedder } from '../cdg-embedder.js';
 import { RegexSymbolExtractor } from '../symbols.js';
 const IDLE_SHUTDOWN_MS = 30 * 60 * 1000;
 async function main() {
@@ -50,7 +51,11 @@ async function main() {
     const sink = new FileSink(paths.log);
     const logger = new Logger('siftcoder-mem', sink);
     logger.info('daemon booting', { pid: process.pid, key: paths.key });
-    const embedder = new DeterministicEmbedder(384);
+    const localEmbedder = new DeterministicEmbedder(384);
+    const cdgEmbedder = CdgEmbedder.fromEnv(process.env, localEmbedder);
+    const embedder = cdgEmbedder ?? localEmbedder;
+    if (cdgEmbedder)
+        logger.info('cdg embedder enabled', {});
     const consolidator = new Consolidator(storage);
     consolidator.start();
     const regexFallback = new AsyncFromSync(new RegexSymbolExtractor());

@@ -60,6 +60,22 @@ CREATE TABLE IF NOT EXISTS summary_embeddings (
   vec         BLOB NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS provenance_edges (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts          INTEGER NOT NULL,
+  from_kind   TEXT NOT NULL,
+  from_id     TEXT NOT NULL,
+  to_kind     TEXT NOT NULL,
+  to_id       TEXT NOT NULL,
+  edge_type   TEXT NOT NULL,
+  confidence  REAL NOT NULL DEFAULT 1.0,
+  source      TEXT NOT NULL DEFAULT 'siftcoder',
+  meta_json   TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_prov_from ON provenance_edges(from_kind, from_id);
+CREATE INDEX IF NOT EXISTS idx_prov_to   ON provenance_edges(to_kind, to_id);
+CREATE INDEX IF NOT EXISTS idx_prov_type ON provenance_edges(edge_type);
+
 CREATE TABLE IF NOT EXISTS summary_supersedes (
   newer_id    INTEGER NOT NULL REFERENCES summaries(id) ON DELETE CASCADE,
   older_id    INTEGER NOT NULL REFERENCES summaries(id) ON DELETE CASCADE,

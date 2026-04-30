@@ -80,6 +80,10 @@ export async function hybridSearch(storage, embedder, query, now, opts = {}) {
             recency,
         });
     }
+    if (opts.boostFn) {
+        for (const h of hits)
+            h.score = h.score * opts.boostFn(h);
+    }
     hits.sort((a, b) => b.score - a.score);
     const pool = hits.slice(0, cfg.candidatePool);
     if (opts.asyncReranker) {
