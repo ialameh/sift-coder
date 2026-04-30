@@ -8,14 +8,26 @@ allowed-tools: Bash, mcp__plugin_siftcoder_siftcoder-memory__mem_drain
 
 Calls the `mem_drain` MCP tool to convert raw captured events into searchable summaries.
 
-## Reality check (verified 2026-04-30)
+## Backend options (verified 2026-04-30)
 
-**Drain requires `ANTHROPIC_API_KEY` today.** The original design was: drain runs through Claude Code's MCP `sampling/createMessage`, host-billed, no plugin key. Verified empirically: **Claude Code CLI 2.1.x does not implement `sampling/createMessage` (JSON-RPC -32601 "Method not found")**. Until Claude Code ships sampling support, drain has two modes:
+**Recommended: local Ollama (free, private, no key).** Original design was MCP host sampling — host-billed, no plugin key. Empirically: **Claude Code CLI 2.1.x does not implement `sampling/createMessage` (JSON-RPC -32601 "Method not found")**. Until Claude Code ships sampling, three backends:
 
-| Mode | Behavior | Setup |
-|---|---|---|
-| Default | Drain returns errors w/ `firstError: "Method not found"`. Raw events stay queryable via `mem_search` (BM25 + dense over payload text). No summaries, no provenance distillation. | None |
-| Fallback | Drain runs against direct Anthropic API. Cost flows through your API key. | `export SIFTCODER_DRAIN_FALLBACK=1` and `export ANTHROPIC_API_KEY=...`, then restart Claude Code |
+| Backend | Cost | Setup | Best for |
+|---|---|---|---|
+| **Ollama** (local) | Free | `brew install ollama && ollama pull llama3.2:3b` then start Ollama (`ollama serve` or app). Auto-detected. | Default. Private. ~1.5s/event on M1. |
+| Anthropic direct | Pay-per-token | `export SIFTCODER_DRAIN_BACKEND=anthropic && export ANTHROPIC_API_KEY=sk-...` then restart Claude Code | High-volume, want top-tier model |
+| MCP sampling | Host-billed | Nothing. Activates automatically when Claude Code ships sampling. | Future state |
+| Raw-only | n/a | Don't drain at all. `mem_search` still works on captured payloads. | Acceptable when summaries aren't needed |
+
+Selection priority (auto):
+1. `SIFTCODER_DRAIN_BACKEND` env (`ollama` / `anthropic` / `mcp`) — explicit override.
+2. Otherwise: Ollama if reachable at `http://localhost:11434`.
+3. Otherwise: Anthropic if `ANTHROPIC_API_KEY` set.
+4. Otherwise: MCP host sampling (currently fails on Claude Code 2.1.x).
+
+Optional Ollama tuning:
+- `SIFTCODER_OLLAMA_MODEL=qwen2.5:3b` (default `llama3.2:3b`)
+- `SIFTCODER_OLLAMA_HOST=http://192.168.1.10:11434` (remote daemon)
 
 ## When to use
 
@@ -45,9 +57,11 @@ Surface result:
 ```
 
 If `errors > 0` AND `firstError` contains `"Method not found"`:
-> **Drain blocked: Claude Code does not yet implement MCP sampling. To proceed, set `SIFTCODER_DRAIN_FALLBACK=1` + `ANTHROPIC_API_KEY` in env, then restart Claude Code. Or stay raw-only — `mem_search` still works against captured payloads.**
+> **Drain blocked: Claude Code does not yet implement MCP sampling. Three options: (a) install Ollama (`brew install ollama && ollama pull llama3.2:3b && ollama serve`) — drain auto-detects it, free + private. (b) Set `SIFTCODER_DRAIN_BACKEND=anthropic` + `ANTHROPIC_API_KEY` and restart Claude Code. (c) Stay raw-only — `mem_search` still works against captured payloads.**
 
-If `errors > 0` AND `firstError` is something else, surface exact message and stop — different host failure mode, needs investigation.
+If `errors > 0` AND `firstError` contains `"ollama api"` or `"ECONNREFUSED"`, tell the user **Ollama daemon not reachable. Run `ollama serve` (or open the Ollama app), then re-run drain.**
+
+If `errors > 0` AND `firstError` is something else, surface exact message and stop — different failure mode, needs investigation.
 
 If `pending > 0`, ask: **"84 events still pending. Drain another batch?"** and offer to call again.
 
@@ -63,18 +77,27 @@ node $PLUGIN/dist/memory/cli.js savings | grep -E "summarized|coverage|spend"
 ## Tips
 
 ```
-TYPICAL DRAIN FLOW (fallback mode)
+TYPICAL DRAIN FLOW (Ollama, recommended)
 
-  export SIFTCODER_DRAIN_FALLBACK=1
-  export ANTHROPIC_API_KEY=sk-...
-  # restart Claude Code so MCP server picks up env
+  brew install ollama
+  ollama pull llama3.2:3b      ← 2GB, ~50 tok/s on M1
+  ollama serve                  ← or open the Ollama app
+  # restart Claude Code so MCP server picks up Ollama
 
   /siftcoder:memory:drain
   /siftcoder:memory:status
   use mem_search to find <topic>
 
-WITHOUT KEY (raw-only)
+ANTHROPIC API (paid path)
 
-  /siftcoder:memory:drain     ← will fail w/ "Method not found"
-  use mem_search to find X    ← still works against raw events
+  export SIFTCODER_DRAIN_BACKEND=anthropic
+  export ANTHROPIC_API_KEY=sk-...
+  # restart Claude Code
+
+  /siftcoder:memory:drain
+
+WITHOUT BACKEND (raw-only)
+
+  /siftcoder:memory:drain     ← fails w/ "Method not found"
+  use mem_search to find X    ← still works on raw events
 ```
