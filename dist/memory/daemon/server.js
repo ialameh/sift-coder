@@ -10,23 +10,38 @@ import { redact } from '../privacy.js';
 import { hybridSearch } from '../retrieval.js';
 import { RegexSymbolExtractor, looksLikeCodePath } from '../symbols.js';
 const defaultExtractor = new RegexSymbolExtractor();
-function annotateSymbols(payload, extractor) {
+function extractCodePayload(payload) {
     if (!payload || typeof payload !== 'object')
-        return payload;
+        return null;
     const p = payload;
     const input = p['tool_input'];
     if (!input)
-        return payload;
+        return null;
     const path = (input['file_path'] ?? input['path'] ?? input['notebook_path']);
     if (!looksLikeCodePath(path))
-        return payload;
+        return null;
     const code = (input['content'] ?? input['new_string'] ?? input['file_text']);
     if (typeof code !== 'string' || code.length === 0)
+        return null;
+    return { payload: p, path: path, code };
+}
+function annotateSymbols(payload, extractor) {
+    const code = extractCodePayload(payload);
+    if (!code)
         return payload;
-    const hits = extractor.extract(code);
+    const hits = extractor.extract(code.code);
     if (hits.length === 0)
         return payload;
-    return { ...p, symbols: hits.map(h => `${h.kind}:${h.name}`) };
+    return { ...code.payload, symbols: hits.map(h => `${h.kind}:${h.name}`) };
+}
+async function annotateSymbolsAsync(payload, extractor) {
+    const code = extractCodePayload(payload);
+    if (!code)
+        return payload;
+    const hits = await extractor.extract(code.code, { path: code.path });
+    if (hits.length === 0)
+        return payload;
+    return { ...code.payload, symbols: hits.map(h => `${h.kind}:${h.name}`) };
 }
 export function buildHandler(deps) {
     return async (req) => {
@@ -36,8 +51,14 @@ export function buildHandler(deps) {
                     return { ok: true, data: { pong: true } };
                 case 'capture': {
                     const ts = req.ts ?? Date.now();
-                    const extractor = deps.symbols === null ? null : (deps.symbols ?? defaultExtractor);
-                    const annotated = extractor ? annotateSymbols(req.payload, extractor) : req.payload;
+                    let annotated;
+                    if (deps.asyncSymbols) {
+                        annotated = await annotateSymbolsAsync(req.payload, deps.asyncSymbols);
+                    }
+                    else {
+                        const extractor = deps.symbols === null ? null : (deps.symbols ?? defaultExtractor);
+                        annotated = extractor ? annotateSymbols(req.payload, extractor) : req.payload;
+                    }
                     const { value: redactedPayload } = redact(annotated);
                     const source = req.source ?? 'claude-code';
                     const stamped = redactedPayload && typeof redactedPayload === 'object' && !Array.isArray(redactedPayload)

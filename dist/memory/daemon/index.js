@@ -17,6 +17,8 @@ import { DeterministicEmbedder } from '../embedder.js';
 import { FileSink, Logger } from '../logger.js';
 import { buildHandler } from './server.js';
 import { startHttpBridge } from './http-bridge.js';
+import { CdgSymbolExtractor, AsyncFromSync } from '../cdg-adapter.js';
+import { RegexSymbolExtractor } from '../symbols.js';
 const IDLE_SHUTDOWN_MS = 30 * 60 * 1000;
 async function main() {
     const cwd = process.env.SIFTCODER_WORKSPACE_CWD || process.cwd();
@@ -51,12 +53,17 @@ async function main() {
     const embedder = new DeterministicEmbedder(384);
     const consolidator = new Consolidator(storage);
     consolidator.start();
+    const regexFallback = new AsyncFromSync(new RegexSymbolExtractor());
+    const asyncSymbols = CdgSymbolExtractor.fromEnv(process.env, regexFallback);
+    if (asyncSymbols)
+        logger.info('cdg adapter enabled', { url: process.env['SIFTCODER_CDG_URL'] });
     const server = startServer({
         embedder,
         storage,
         wal,
         socketPath: paths.socket,
         cwd,
+        asyncSymbols,
         onShutdown: () => {
             stopping = true;
         },

@@ -16,6 +16,11 @@ export interface SymbolHit {
 export interface SymbolExtractor {
     extract(code: string, opts?: ExtractOptions): SymbolHit[];
 }
+export interface AsyncSymbolExtractor {
+    extract(code: string, opts?: ExtractOptions & {
+        path?: string;
+    }): Promise<SymbolHit[]>;
+}
 export declare class RegexSymbolExtractor implements SymbolExtractor {
     extract(code: string, opts?: ExtractOptions): SymbolHit[];
 }
