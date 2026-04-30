@@ -26,6 +26,107 @@ export class MemorySink {
         this.lines.push(line);
     }
 }
+/**
+ * OTLP/HTTP log exporter. Buffers ndjson records, batches them as the OTLP "logs" body shape, and
+ * POSTs to a collector. Activated by setting SIFTCODER_OTEL_ENDPOINT in the environment.
+ *
+ * Failures are swallowed (best-effort observability). Buffer is bounded by batchSize * 4.
+ */
+export class OtlpHttpSink {
+    buf = [];
+    timer = null;
+    cfg;
+    constructor(opts) {
+        this.cfg = {
+            endpoint: opts.endpoint,
+            resourceName: opts.resourceName ?? 'siftcoder-memory',
+            flushIntervalMs: opts.flushIntervalMs ?? 5000,
+            batchSize: opts.batchSize ?? 64,
+            headers: opts.headers ?? {},
+            /* c8 ignore next -- default real fetch only used when no fetchImpl injected */
+            fetchImpl: opts.fetchImpl ?? ((input, init) => fetch(input, init)),
+        };
+    }
+    write(line) {
+        this.buf.push(line.replace(/\n$/, ''));
+        const cap = this.cfg.batchSize * 4;
+        if (this.buf.length > cap)
+            this.buf.splice(0, this.buf.length - cap);
+        if (this.buf.length >= this.cfg.batchSize) {
+            void this.flush();
+        }
+        else if (this.timer === null) {
+            this.timer = setTimeout(() => { void this.flush(); }, this.cfg.flushIntervalMs);
+        }
+    }
+    async flush() {
+        if (this.timer) {
+            clearTimeout(this.timer);
+            this.timer = null;
+        }
+        if (this.buf.length === 0)
+            return;
+        const records = this.buf.map(l => safeParse(l)).filter((r) => r !== null);
+        this.buf = [];
+        if (records.length === 0)
+            return;
+        const body = {
+            resourceLogs: [{
+                    resource: { attributes: [{ key: 'service.name', value: { stringValue: this.cfg.resourceName } }] },
+                    scopeLogs: [{
+                            scope: { name: 'siftcoder-memory' },
+                            logRecords: records.map(r => ({
+                                timeUnixNano: String(Date.parse(r.timestamp) * 1_000_000),
+                                severityText: r.level.toUpperCase(),
+                                body: { stringValue: r.message },
+                                attributes: Object.entries(r.attributes ?? {}).map(([k, v]) => ({
+                                    key: k,
+                                    value: stringValueOf(v),
+                                })),
+                            })),
+                        }],
+                }],
+        };
+        try {
+            await this.cfg.fetchImpl(this.cfg.endpoint, {
+                method: 'POST',
+                headers: { 'content-type': 'application/json', ...this.cfg.headers },
+                body: JSON.stringify(body),
+            });
+        }
+        catch {
+            /* best-effort; swallow */
+        }
+    }
+    close() {
+        void this.flush();
+    }
+}
+function safeParse(line) {
+    try {
+        return JSON.parse(line);
+    }
+    catch {
+        return null;
+    }
+}
+function stringValueOf(v) {
+    if (typeof v === 'number' && Number.isInteger(v))
+        return { intValue: v };
+    if (typeof v === 'boolean')
+        return { boolValue: v };
+    return { stringValue: String(v) };
+}
+export class CompositeSink {
+    sinks;
+    constructor(sinks) {
+        this.sinks = sinks;
+    }
+    write(line) { for (const s of this.sinks)
+        s.write(line); }
+    close() { for (const s of this.sinks)
+        s.close?.(); }
+}
 export class Logger {
     name;
     sink;

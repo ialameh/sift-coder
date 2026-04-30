@@ -10,6 +10,7 @@
  * avoids the optional native dependency. Switch to vec0 when corpora exceed that scale.
  */
 import { cosine } from './embedder.js';
+import { rerank } from './reranker.js';
 const DEFAULTS = {
     k: 5,
     rrfK: 60,
@@ -17,6 +18,7 @@ const DEFAULTS = {
     candidatePool: 50,
     bm25Weight: 1,
     vectorWeight: 1,
+    rerank: false,
 };
 export async function hybridSearch(storage, embedder, query, now, opts = {}) {
     const cfg = { ...DEFAULTS, ...opts };
@@ -79,6 +81,9 @@ export async function hybridSearch(storage, embedder, query, now, opts = {}) {
         });
     }
     hits.sort((a, b) => b.score - a.score);
+    if (cfg.rerank) {
+        return rerank(query, hits.slice(0, cfg.candidatePool), { k: cfg.k });
+    }
     return hits.slice(0, cfg.k);
 }
 //# sourceMappingURL=retrieval.js.map

@@ -8,6 +8,26 @@ import { encodeFrame, FrameDecoder } from '../protocol.js';
 import { hashInput } from '../storage/storage.js';
 import { redact } from '../privacy.js';
 import { hybridSearch } from '../retrieval.js';
+import { RegexSymbolExtractor, looksLikeCodePath } from '../symbols.js';
+const defaultExtractor = new RegexSymbolExtractor();
+function annotateSymbols(payload, extractor) {
+    if (!payload || typeof payload !== 'object')
+        return payload;
+    const p = payload;
+    const input = p['tool_input'];
+    if (!input)
+        return payload;
+    const path = (input['file_path'] ?? input['path'] ?? input['notebook_path']);
+    if (!looksLikeCodePath(path))
+        return payload;
+    const code = (input['content'] ?? input['new_string'] ?? input['file_text']);
+    if (typeof code !== 'string' || code.length === 0)
+        return payload;
+    const hits = extractor.extract(code);
+    if (hits.length === 0)
+        return payload;
+    return { ...p, symbols: hits.map(h => `${h.kind}:${h.name}`) };
+}
 export function buildHandler(deps) {
     return async (req) => {
         try {
@@ -16,7 +36,9 @@ export function buildHandler(deps) {
                     return { ok: true, data: { pong: true } };
                 case 'capture': {
                     const ts = req.ts ?? Date.now();
-                    const { value: redactedPayload } = redact(req.payload);
+                    const extractor = deps.symbols === null ? null : (deps.symbols ?? defaultExtractor);
+                    const annotated = extractor ? annotateSymbols(req.payload, extractor) : req.payload;
+                    const { value: redactedPayload } = redact(annotated);
                     deps.storage.ensureSession(req.sessionId, deps.cwd, ts);
                     const inputHash = hashInput(redactedPayload);
                     deps.wal.append({

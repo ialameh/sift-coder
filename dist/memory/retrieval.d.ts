@@ -18,6 +18,7 @@ export interface HybridOptions {
     candidatePool?: number;
     bm25Weight?: number;
     vectorWeight?: number;
+    rerank?: boolean;
 }
 export interface HybridHit {
     id: number;

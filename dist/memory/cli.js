@@ -7,6 +7,9 @@
  *   timeline <near-id> [--w=N]   Chronological neighbors.
  *   get <id>[,<id>...]           Fetch summaries by id.
  *   ping                         Liveness check; exit 0 if daemon up.
+ *   eval [--k=N] [--rerank]      Self-recall eval over mined golden set; prints {recallAtK,mrr}.
+ *   mine-golden [--max=N]        Print the mined golden set as JSON.
+ *   watch [--limit=N]            Stream the events table; pretty-printed updates.
  *
  * Exit codes:
  *   0 success, 1 daemon unreachable, 2 bad args, 3 daemon error.
@@ -69,8 +72,13 @@ async function main() {
             req = { kind: 'get', ids };
             break;
         }
+        case 'eval':
+        case 'mine-golden':
+        case 'watch':
+            await runLocal(args, paths.db);
+            return;
         default:
-            process.stderr.write(`unknown command: ${args.command}\nusage: siftcoder-mem <ping|search|timeline|get> ...\n`);
+            process.stderr.write(`unknown command: ${args.command}\nusage: siftcoder-mem <ping|search|timeline|get|eval|mine-golden|watch> ...\n`);
             process.exit(2);
             return;
     }
@@ -82,6 +90,37 @@ async function main() {
     catch (err) {
         process.stderr.write(`siftcoder-mem cli: ${err.message}\n`);
         process.exit(1);
+    }
+}
+async function runLocal(args, dbPath) {
+    const { Storage } = await import('./storage/storage.js');
+    const { DeterministicEmbedder } = await import('./embedder.js');
+    const Database = (await import('better-sqlite3')).default;
+    const db = new Database(dbPath);
+    const storage = new Storage(db);
+    const embedder = new DeterministicEmbedder(384);
+    if (args.command === 'mine-golden') {
+        const { mineGolden } = await import('./eval-mine.js');
+        const items = mineGolden(storage, { maxItems: parseIntFlag(args.flags['max'], 200) });
+        process.stdout.write(JSON.stringify({ ok: true, data: { items } }) + '\n');
+        process.exit(0);
+    }
+    if (args.command === 'eval') {
+        const { mineGolden } = await import('./eval-mine.js');
+        const { evaluate } = await import('./eval.js');
+        const golden = mineGolden(storage);
+        const k = parseIntFlag(args.flags['k'], 5);
+        const useRerank = args.flags['rerank'] === 'true';
+        const report = await evaluate(storage, embedder, golden, k, Date.now(), { decayTauMs: 1e15, rerank: useRerank });
+        const summary = { k: report.k, recallAtK: report.recallAtK, mrr: report.mrr, golden: golden.length };
+        process.stdout.write(JSON.stringify({ ok: true, data: summary }) + '\n');
+        process.exit(0);
+    }
+    if (args.command === 'watch') {
+        const { renderWatchSnapshot } = await import('./tui.js');
+        const limit = parseIntFlag(args.flags['limit'], 20);
+        process.stdout.write(renderWatchSnapshot(storage, { limit }));
+        process.exit(0);
     }
 }
 function parseIntFlag(v, def) {
