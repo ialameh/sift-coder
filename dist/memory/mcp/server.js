@@ -84,7 +84,19 @@ async function main() {
     }
     const bridge = new StdioBridge();
     const sampling = new McpSamplingClient(bridge);
-    const summarizer = storage ? new Summarizer(storage, sampling) : null;
+    // Build the model client chain. MCP host sampling is preferred (host-billed, no plugin key).
+    // When ANTHROPIC_API_KEY (or SIFTCODER_ANTHROPIC_API_KEY) is set, wrap with FallbackModelClient
+    // so drain still works against hosts that don't expose sampling/createMessage.
+    let modelClient = sampling;
+    const { AnthropicClient } = await import('../anthropic-client.js');
+    if (AnthropicClient.available(process.env)) {
+        const { FallbackModelClient } = await import('../fallback-client.js');
+        const direct = new AnthropicClient();
+        modelClient = new FallbackModelClient(sampling, direct, {
+            onFallback: (err) => process.stderr.write(`siftcoder-mem mcp: sampling fallback engaged: ${err.message}\n`),
+        });
+    }
+    const summarizer = storage ? new Summarizer(storage, modelClient) : null;
     const embedder = new DeterministicEmbedder(384);
     const provenance = storage ? new ProvenanceStore(storage) : null;
     bridge.start(async (req) => dispatch(req, { client: memClient, storage, summarizer, embedder, provenance, drainBatch: 4 }));
