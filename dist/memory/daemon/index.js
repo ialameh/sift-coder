@@ -66,11 +66,25 @@ async function main() {
     const sink = new FileSink(paths.log);
     const logger = new Logger('siftcoder-mem', sink);
     logger.info('daemon booting', { pid: process.pid, key: paths.key, backend });
+    // Embedder selection cascade: CDG (remote) -> Ollama (local) -> Deterministic (hash-bucket).
+    // SIFTCODER_EMBEDDER=deterministic|ollama|cdg overrides; default is auto-detect.
+    const embedderChoice = (process.env['SIFTCODER_EMBEDDER'] ?? 'auto').toLowerCase();
     const localEmbedder = new DeterministicEmbedder(384);
     const cdgEmbedder = CdgEmbedder.fromEnv(process.env, localEmbedder);
-    const embedder = cdgEmbedder ?? localEmbedder;
-    if (cdgEmbedder)
-        logger.info('cdg embedder enabled', {});
+    let embedder = localEmbedder;
+    let embedderName = 'deterministic-hash';
+    if ((embedderChoice === 'cdg' || embedderChoice === 'auto') && cdgEmbedder) {
+        embedder = cdgEmbedder;
+        embedderName = 'cdg';
+    }
+    else if (embedderChoice === 'ollama' || embedderChoice === 'auto') {
+        const { OllamaEmbedder } = await import('../ollama-embedder.js');
+        if (await OllamaEmbedder.available()) {
+            embedder = new OllamaEmbedder();
+            embedderName = `ollama (model=${process.env['SIFTCODER_OLLAMA_EMBED_MODEL'] ?? 'nomic-embed-text'})`;
+        }
+    }
+    logger.info('embedder selected', { name: embedderName, dim: embedder.dim });
     const consolidator = new Consolidator(storage);
     consolidator.start();
     const regexFallback = new AsyncFromSync(new RegexSymbolExtractor());
