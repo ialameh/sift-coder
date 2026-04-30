@@ -1,7 +1,12 @@
 /**
  * Daemon entrypoint. Capture + storage + WAL + retrieval only.
- * No LLM calls here — summarization runs out-of-band through the MCP server,
- * which delegates to the host (Claude Code) via sampling. No API key required.
+ * No LLM calls here — summarization runs out-of-band through the MCP server, which prefers
+ * MCP host sampling (host-billed, no key) but falls back to direct Anthropic API when the
+ * user opts in via `SIFTCODER_DRAIN_FALLBACK=1` + `ANTHROPIC_API_KEY`.
+ *
+ * Note: Claude Code CLI 2.1.x does NOT implement MCP `sampling/createMessage` (returns
+ * JSON-RPC -32601). Until that lands, drain requires the fallback path. Capture + retrieval
+ * work without either path — raw events are still queryable via mem_search.
  *
  * Excluded from coverage: wires concrete I/O (fs, net, sqlite). Pure logic is unit-tested.
  */
