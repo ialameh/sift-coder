@@ -1,12 +1,12 @@
 ---
-description: Verify SiftCoder Memory is running for the current workspace - daemon, hooks, MCP, storage
-argument-hint: (no args)
+description: Verify SiftCoder Memory is running for the current workspace; auto-start the daemon if it's down
+argument-hint: [--no-fix]
 allowed-tools: Bash, mcp__plugin_siftcoder_siftcoder-memory__mem_drain
 ---
 
-# /siftcoder:mem-check - Health Check
+# /siftcoder:mem-check - Health Check (with auto-recovery)
 
-Five checkpoints, each with a clear pass/fail and a one-line fix when it fails. Tells you exactly which layer is broken.
+Five checkpoints, each with a clear pass/fail. **By default, if the daemon socket is missing, this command spawns the daemon and re-checks.** Pass `--no-fix` for a strict read-only diagnostic.
 
 ## Checkpoints
 
@@ -46,15 +46,29 @@ echo "$WS_KEY"
 
 PASS if non-empty. Output: `[PASS] workspace key: <key> for <cwd>`.
 
-### Check 2: daemon socket
+### Check 2: daemon socket (with auto-spawn)
 
 ```bash
 SOCK=~/.siftcoder/run/${WS_KEY}.sock
+PLUGIN="${CLAUDE_PLUGIN_ROOT}"
+if [ ! -S "$SOCK" ]; then
+  if echo "$ARGUMENTS" | grep -q -- "--no-fix"; then
+    echo "FAIL: socket missing; --no-fix supplied, not auto-spawning"
+  else
+    echo "[INFO] daemon socket missing — spawning..."
+    CLAUDE_PROJECT_DIR="$WS_CWD" CLAUDE_PLUGIN_ROOT="$PLUGIN" \
+      node $PLUGIN/hooks/session-start/spawn-daemon.mjs
+    for i in 1 2 3 4 5; do
+      [ -S "$SOCK" ] && break
+      sleep 0.3
+    done
+  fi
+fi
 [ -S "$SOCK" ] && echo PASS || echo FAIL
 ```
 
-PASS: `[PASS] daemon socket: ~/.siftcoder/run/${WS_KEY}.sock`.
-FAIL fix: `Open Claude Code in this directory in a fresh session, or run /reload-plugins. The SessionStart hook spawns the daemon.`
+PASS: `[PASS] daemon socket: ~/.siftcoder/run/${WS_KEY}.sock` (note "spawned" if auto-recovered).
+FAIL fix: `spawn-daemon hook ran but socket did not appear in 1.5s. Check ~/.siftcoder/logs/${WS_KEY}.ndjson for boot errors. Common cause: better-sqlite3 native binding missing in the plugin cache install.`
 
 ### Check 3: CLI ping
 
@@ -111,9 +125,15 @@ If any fail, append the specific remediation from the failing check.
 DAILY HEALTH
 
 Run at session start:
-  /siftcoder:mem-check        ← verifies the full stack in 3 seconds
+  /siftcoder:mem-check        ← verifies + auto-fixes daemon if down
+
+Strict diagnostic (no auto-fix):
+  /siftcoder:mem-check --no-fix
+
+Explicit start (no diagnostic):
+  /siftcoder:mem-start
 
 Run after upgrade or reload:
   /reload-plugins
-  /siftcoder:mem-check        ← confirms the upgrade took
+  /siftcoder:mem-check
 ```
