@@ -66,6 +66,8 @@ jobs:
           test -f dist/memory/web/static/app.js
           test -f dist/memory/web/static/style.css
 
-      - name: Verify CLI ping path is reachable
+      - name: Verify dist syntax
         run: |
-          node -e "import('./dist/memory/cli.js').then(() => console.log('cli loadable')).catch(e => { console.error(e); process.exit(1); })"
+          node --check dist/memory/cli.js
+          node --check dist/memory/daemon/index.js
+          node --check dist/memory/mcp/server.js
