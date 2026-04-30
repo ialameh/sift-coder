@@ -114,6 +114,35 @@ describe('dispatch', () => {
     expect(result.capabilities.sampling).toBeDefined();
   });
 
+  it('invokes onInitialize with the host capability advertisement', async () => {
+    let captured: { samplingAdvertised: boolean; clientCaps: Record<string, unknown> } | null = null;
+    await dispatch(
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: { capabilities: { sampling: {} }, clientInfo: { name: 'claude-code', version: '2.1.124' } } },
+      { client: mem as unknown as MemoryClient, onInitialize: i => { captured = i; } },
+    );
+    expect(captured).not.toBeNull();
+    expect(captured!.samplingAdvertised).toBe(true);
+    expect('sampling' in captured!.clientCaps).toBe(true);
+  });
+
+  it('marks sampling as NOT advertised when host omits it from capabilities', async () => {
+    let captured: { samplingAdvertised: boolean } | null = null;
+    await dispatch(
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: { capabilities: { tools: {} } } },
+      { client: mem as unknown as MemoryClient, onInitialize: i => { captured = i; } },
+    );
+    expect(captured!.samplingAdvertised).toBe(false);
+  });
+
+  it('handles initialize without params gracefully', async () => {
+    let captured: { samplingAdvertised: boolean } | null = null;
+    await dispatch(
+      { jsonrpc: '2.0', id: 1, method: 'initialize' },
+      { client: mem as unknown as MemoryClient, onInitialize: i => { captured = i; } },
+    );
+    expect(captured!.samplingAdvertised).toBe(false);
+  });
+
   it('lists the four memory tools', async () => {
     const r = await dispatch({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, { client: mem as unknown as MemoryClient });
     expect((r.result as { tools: unknown[] }).tools).toHaveLength(TOOLS.length);
@@ -288,5 +317,22 @@ describe('drain', () => {
     const r = await drain({ client: mem as unknown as MemoryClient, storage, summarizer: broken }, 4);
     expect(r.errors).toBe(1);
     expect(db.events[0]!['status']).toBe('skipped');
+  });
+
+  it('surfaces the first error message via firstError so callers can diagnose host issues', async () => {
+    storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: {} });
+    storage.recordEvent({ ts: 2, sessionId: 's', tool: 'R', payload: {} });
+    sampler.scripted = [];
+    const broken = new Summarizer(storage, {
+      generate: async () => { throw new Error('sampling/createMessage failed: method not found (code -32601)'); },
+    });
+    const r = await drain({ client: mem as unknown as MemoryClient, storage, summarizer: broken }, 4);
+    expect(r.errors).toBe(2);
+    expect(r.firstError).toBe('sampling/createMessage failed: method not found (code -32601)');
+  });
+
+  it('omits firstError when there are zero errors', async () => {
+    const r = await drain({ client: mem as unknown as MemoryClient, storage, summarizer }, 4);
+    expect(r.firstError).toBeUndefined();
   });
 });

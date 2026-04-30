@@ -84,22 +84,46 @@ async function main() {
     }
     const bridge = new StdioBridge();
     const sampling = new McpSamplingClient(bridge);
-    // Build the model client chain. MCP host sampling is preferred (host-billed, no plugin key).
-    // When ANTHROPIC_API_KEY (or SIFTCODER_ANTHROPIC_API_KEY) is set, wrap with FallbackModelClient
-    // so drain still works against hosts that don't expose sampling/createMessage.
+    // Default path: MCP host sampling only. Host (Claude Code) executes the LLM call under its
+    // own credentials and billing — no plugin-side API key. Matches the original design.
+    //
+    // Opt-in fallback: SIFTCODER_DRAIN_FALLBACK=1 + ANTHROPIC_API_KEY enables a chain that falls
+    // back to the direct Anthropic API when sampling fails. Only for users on hosts that don't
+    // expose sampling/createMessage and who explicitly accept the API key cost path.
     let modelClient = sampling;
-    const { AnthropicClient } = await import('../anthropic-client.js');
-    if (AnthropicClient.available(process.env)) {
-        const { FallbackModelClient } = await import('../fallback-client.js');
-        const direct = new AnthropicClient();
-        modelClient = new FallbackModelClient(sampling, direct, {
-            onFallback: (err) => process.stderr.write(`siftcoder-mem mcp: sampling fallback engaged: ${err.message}\n`),
-        });
+    if (process.env['SIFTCODER_DRAIN_FALLBACK'] === '1') {
+        const { AnthropicClient } = await import('../anthropic-client.js');
+        if (AnthropicClient.available(process.env)) {
+            const { FallbackModelClient } = await import('../fallback-client.js');
+            const direct = new AnthropicClient();
+            modelClient = new FallbackModelClient(sampling, direct, {
+                onFallback: (err) => process.stderr.write(`siftcoder-mem mcp: sampling fallback engaged: ${err.message}\n`),
+            });
+            process.stderr.write('siftcoder-mem mcp: drain fallback to direct Anthropic API enabled (SIFTCODER_DRAIN_FALLBACK=1)\n');
+        }
+        else {
+            process.stderr.write('siftcoder-mem mcp: SIFTCODER_DRAIN_FALLBACK=1 but no ANTHROPIC_API_KEY; staying on MCP sampling only\n');
+        }
     }
     const summarizer = storage ? new Summarizer(storage, modelClient) : null;
     const embedder = new DeterministicEmbedder(384);
     const provenance = storage ? new ProvenanceStore(storage) : null;
-    bridge.start(async (req) => dispatch(req, { client: memClient, storage, summarizer, embedder, provenance, drainBatch: 4 }));
+    bridge.start(async (req) => dispatch(req, {
+        client: memClient,
+        storage,
+        summarizer,
+        embedder,
+        provenance,
+        drainBatch: 4,
+        onInitialize: info => {
+            const cap = info.samplingAdvertised ? 'sampling=advertised' : 'sampling=NOT advertised';
+            const ci = info.clientInfo ? `${info.clientInfo.name ?? '?'}@${info.clientInfo.version ?? '?'}` : '?';
+            process.stderr.write(`siftcoder-mem mcp: host=${ci} ${cap}; caps=${JSON.stringify(info.clientCaps)}\n`);
+            if (!info.samplingAdvertised) {
+                process.stderr.write('siftcoder-mem mcp: host did NOT advertise sampling capability — drain will fail. Set SIFTCODER_DRAIN_FALLBACK=1 + ANTHROPIC_API_KEY for direct API.\n');
+            }
+        },
+    }));
 }
 main().catch(err => {
     process.stderr.write(`siftcoder-mem mcp: ${err?.message ?? err}\n`);

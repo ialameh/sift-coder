@@ -27,6 +27,14 @@ export interface JsonRpcResponse {
         message: string;
     };
 }
+export interface InitializeInfo {
+    clientCaps: Record<string, unknown>;
+    samplingAdvertised: boolean;
+    clientInfo?: {
+        name?: string;
+        version?: string;
+    };
+}
 export interface HandlerDeps {
     client: MemoryClient;
     storage?: Storage | null;
@@ -34,6 +42,8 @@ export interface HandlerDeps {
     embedder?: Embedder | null;
     provenance?: ProvenanceStore | null;
     drainBatch?: number;
+    /** Called once on `initialize` so the MCP server can log host capability advertisement. */
+    onInitialize?: (info: InitializeInfo) => void;
 }
 export declare const TOOLS: ({
     name: string;
@@ -155,6 +165,8 @@ export interface DrainResult {
     processed: number;
     errors: number;
     pending: number;
+    /** First error message, surfaced so the caller can diagnose host sampling problems. */
+    firstError?: string;
 }
 export declare function drain(deps: HandlerDeps, batch: number): Promise<DrainResult>;
 export declare function dispatch(req: JsonRpcRequest, deps: HandlerDeps): Promise<JsonRpcResponse>;
