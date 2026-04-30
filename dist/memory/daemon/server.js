@@ -39,20 +39,24 @@ export function buildHandler(deps) {
                     const extractor = deps.symbols === null ? null : (deps.symbols ?? defaultExtractor);
                     const annotated = extractor ? annotateSymbols(req.payload, extractor) : req.payload;
                     const { value: redactedPayload } = redact(annotated);
+                    const source = req.source ?? 'claude-code';
+                    const stamped = redactedPayload && typeof redactedPayload === 'object' && !Array.isArray(redactedPayload)
+                        ? { ...redactedPayload, _source: source }
+                        : { value: redactedPayload, _source: source };
                     deps.storage.ensureSession(req.sessionId, deps.cwd, ts);
-                    const inputHash = hashInput(redactedPayload);
+                    const inputHash = hashInput(stamped);
                     deps.wal.append({
                         ts,
                         sessionId: req.sessionId,
                         tool: req.tool,
                         inputHash,
-                        payload: redactedPayload,
+                        payload: stamped,
                     });
                     const id = deps.storage.recordEvent({
                         ts,
                         sessionId: req.sessionId,
                         tool: req.tool,
-                        payload: redactedPayload,
+                        payload: stamped,
                     });
                     return { ok: true, data: { id } };
                 }

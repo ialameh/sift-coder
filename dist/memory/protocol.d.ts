@@ -9,6 +9,8 @@ export interface CaptureRequest {
     tool: string;
     payload: unknown;
     ts?: number;
+    /** Free-form provenance label: "claude-code", "cli", "vscode", "github", "slack", ... */
+    source?: string;
 }
 export interface SearchRequest {
     kind: 'search';

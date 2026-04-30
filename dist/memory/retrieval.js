@@ -81,8 +81,13 @@ export async function hybridSearch(storage, embedder, query, now, opts = {}) {
         });
     }
     hits.sort((a, b) => b.score - a.score);
+    const pool = hits.slice(0, cfg.candidatePool);
+    if (opts.asyncReranker) {
+        const reranked = await opts.asyncReranker.rerank(query, pool);
+        return reranked.slice(0, cfg.k);
+    }
     if (cfg.rerank) {
-        return rerank(query, hits.slice(0, cfg.candidatePool), { k: cfg.k });
+        return rerank(query, pool, { k: cfg.k });
     }
     return hits.slice(0, cfg.k);
 }
