@@ -84,27 +84,31 @@ async function main() {
     }
     const bridge = new StdioBridge();
     const sampling = new McpSamplingClient(bridge);
-    // Default path: MCP host sampling only. Host (Claude Code) executes the LLM call under its
-    // own credentials and billing — no plugin-side API key. Matches the original design.
+    // Drain backend resolution. Priority:
+    //   1. SIFTCODER_DRAIN_BACKEND=ollama|anthropic|mcp explicit override.
+    //   2. Auto-detect: Ollama at http://localhost:11434 → use Ollama (local, free).
+    //   3. ANTHROPIC_API_KEY set → use direct Anthropic.
+    //   4. MCP host sampling (works once Claude Code ships sampling/createMessage).
     //
-    // Opt-in fallback: SIFTCODER_DRAIN_FALLBACK=1 + ANTHROPIC_API_KEY enables a chain that falls
-    // back to the direct Anthropic API when sampling fails. Only for users on hosts that don't
-    // expose sampling/createMessage and who explicitly accept the API key cost path.
+    // Wraps with FallbackModelClient (primary -> sampling) only when explicitly enabled, so
+    // a transient Ollama hiccup falls back to the host instead of failing.
     let modelClient = sampling;
-    if (process.env['SIFTCODER_DRAIN_FALLBACK'] === '1') {
-        const { AnthropicClient } = await import('../anthropic-client.js');
-        if (AnthropicClient.available(process.env)) {
-            const { FallbackModelClient } = await import('../fallback-client.js');
-            const direct = new AnthropicClient();
-            modelClient = new FallbackModelClient(sampling, direct, {
-                onFallback: (err) => process.stderr.write(`siftcoder-mem mcp: sampling fallback engaged: ${err.message}\n`),
-            });
-            process.stderr.write('siftcoder-mem mcp: drain fallback to direct Anthropic API enabled (SIFTCODER_DRAIN_FALLBACK=1)\n');
-        }
-        else {
-            process.stderr.write('siftcoder-mem mcp: SIFTCODER_DRAIN_FALLBACK=1 but no ANTHROPIC_API_KEY; staying on MCP sampling only\n');
-        }
+    const backendChoice = (process.env['SIFTCODER_DRAIN_BACKEND'] ?? 'auto').toLowerCase();
+    const { OllamaClient } = await import('../ollama-client.js');
+    const { AnthropicClient } = await import('../anthropic-client.js');
+    let chosen = 'mcp-sampling';
+    if (backendChoice === 'ollama' || (backendChoice === 'auto' && await OllamaClient.available())) {
+        modelClient = new OllamaClient();
+        chosen = `ollama (model=${process.env['SIFTCODER_OLLAMA_MODEL'] ?? 'llama3.2:3b'})`;
     }
+    else if (backendChoice === 'anthropic' || (backendChoice === 'auto' && AnthropicClient.available(process.env))) {
+        modelClient = new AnthropicClient();
+        chosen = 'anthropic-direct';
+    }
+    else if (backendChoice !== 'mcp' && backendChoice !== 'auto') {
+        process.stderr.write(`siftcoder-mem mcp: unknown SIFTCODER_DRAIN_BACKEND=${backendChoice}; staying on MCP sampling\n`);
+    }
+    process.stderr.write(`siftcoder-mem mcp: drain backend = ${chosen}\n`);
     const summarizer = storage ? new Summarizer(storage, modelClient) : null;
     const embedder = new DeterministicEmbedder(384);
     const provenance = storage ? new ProvenanceStore(storage) : null;
