@@ -1,0 +1,84 @@
+/**
+ * SQLite DDL for SiftCoder memory v2.
+ * sqlite-vec is loaded at runtime; the vec0 virtual table is only created if the extension is available.
+ */
+export const CORE_DDL = `
+PRAGMA journal_mode = WAL;
+PRAGMA synchronous = NORMAL;
+PRAGMA foreign_keys = ON;
+
+CREATE TABLE IF NOT EXISTS sessions (
+  id          TEXT PRIMARY KEY,
+  started_at  INTEGER NOT NULL,
+  ended_at    INTEGER,
+  cwd         TEXT,
+  meta_json   TEXT
+);
+
+CREATE TABLE IF NOT EXISTS events (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts           INTEGER NOT NULL,
+  session_id   TEXT NOT NULL,
+  tool         TEXT NOT NULL,
+  input_hash   TEXT NOT NULL,
+  payload_json TEXT NOT NULL,
+  status       TEXT NOT NULL DEFAULT 'raw'
+);
+CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id, ts);
+CREATE INDEX IF NOT EXISTS idx_events_status  ON events(status);
+
+CREATE TABLE IF NOT EXISTS summaries (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id     INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  ts           INTEGER NOT NULL,
+  model        TEXT NOT NULL,
+  prompt_hash  TEXT NOT NULL,
+  text         TEXT NOT NULL,
+  tokens_in    INTEGER,
+  tokens_out   INTEGER,
+  confidence   REAL
+);
+CREATE INDEX IF NOT EXISTS idx_summaries_event ON summaries(event_id);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS summaries_fts
+  USING fts5(text, content='summaries', content_rowid='id');
+
+CREATE TRIGGER IF NOT EXISTS summaries_ai AFTER INSERT ON summaries BEGIN
+  INSERT INTO summaries_fts(rowid, text) VALUES (new.id, new.text);
+END;
+CREATE TRIGGER IF NOT EXISTS summaries_ad AFTER DELETE ON summaries BEGIN
+  INSERT INTO summaries_fts(summaries_fts, rowid, text) VALUES('delete', old.id, old.text);
+END;
+CREATE TRIGGER IF NOT EXISTS summaries_au AFTER UPDATE ON summaries BEGIN
+  INSERT INTO summaries_fts(summaries_fts, rowid, text) VALUES('delete', old.id, old.text);
+  INSERT INTO summaries_fts(rowid, text) VALUES (new.id, new.text);
+END;
+
+CREATE TABLE IF NOT EXISTS summary_embeddings (
+  summary_id  INTEGER PRIMARY KEY REFERENCES summaries(id) ON DELETE CASCADE,
+  dim         INTEGER NOT NULL,
+  vec         BLOB NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS summary_supersedes (
+  newer_id    INTEGER NOT NULL REFERENCES summaries(id) ON DELETE CASCADE,
+  older_id    INTEGER NOT NULL REFERENCES summaries(id) ON DELETE CASCADE,
+  cosine      REAL NOT NULL,
+  ts          INTEGER NOT NULL,
+  PRIMARY KEY (newer_id, older_id)
+);
+
+CREATE TABLE IF NOT EXISTS summary_cache (
+  cache_key   TEXT PRIMARY KEY,
+  text        TEXT NOT NULL,
+  tokens_in   INTEGER,
+  tokens_out  INTEGER,
+  created_at  INTEGER NOT NULL
+);
+`;
+export const VEC_DDL = `
+CREATE VIRTUAL TABLE IF NOT EXISTS summaries_vec USING vec0(
+  embedding float[384]
+);
+`;
+//# sourceMappingURL=schema.js.map

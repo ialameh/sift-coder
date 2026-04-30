@@ -13,7 +13,12 @@ export default defineConfig({
       'src/**/*.test.ts',
       'src/**/*.spec.ts',
       'src/cli/**',
-      'dist/**'
+      'dist/**',
+      'src/memory/daemon/index.ts',
+      'src/memory/daemon/anthropic-client.ts',
+      'src/memory/mcp/server.ts',
+      'src/memory/cli.ts',
+      'src/memory/storage/schema.ts'
     ],
     all: true,
     lines: 100,

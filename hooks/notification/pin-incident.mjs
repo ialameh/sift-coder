@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * SiftCoder PostToolUse Hook - Observation Capture (memory v2)
+ * SiftCoder Notification Hook - Incident Pin
  *
- * Sends a capture RPC to the per-workspace memory daemon over a Unix domain socket.
- * Fire-and-forget: any error is swallowed; the hook never blocks tool execution.
+ * When Claude Code emits a notification (permission prompt, idle warning, error), capture it as
+ * a high-priority memory frame so /handoff can recall it later. Light-weight: enqueue and exit.
  */
 
 import { connect } from 'node:net';
@@ -17,13 +17,9 @@ const HOOK_BUDGET_MS = 250;
 
 function gitToplevel(cwd) {
   try {
-    const out = execFileSync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], {
-      stdio: ['ignore', 'pipe', 'ignore'],
-    });
-    return out.toString('utf8').trim() || null;
-  } catch {
-    return null;
-  }
+    return execFileSync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], { stdio: ['ignore', 'pipe', 'ignore'] })
+      .toString('utf8').trim() || null;
+  } catch { return null; }
 }
 
 function workspaceKey(cwd) {
@@ -31,10 +27,6 @@ function workspaceKey(cwd) {
   let real;
   try { real = realpathSync(top); } catch { real = resolve(top); }
   return createHash('sha256').update(real).digest('hex').slice(0, 12);
-}
-
-function socketPath(cwd) {
-  return join(homedir(), '.siftcoder', 'run', `${workspaceKey(cwd)}.sock`);
 }
 
 function encodeFrame(message) {
@@ -47,7 +39,7 @@ function encodeFrame(message) {
 async function readStdin() {
   return new Promise(res => {
     let data = '';
-    process.stdin.on('data', chunk => { data += chunk; });
+    process.stdin.on('data', c => { data += c; });
     process.stdin.on('end', () => res(data));
     setTimeout(() => res(data), 100);
   });
@@ -57,44 +49,31 @@ async function send(sock, frame) {
   return new Promise(res => {
     const socket = connect(sock);
     let settled = false;
-    const finish = () => {
-      if (settled) return;
-      settled = true;
-      try { socket.end(); } catch { /* ignore */ }
-      res();
-    };
+    const finish = () => { if (settled) return; settled = true; try { socket.end(); } catch {} res(); };
     const timer = setTimeout(finish, HOOK_BUDGET_MS);
     socket.on('error', () => { clearTimeout(timer); finish(); });
-    socket.on('connect', () => { socket.write(frame); });
+    socket.on('connect', () => socket.write(frame));
     socket.on('data', () => { clearTimeout(timer); finish(); });
     socket.on('end', () => { clearTimeout(timer); finish(); });
   });
 }
 
 async function main() {
-  const RELEVANT = new Set(['Read', 'Write', 'Edit', 'Bash', 'Grep', 'Glob']);
   const cwd = process.env.CLAUDE_PROJECT_DIR || process.cwd();
-  const sock = socketPath(cwd);
+  const sock = join(homedir(), '.siftcoder', 'run', `${workspaceKey(cwd)}.sock`);
   if (!existsSync(sock)) process.exit(0);
 
   const raw = await readStdin();
-  let envelope = {};
-  try { envelope = raw ? JSON.parse(raw) : {}; } catch { envelope = {}; }
+  let env = {};
+  try { env = raw ? JSON.parse(raw) : {}; } catch { env = {}; }
 
-  const toolName = envelope.tool_name || process.argv[2] || process.env.TOOL_NAME || '';
-  if (!RELEVANT.has(toolName)) process.exit(0);
-
-  const sessionId = envelope.session_id || 'unknown';
-  const payload = {
-    tool_input: envelope.tool_input ?? null,
-    tool_response: envelope.tool_response ?? null,
-  };
-
+  const sessionId = env.session_id || 'unknown';
+  const message = env.message || env.notification || env.text || 'notification';
   const frame = encodeFrame({
     kind: 'capture',
     sessionId,
-    tool: toolName,
-    payload,
+    tool: 'Notification',
+    payload: { message, kind: env.kind ?? null, urgency: 'high' },
     ts: Date.now(),
   });
 

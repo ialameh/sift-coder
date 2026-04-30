@@ -394,6 +394,36 @@ In `.claude/siftcoder-state/config.json`:
 }
 ```
 
+## Memory v2 Backend (auto-spawned)
+
+A per-workspace memory daemon backs handoff queries with hybrid (BM25 + vector-ready) search.
+The daemon is spawned by the SessionStart hook (`hooks/session-start/spawn-daemon.mjs`) and listens on a Unix domain socket at `~/.siftcoder/run/<workspace-key>.sock`.
+
+For real-time recall during a session, call the CLI:
+
+```bash
+node ${CLAUDE_PLUGIN_ROOT}/dist/memory/cli.js search "auth migration"
+node ${CLAUDE_PLUGIN_ROOT}/dist/memory/cli.js timeline 42 --w=5
+node ${CLAUDE_PLUGIN_ROOT}/dist/memory/cli.js get 17,42,99
+node ${CLAUDE_PLUGIN_ROOT}/dist/memory/cli.js ping
+```
+
+Each command prints a single JSON line:
+- `search` → `{"ok":true,"data":{"hits":[{"id","eventId","text","ts","score"}, ...]}}`
+- `timeline` → `{"ok":true,"data":{"rows":[{"id","eventId","text","ts","model",...}, ...]}}`
+- `get` → `{"ok":true,"data":{"rows":[...]}}`
+- `ping` → `{"ok":true,"data":{"pong":true}}`
+
+Exit codes: 0 ok, 1 daemon unreachable, 2 bad args, 3 daemon error.
+
+### Privacy
+
+All capture frames pass through the edge redactor before persistence:
+- `<private>...</private>` blocks → `[REDACTED:private]`
+- AWS keys, GitHub tokens, Anthropic/OpenAI keys, Bearer tokens, JWTs, emails, phones → masked
+
+Summarization runs through the MCP server via `sampling/createMessage`, so the host (Claude Code) executes the LLM call under its own credentials. **No `ANTHROPIC_API_KEY` required.** Pending events are drained opportunistically each time the agent calls `mem_search` or `mem_drain`.
+
 ## Tips
 
 ```
