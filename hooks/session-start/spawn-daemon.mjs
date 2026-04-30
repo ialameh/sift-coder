@@ -1,21 +1,41 @@
 #!/usr/bin/env node
 /**
- * SiftCoder SessionStart Hook - Memory Daemon Spawn
+ * SiftCoder SessionStart Hook - Memory Daemon Spawn (with self-heal)
  *
- * Idempotent: if a daemon is already running for this workspace (PID alive + socket present),
- * exits immediately. Otherwise spawns the daemon as a detached, double-forked process and exits.
+ * Idempotent. If a daemon is already running for this workspace (PID alive + socket present),
+ * exits immediately. Otherwise:
+ *   1. Verifies the plugin install has its native dependencies; reinstalls them if missing.
+ *   2. Spawns the daemon detached.
+ *   3. Waits up to 2s for the socket to appear; logs the outcome to ~/.siftcoder/logs/spawn.ndjson.
+ *
+ * The self-heal step is the permanent fix for plugin caches that lose better-sqlite3's prebuilt
+ * binary (commonly seen after /plugin uninstall + install when npm install runs without scripts).
  */
 
-import { spawn } from 'node:child_process';
-import { existsSync, readFileSync, mkdirSync } from 'node:fs';
+import { spawn, execFileSync, spawnSync } from 'node:child_process';
+import {
+  existsSync, readFileSync, mkdirSync, realpathSync, appendFileSync,
+} from 'node:fs';
 import { homedir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
-import { realpathSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const SPAWN_LOG = join(homedir(), '.siftcoder', 'logs', 'spawn.ndjson');
+const SOCKET_TIMEOUT_MS = 2000;
+const SOCKET_POLL_MS = 100;
+const NATIVE_BINDING_SUBPATH = 'node_modules/better-sqlite3/build/Release/better_sqlite3.node';
+
+function logEvent(level, message, attributes = {}) {
+  try {
+    mkdirSync(dirname(SPAWN_LOG), { recursive: true });
+    appendFileSync(
+      SPAWN_LOG,
+      JSON.stringify({ timestamp: new Date().toISOString(), level, name: 'spawn-daemon', message, attributes }) + '\n'
+    );
+  } catch { /* never fatal */ }
+}
 
 function gitToplevel(cwd) {
   try {
@@ -49,6 +69,67 @@ function pluginRoot() {
   return null;
 }
 
+/**
+ * Permanent self-heal: when the plugin's better-sqlite3 native binding is missing, reinstall
+ * the package. This is the recurring failure mode on plugin reinstall.
+ */
+function ensureNativeBinding(plugin, key) {
+  const bindingPath = join(plugin, NATIVE_BINDING_SUBPATH);
+  if (existsSync(bindingPath)) return true;
+  logEvent('warn', 'native binding missing; healing', { plugin, expected: bindingPath, key });
+
+  // Strategy 1: npm rebuild forces prebuild-install / native compile even if package-lock thinks
+  // the package is installed. This is the case after `npm install --ignore-scripts` skipped the
+  // native step.
+  const rebuild = spawnSync('npm', ['rebuild', 'better-sqlite3', '--build-from-source-fallback'], {
+    cwd: plugin,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: 180_000,
+    env: { ...process.env, npm_config_loglevel: 'error' },
+  });
+  if (rebuild.status === 0 && existsSync(bindingPath)) {
+    logEvent('info', 'native binding healed via npm rebuild', { plugin, key });
+    return true;
+  }
+
+  // Strategy 2: blow away the package and reinstall fresh.
+  const pkgDir = join(plugin, 'node_modules', 'better-sqlite3');
+  if (existsSync(pkgDir)) {
+    spawnSync('rm', ['-rf', pkgDir], { stdio: 'ignore' });
+  }
+  const reinstall = spawnSync('npm', ['install', 'better-sqlite3', '--no-audit', '--no-fund'], {
+    cwd: plugin,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: 180_000,
+    env: { ...process.env, npm_config_loglevel: 'error' },
+  });
+  if (reinstall.status !== 0) {
+    logEvent('error', 'native binding self-heal failed', {
+      plugin, key, exitCode: reinstall.status,
+      stderr: (reinstall.stderr ?? '').toString().slice(0, 2000),
+    });
+    return false;
+  }
+  if (!existsSync(bindingPath)) {
+    logEvent('error', 'native binding self-heal returned 0 but binding still missing', { plugin, key });
+    return false;
+  }
+  logEvent('info', 'native binding healed via fresh reinstall', { plugin, key });
+  return true;
+}
+
+function waitForSocket(sockFile) {
+  const deadline = Date.now() + SOCKET_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    if (existsSync(sockFile)) return true;
+    const wait = spawnSync(process.execPath, ['-e', `setTimeout(()=>{},${SOCKET_POLL_MS})`], {
+      stdio: 'ignore',
+    });
+    if (wait.error) break;
+  }
+  return existsSync(sockFile);
+}
+
 function main() {
   const cwd = process.env.CLAUDE_PROJECT_DIR || process.cwd();
   const key = workspaceKey(cwd);
@@ -65,14 +146,25 @@ function main() {
   if (existsSync(pidFile)) {
     const pid = parseInt(readFileSync(pidFile, 'utf8').trim(), 10);
     if (Number.isFinite(pid) && isAlive(pid) && existsSync(sockFile)) {
+      logEvent('info', 'daemon already running', { key, pid });
       process.exit(0);
     }
   }
 
   const plugin = pluginRoot();
-  if (!plugin) process.exit(0);
+  if (!plugin) {
+    logEvent('error', 'plugin root not found', { cwd });
+    process.exit(0);
+  }
   const entry = join(plugin, 'dist', 'memory', 'daemon', 'index.js');
-  if (!existsSync(entry)) process.exit(0);
+  if (!existsSync(entry)) {
+    logEvent('error', 'daemon entrypoint missing', { plugin, entry });
+    process.exit(0);
+  }
+
+  if (!ensureNativeBinding(plugin, key)) {
+    process.exit(0);
+  }
 
   const child = spawn(process.execPath, [entry], {
     detached: true,
@@ -84,6 +176,15 @@ function main() {
     cwd,
   });
   child.unref();
+  logEvent('info', 'daemon spawn dispatched', { key, plugin, pluginPid: child.pid });
+
+  if (waitForSocket(sockFile)) {
+    logEvent('info', 'daemon socket up', { key, sockFile });
+  } else {
+    logEvent('error', 'daemon spawn returned but socket did not appear', {
+      key, sockFile, hint: `tail -20 ~/.siftcoder/logs/${key}.ndjson for daemon-side errors`,
+    });
+  }
   process.exit(0);
 }
 
