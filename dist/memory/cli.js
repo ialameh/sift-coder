@@ -3,13 +3,16 @@
  * Used by slash commands (/siftcoder:handoff) to query the per-workspace memory daemon.
  *
  * Subcommands:
- *   search <query> [--k=N]       Hybrid search; prints JSON {hits: [...]}.
- *   timeline <near-id> [--w=N]   Chronological neighbors.
- *   get <id>[,<id>...]           Fetch summaries by id.
- *   ping                         Liveness check; exit 0 if daemon up.
- *   eval [--k=N] [--rerank]      Self-recall eval over mined golden set; prints {recallAtK,mrr}.
- *   mine-golden [--max=N]        Print the mined golden set as JSON.
- *   watch [--limit=N]            Stream the events table; pretty-printed updates.
+ *   search <query> [--k=N]                    Hybrid search; prints JSON {hits: [...]}.
+ *   timeline <near-id> [--w=N]                Chronological neighbors.
+ *   get <id>[,<id>...]                        Fetch summaries by id.
+ *   ping                                      Liveness check; exit 0 if daemon up.
+ *   eval [--k=N] [--rerank]                   Self-recall eval over mined golden set.
+ *   mine-golden [--max=N]                     Print the mined golden set as JSON.
+ *   watch [--limit=N]                         Stream the events table; pretty-printed.
+ *   note <text...> [--source=X] [--session=X] Capture a free-text note. Source defaults to "cli".
+ *   ingest [--file=P|--stdin] [--tool=X]      Capture a typed event from a file or stdin.
+ *                                             [--source=X] [--session=X]
  *
  * Exit codes:
  *   0 success, 1 daemon unreachable, 2 bad args, 3 daemon error.
@@ -77,8 +80,48 @@ async function main() {
         case 'watch':
             await runLocal(args, paths.db);
             return;
+        case 'note': {
+            const text = args.positional.join(' ').trim();
+            if (!text) {
+                process.stderr.write('note: text required\n');
+                process.exit(2);
+            }
+            req = {
+                kind: 'capture',
+                sessionId: args.flags['session'] ?? 'note',
+                tool: 'Note',
+                payload: { text },
+                source: args.flags['source'] ?? 'cli',
+                ts: Date.now(),
+            };
+            break;
+        }
+        case 'ingest': {
+            const filePath = args.flags['file'];
+            const useStdin = args.flags['stdin'] === 'true' || !filePath;
+            const tool = args.flags['tool'] ?? 'Ingest';
+            const source = args.flags['source'] ?? 'cli-ingest';
+            const sessionId = args.flags['session'] ?? `ingest-${Date.now()}`;
+            const content = await readContent(filePath, useStdin);
+            if (!content) {
+                process.stderr.write('ingest: empty input\n');
+                process.exit(2);
+            }
+            req = {
+                kind: 'capture',
+                sessionId,
+                tool,
+                payload: {
+                    content,
+                    ...(filePath ? { file_path: filePath } : {}),
+                },
+                source,
+                ts: Date.now(),
+            };
+            break;
+        }
         default:
-            process.stderr.write(`unknown command: ${args.command}\nusage: siftcoder-mem <ping|search|timeline|get|eval|mine-golden|watch> ...\n`);
+            process.stderr.write(`unknown command: ${args.command}\nusage: siftcoder-mem <ping|search|timeline|get|eval|mine-golden|watch|note|ingest> ...\n`);
             process.exit(2);
             return;
     }
@@ -128,6 +171,21 @@ function parseIntFlag(v, def) {
         return def;
     const n = parseInt(v, 10);
     return Number.isFinite(n) ? n : def;
+}
+async function readContent(filePath, useStdin) {
+    if (filePath) {
+        const { readFileSync } = await import('node:fs');
+        return readFileSync(filePath, 'utf8');
+    }
+    if (useStdin) {
+        return new Promise(resolve => {
+            let data = '';
+            process.stdin.setEncoding('utf8');
+            process.stdin.on('data', chunk => { data += chunk; });
+            process.stdin.on('end', () => resolve(data));
+        });
+    }
+    return '';
 }
 main().catch(err => {
     process.stderr.write(`siftcoder-mem cli: ${err?.message ?? err}\n`);

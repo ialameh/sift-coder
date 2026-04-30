@@ -7,7 +7,7 @@ import { Request, Response } from '../protocol.js';
 import { Storage } from '../storage/storage.js';
 import { WAL } from './wal.js';
 import type { Embedder } from '../embedder.js';
-import { type SymbolExtractor } from '../symbols.js';
+import { type SymbolExtractor, type AsyncSymbolExtractor } from '../symbols.js';
 export interface ServerDeps {
     storage: Storage;
     wal: WAL;
@@ -15,9 +15,10 @@ export interface ServerDeps {
     cwd: string;
     embedder?: Embedder | null;
     symbols?: SymbolExtractor | null;
+    asyncSymbols?: AsyncSymbolExtractor | null;
     onShutdown?: () => void;
 }
 export type Handler = (req: Request) => Promise<Response>;
-export declare function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 'embedder' | 'symbols' | 'onShutdown'>): Handler;
+export declare function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 'embedder' | 'symbols' | 'asyncSymbols' | 'onShutdown'>): Handler;
 export declare function startServer(deps: ServerDeps): Server;
 //# sourceMappingURL=server.d.ts.map

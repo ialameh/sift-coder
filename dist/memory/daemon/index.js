@@ -15,6 +15,11 @@ import { startServer } from './server.js';
 import { Consolidator } from './consolidator.js';
 import { DeterministicEmbedder } from '../embedder.js';
 import { FileSink, Logger } from '../logger.js';
+import { buildHandler } from './server.js';
+import { startHttpBridge } from './http-bridge.js';
+import { CdgSymbolExtractor, AsyncFromSync } from '../cdg-adapter.js';
+import { CdgEmbedder } from '../cdg-embedder.js';
+import { RegexSymbolExtractor } from '../symbols.js';
 const IDLE_SHUTDOWN_MS = 30 * 60 * 1000;
 async function main() {
     const cwd = process.env.SIFTCODER_WORKSPACE_CWD || process.cwd();
@@ -46,15 +51,24 @@ async function main() {
     const sink = new FileSink(paths.log);
     const logger = new Logger('siftcoder-mem', sink);
     logger.info('daemon booting', { pid: process.pid, key: paths.key });
-    const embedder = new DeterministicEmbedder(384);
+    const localEmbedder = new DeterministicEmbedder(384);
+    const cdgEmbedder = CdgEmbedder.fromEnv(process.env, localEmbedder);
+    const embedder = cdgEmbedder ?? localEmbedder;
+    if (cdgEmbedder)
+        logger.info('cdg embedder enabled', {});
     const consolidator = new Consolidator(storage);
     consolidator.start();
+    const regexFallback = new AsyncFromSync(new RegexSymbolExtractor());
+    const asyncSymbols = CdgSymbolExtractor.fromEnv(process.env, regexFallback);
+    if (asyncSymbols)
+        logger.info('cdg adapter enabled', { url: process.env['SIFTCODER_CDG_URL'] });
     const server = startServer({
         embedder,
         storage,
         wal,
         socketPath: paths.socket,
         cwd,
+        asyncSymbols,
         onShutdown: () => {
             stopping = true;
         },
@@ -62,6 +76,12 @@ async function main() {
     server.on('connection', () => {
         lastClientTs = Date.now();
     });
+    let httpServer = null;
+    if (process.env['SIFTCODER_HTTP'] === '1') {
+        const handler = buildHandler({ storage, wal, cwd, embedder });
+        httpServer = startHttpBridge({ workspaceRoot: paths.root, handler });
+        logger.info('http bridge enabled', {});
+    }
     const idleTimer = setInterval(() => {
         if (stopping || Date.now() - lastClientTs > IDLE_SHUTDOWN_MS) {
             clearInterval(idleTimer);
@@ -71,6 +91,10 @@ async function main() {
     function shutdown() {
         consolidator.stop();
         logger.info('daemon stopping');
+        try {
+            httpServer?.close();
+        }
+        catch { /* ignore */ }
         try {
             server.close();
         }

@@ -11,6 +11,7 @@ import type { MemoryClient } from '../client.js';
 import type { Summarizer } from '../daemon/summarizer.js';
 import type { Storage } from '../storage/storage.js';
 import type { Embedder } from '../embedder.js';
+import type { ProvenanceStore } from '../provenance.js';
 export interface JsonRpcRequest {
     jsonrpc: '2.0';
     id?: number | string;
@@ -31,6 +32,7 @@ export interface HandlerDeps {
     storage?: Storage | null;
     summarizer?: Summarizer | null;
     embedder?: Embedder | null;
+    provenance?: ProvenanceStore | null;
     drainBatch?: number;
 }
 export declare const TOOLS: ({
@@ -50,6 +52,9 @@ export declare const TOOLS: ({
             window?: undefined;
             ids?: undefined;
             batch?: undefined;
+            kind?: undefined;
+            id?: undefined;
+            depth?: undefined;
         };
         required: string[];
     };
@@ -70,6 +75,9 @@ export declare const TOOLS: ({
             k?: undefined;
             ids?: undefined;
             batch?: undefined;
+            kind?: undefined;
+            id?: undefined;
+            depth?: undefined;
         };
         required: string[];
     };
@@ -90,6 +98,9 @@ export declare const TOOLS: ({
             near_id?: undefined;
             window?: undefined;
             batch?: undefined;
+            kind?: undefined;
+            id?: undefined;
+            depth?: undefined;
         };
         required: string[];
     };
@@ -108,8 +119,36 @@ export declare const TOOLS: ({
             near_id?: undefined;
             window?: undefined;
             ids?: undefined;
+            kind?: undefined;
+            id?: undefined;
+            depth?: undefined;
         };
         required: never[];
+    };
+} | {
+    name: string;
+    description: string;
+    inputSchema: {
+        type: string;
+        properties: {
+            kind: {
+                type: string;
+            };
+            id: {
+                type: string;
+            };
+            depth: {
+                type: string;
+                default: number;
+            };
+            query?: undefined;
+            k?: undefined;
+            near_id?: undefined;
+            window?: undefined;
+            ids?: undefined;
+            batch?: undefined;
+        };
+        required: string[];
     };
 })[];
 export interface DrainResult {

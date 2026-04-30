@@ -11,6 +11,9 @@
  */
 import { type Embedder } from './embedder.js';
 import type { Storage } from './storage/storage.js';
+export interface AsyncReranker {
+    rerank(query: string, hits: HybridHit[]): Promise<HybridHit[]>;
+}
 export interface HybridOptions {
     k?: number;
     rrfK?: number;
@@ -19,6 +22,8 @@ export interface HybridOptions {
     bm25Weight?: number;
     vectorWeight?: number;
     rerank?: boolean;
+    asyncReranker?: AsyncReranker | null;
+    boostFn?: ((hit: HybridHit) => number) | null;
 }
 export interface HybridHit {
     id: number;

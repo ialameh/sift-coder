@@ -35,6 +35,19 @@ export const TOOLS = [
             required: [],
         },
     },
+    {
+        name: 'mem_why',
+        description: 'Trace causal provenance from a memory node. Returns the chain of edges (causes, derives_from, calls, imports, ...) up to a configurable depth.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                kind: { type: 'string' },
+                id: { type: 'string' },
+                depth: { type: 'number', default: 4 },
+            },
+            required: ['kind', 'id'],
+        },
+    },
 ];
 export async function drain(deps, batch) {
     const { storage, summarizer, embedder } = deps;
@@ -109,6 +122,15 @@ export async function dispatch(req, deps) {
                 case 'mem_drain': {
                     const r = await drain(deps, Number(args['batch'] ?? 16));
                     return ok(req.id, { ok: true, data: r });
+                }
+                case 'mem_why': {
+                    if (!deps.provenance)
+                        return ok(req.id, { ok: true, data: { edges: [] } });
+                    const kind = String(args['kind'] ?? '');
+                    const id = String(args['id'] ?? '');
+                    const depth = Number(args['depth'] ?? 4);
+                    const edges = deps.provenance.trace({ kind, id }, depth);
+                    return ok(req.id, { ok: true, data: { edges } });
                 }
                 default:
                     return { jsonrpc: '2.0', id: req.id, error: { code: -32601, message: `unknown tool: ${name}` } };

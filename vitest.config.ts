@@ -16,6 +16,7 @@ export default defineConfig({
       'dist/**',
       'src/memory/daemon/index.ts',
       'src/memory/daemon/anthropic-client.ts',
+      'src/memory/daemon/http-bridge.ts',
       'src/memory/mcp/server.ts',
       'src/memory/cli.ts',
       'src/memory/storage/schema.ts'
