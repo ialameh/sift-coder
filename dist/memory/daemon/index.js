@@ -89,7 +89,16 @@ async function main() {
     let httpServer = null;
     if (process.env['SIFTCODER_HTTP'] === '1') {
         const handler = buildHandler({ storage, wal, cwd, embedder });
-        httpServer = startHttpBridge({ workspaceRoot: paths.root, handler });
+        const { ProvenanceStore } = await import('../provenance.js');
+        httpServer = startHttpBridge({
+            workspaceRoot: paths.root,
+            workspaceKey: paths.key,
+            backend,
+            handler,
+            storage,
+            embedder,
+            provenance: new ProvenanceStore(storage),
+        });
         logger.info('http bridge enabled', {});
     }
     const idleTimer = setInterval(() => {

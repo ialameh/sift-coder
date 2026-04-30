@@ -1,18 +1,29 @@
 /**
- * Optional HTTP bridge to the same daemon handler. Activated when SIFTCODER_HTTP=1 in the env.
- * Listens on 127.0.0.1:<port> (port written to ~/.siftcoder/workspaces/<key>/http.port). Accepts
- * POST / with bearer token auth (token at ~/.siftcoder/auth.token, generated on first start).
+ * Optional HTTP bridge to the daemon's RPC handler + the read-only web client API.
  *
- * Same Request/Response protocol as the UDS path. Enables browser extensions, IDE plugins, and
- * cross-process ingestion (Linear webhooks, git hooks, CI/CD) to write into memory.
+ * Activated when SIFTCODER_HTTP=1 in the env. Listens on 127.0.0.1:<port> (port written to
+ * ~/.siftcoder/workspaces/<key>/http.port). Accepts:
+ *   - POST /                  legacy RPC: forwards to deps.handler (memory client compat)
+ *   - GET  /api/...           read-only JSON endpoints (savings, events, summaries, etc.)
+ *   - POST /api/...           search / why / ab
+ *   - GET  /, /app.js, /style.css   static SPA assets
  *
- * Excluded from coverage: integration plumbing (real HTTP). Pure logic in handler is unit-tested.
+ * Auth: bearer token at ~/.siftcoder/auth.token. Constant-time comparison. Static assets are
+ * gated too so a publicly-exposed bridge does not leak the SPA shell.
+ *
+ * Excluded from coverage: stdio plumbing only. Routing logic in web/router.ts is unit-tested.
  */
 import { Server } from 'node:http';
 import type { Request, Response } from '../protocol.js';
+import { type WebDeps } from '../web/router.js';
 export interface HttpBridgeDeps {
     workspaceRoot: string;
+    workspaceKey: string;
+    backend: 'native' | 'wasm';
     handler: (req: Request) => Promise<Response>;
+    storage: WebDeps['storage'];
+    embedder: WebDeps['embedder'];
+    provenance: WebDeps['provenance'];
     port?: number;
 }
 export declare function ensureAuthToken(): string;
