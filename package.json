@@ -27,7 +27,7 @@
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "clean": "rm -rf dist",
-    "postinstall": "npm run build"
+    "postinstall": "node scripts/postinstall.mjs"
   },
   "installation": {
     "method": "git",
@@ -38,6 +38,7 @@
     "dist",
     "hooks",
     "hooks.json",
+    "scripts",
     "README.md",
     "LICENSE"
   ],
