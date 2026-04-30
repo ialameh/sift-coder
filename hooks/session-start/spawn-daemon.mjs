@@ -162,9 +162,10 @@ function main() {
     process.exit(0);
   }
 
-  if (!ensureNativeBinding(plugin, key)) {
-    process.exit(0);
-  }
+  // Best-effort: try to heal the native binding so we get the fast path.
+  // If this fails, the daemon will fall back to the WASM SQLite backend automatically — slower
+  // but always works. Either way the daemon should boot.
+  ensureNativeBinding(plugin, key);
 
   const child = spawn(process.execPath, [entry], {
     detached: true,

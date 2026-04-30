@@ -32,17 +32,27 @@ async function main() {
         catch { /* ignore */ }
     }
     writeFileSync(paths.pid, String(process.pid));
-    let Database;
+    let db;
+    let backend;
     try {
         const mod = (await import('better-sqlite3'));
-        Database = mod.default;
+        db = new mod.default(paths.db);
+        backend = 'native';
     }
-    catch {
-        process.stderr.write('siftcoder-mem: better-sqlite3 not installed; daemon exiting\n');
-        process.exit(0);
-        return;
+    catch (nativeErr) {
+        try {
+            const wasm = await import('../storage/wasm-db.js');
+            db = await wasm.openWasmDatabase(paths.db);
+            backend = 'wasm';
+        }
+        catch (wasmErr) {
+            process.stderr.write('siftcoder-mem: neither better-sqlite3 nor node-sqlite3-wasm could be loaded; daemon exiting\n' +
+                `  native: ${nativeErr.message}\n` +
+                `  wasm:   ${wasmErr.message}\n`);
+            process.exit(0);
+            return;
+        }
     }
-    const db = new Database(paths.db);
     const storage = new Storage(db);
     const wal = new WAL(paths.wal);
     wal.open();
@@ -50,7 +60,7 @@ async function main() {
     let stopping = false;
     const sink = new FileSink(paths.log);
     const logger = new Logger('siftcoder-mem', sink);
-    logger.info('daemon booting', { pid: process.pid, key: paths.key });
+    logger.info('daemon booting', { pid: process.pid, key: paths.key, backend });
     const localEmbedder = new DeterministicEmbedder(384);
     const cdgEmbedder = CdgEmbedder.fromEnv(process.env, localEmbedder);
     const embedder = cdgEmbedder ?? localEmbedder;
