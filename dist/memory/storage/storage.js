@@ -4,6 +4,17 @@
  */
 import { createHash } from 'node:crypto';
 import { CORE_DDL, MIGRATIONS, VEC_DDL } from './schema.js';
+/**
+ * FTS5 MATCH treats `-`, `+`, `"`, `(`, `)`, `*`, `:`, `^`, AND, OR, NOT, NEAR as operators.
+ * User-typed queries with any of these blow up with `fts5: syntax error near "X"`. Reduce to
+ * alphanumeric tokens (incl. underscore); strip the FTS5 keywords NEAR/AND/OR/NOT to avoid
+ * accidental operator semantics; join with spaces for default AND-of-tokens behavior.
+ */
+const FTS5_KEYWORDS = new Set(['NEAR', 'AND', 'OR', 'NOT']);
+export function sanitizeFtsQuery(q) {
+    const tokens = (q.match(/[A-Za-z0-9_]+/g) ?? []).filter(t => !FTS5_KEYWORDS.has(t.toUpperCase()));
+    return tokens.join(' ');
+}
 export function hashInput(payload) {
     const json = JSON.stringify(payload);
     return createHash('sha256').update(json).digest('hex');
@@ -106,13 +117,16 @@ export class Storage {
         }));
     }
     searchFts(query, k = 5) {
+        const safe = sanitizeFtsQuery(query);
+        if (!safe)
+            return [];
         const rows = this.db
             .prepare(`SELECT s.id AS id, s.event_id AS event_id, s.text AS text, s.ts AS ts,
                 bm25(summaries_fts) AS score
          FROM summaries_fts JOIN summaries s ON s.id = summaries_fts.rowid
          WHERE summaries_fts MATCH ?
          ORDER BY score ASC LIMIT ?`)
-            .all(query, k);
+            .all(safe, k);
         return rows.map(r => ({
             id: r['id'],
             eventId: r['event_id'],

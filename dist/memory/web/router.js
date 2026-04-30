@@ -49,6 +49,11 @@ function summaryTail(storage, limit) {
     return db.prepare('SELECT id, ts, model, substr(text, 1, 240) AS text, confidence FROM summaries ORDER BY id DESC LIMIT ?').all(limit);
 }
 export async function route(req, deps) {
+    // Browsers request /favicon.ico unconditionally and without our auth token. Reply 204 so the
+    // network panel stops complaining instead of a misleading 404 / 401.
+    if (req.method === 'GET' && req.path === '/favicon.ico') {
+        return { status: 204, headers: {}, body: '' };
+    }
     // Static assets — gate behind auth too so a publicly-exposed bridge does not leak the SPA.
     if (req.method === 'GET' && STATIC_PATHS[req.path] && deps.staticAsset) {
         if (!isAuthorized(req, deps.authToken))
@@ -56,6 +61,17 @@ export async function route(req, deps) {
         const asset = deps.staticAsset(STATIC_PATHS[req.path]);
         if (!asset)
             return json(404, { ok: false, error: 'not found' });
+        // For the SPA shell, rewrite asset URLs to carry the same auth token. Browsers don't
+        // forward the original `?token=` query when fetching <link>/<script> at root paths, so
+        // without rewriting they 401. Token already lives in the URL the user opened — no extra
+        // exposure.
+        if (req.path === '/') {
+            const tok = encodeURIComponent(deps.authToken);
+            const html = asset.body.toString('utf8')
+                .replace(/href="\/style\.css"/g, `href="/style.css?token=${tok}"`)
+                .replace(/src="\/app\.js"/g, `src="/app.js?token=${tok}"`);
+            return { status: 200, headers: { 'content-type': asset.type }, body: html };
+        }
         return { status: 200, headers: { 'content-type': asset.type }, body: asset.body };
     }
     // Legacy RPC endpoint — kept for the existing MemoryClient over HTTP path.

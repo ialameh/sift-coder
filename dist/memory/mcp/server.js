@@ -37,9 +37,17 @@ class StdioBridge {
                 }
                 const m = msg;
                 if (m.method === undefined && typeof m.id === 'number' && this.pending.has(m.id)) {
-                    const cb = this.pending.get(m.id);
+                    const entry = this.pending.get(m.id);
                     this.pending.delete(m.id);
-                    cb(m.result);
+                    if (m.error) {
+                        entry.reject(new Error(`sampling/createMessage failed: ${m.error.message} (code ${m.error.code})`));
+                    }
+                    else if (m.result) {
+                        entry.resolve(m.result);
+                    }
+                    else {
+                        entry.reject(new Error('sampling/createMessage returned neither result nor error'));
+                    }
                     continue;
                 }
                 const res = await onRequest(msg);
@@ -49,8 +57,8 @@ class StdioBridge {
     }
     requestSampling(params) {
         const id = this.nextId++;
-        return new Promise(resolve => {
-            this.pending.set(id, resolve);
+        return new Promise((resolve, reject) => {
+            this.pending.set(id, { resolve, reject });
             const out = { jsonrpc: '2.0', id, method: 'sampling/createMessage', params };
             process.stdout.write(JSON.stringify(out) + '\n');
         });

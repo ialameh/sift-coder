@@ -19,16 +19,19 @@ Quantitative view of what SiftCoder Memory has captured + saved for the workspac
 
 ## Instructions
 
-Run both reports in parallel and present them merged. Use the workspace key derived from the current `CLAUDE_PROJECT_DIR` (or `pwd` if unset).
+Run both reports in parallel and present them merged. Always pass `CLAUDE_PROJECT_DIR` explicitly so the workspace key resolves against the invoked directory, not whatever cwd the parent shell ended up at.
 
 ```bash
+WS_CWD="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 PLUGIN=${CLAUDE_PLUGIN_ROOT}
-node $PLUGIN/dist/memory/cli.js savings
+CLAUDE_PROJECT_DIR="$WS_CWD" node $PLUGIN/dist/memory/cli.js savings
 echo
-node $PLUGIN/dist/memory/cli.js ab --turns=200 --k=5
+CLAUDE_PROJECT_DIR="$WS_CWD" node $PLUGIN/dist/memory/cli.js ab --turns=200 --k=5
 ```
 
-If the `savings` output shows `events captured: 0`, tell the user: **memory daemon hasn't captured anything for this workspace yet — open Claude Code here in a fresh session, or run `/siftcoder:memory:backfill` to import past Claude Code sessions from `~/.claude/projects/`.**
+The CLI prints a `workspace: <key> (<cwd>)` banner on the first line of each report — surface that banner verbatim so the user sees which workspace is being summarized.
+
+If the CLI exits with `no-data` / exit code 4 (no DB for this workspace yet), tell the user: **memory daemon hasn't captured anything for this workspace yet — open Claude Code here in a fresh session, or run `/siftcoder:memory:backfill` to import past Claude Code sessions from `~/.claude/projects/`.** Do NOT silently substitute another workspace.
 
 If `events captured > 0` but `summarized: 0`, suggest: **call `mem_drain` via the MCP tool (or `/siftcoder:memory:drain`) so summaries land in the store.**
 
