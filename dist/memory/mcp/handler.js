@@ -56,6 +56,7 @@ export async function drain(deps, batch) {
     const events = storage.pendingEvents(batch);
     let processed = 0;
     let errors = 0;
+    let firstError;
     for (const ev of events) {
         try {
             const r = await summarizer.summarize(ev.id, ev.inputHash, ev.payloadJson, Date.now());
@@ -66,16 +67,23 @@ export async function drain(deps, batch) {
             storage.markEventStatus(ev.id, 'summarized');
             processed++;
         }
-        catch {
+        catch (e) {
             storage.markEventStatus(ev.id, 'skipped');
             errors++;
+            if (firstError === undefined)
+                firstError = e.message;
         }
     }
     const remaining = storage.pendingEvents(1).length;
-    return { processed, errors, pending: remaining };
+    return firstError ? { processed, errors, pending: remaining, firstError } : { processed, errors, pending: remaining };
 }
 export async function dispatch(req, deps) {
     if (req.method === 'initialize') {
+        const params = (req.params ?? {});
+        const clientCaps = params.capabilities ?? {};
+        const samplingAdvertised = 'sampling' in clientCaps;
+        if (deps.onInitialize)
+            deps.onInitialize({ clientCaps, samplingAdvertised, clientInfo: params.clientInfo });
         return {
             jsonrpc: '2.0',
             id: req.id,
