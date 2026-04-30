@@ -186,7 +186,46 @@ function main() {
       key, sockFile, hint: `tail -20 ~/.siftcoder/logs/${key}.ndjson for daemon-side errors`,
     });
   }
+
+  emitOnboardNudgeIfNeeded({ cwd, key, root });
+
   process.exit(0);
+}
+
+/**
+ * If this workspace hasn't been onboarded yet, print a SessionStart context line so Claude
+ * surfaces the suggestion to the user. Stays silent once `~/.siftcoder/workspaces/<key>/onboarded`
+ * exists. Nags every session until then — by design, per user request.
+ */
+function emitOnboardNudgeIfNeeded({ cwd, key, root }) {
+  const sentinel = join(root, 'onboarded');
+  if (existsSync(sentinel)) return;
+
+  // Cheap heuristic: are there past Claude Code transcripts for this directory? If so, the
+  // user probably has history worth backfilling. If not, no point nagging.
+  const ccProjectDir = join(homedir(), '.claude', 'projects', cwd.replace(/\//g, '-'));
+  let transcriptCount = 0;
+  try {
+    if (existsSync(ccProjectDir)) {
+      const files = spawnSync('ls', ['-1', ccProjectDir], { stdio: ['ignore', 'pipe', 'ignore'] });
+      transcriptCount = (files.stdout?.toString() ?? '')
+        .split('\n')
+        .filter(f => f.endsWith('.jsonl'))
+        .length;
+    }
+  } catch { /* best-effort */ }
+
+  // SessionStart hook stdout is injected as additional context for Claude. Format the message
+  // so the assistant naturally surfaces it to the user once.
+  const lines = [
+    `siftcoder-memory: workspace ${key} not yet onboarded.`,
+    transcriptCount > 0
+      ? `${transcriptCount} past Claude Code session(s) available to backfill.`
+      : `no past sessions to backfill; capture starts fresh.`,
+    `Suggested next step: run \`/siftcoder:mem-setup\` to walk through the one-time setup`,
+    `(daemon check, optional transcript backfill, drain to summaries). Will keep showing this nudge until \`/siftcoder:mem-setup\` completes or you create \`${sentinel}\` manually.`,
+  ];
+  process.stdout.write(lines.join(' ') + '\n');
 }
 
 main();
