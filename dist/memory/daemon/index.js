@@ -87,7 +87,7 @@ async function main() {
         lastClientTs = Date.now();
     });
     let httpServer = null;
-    if (process.env['SIFTCODER_HTTP'] === '1') {
+    if (process.env['SIFTCODER_NO_HTTP'] !== '1') {
         const handler = buildHandler({ storage, wal, cwd, embedder });
         const { ProvenanceStore } = await import('../provenance.js');
         httpServer = startHttpBridge({

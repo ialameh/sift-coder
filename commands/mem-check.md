@@ -116,7 +116,7 @@ After all five checks, render:
   status:      ALL CHECKS PASS  (or HALTED AT CHECK N)
 ```
 
-If all pass, append: `Memory is fully operational. Run /siftcoder:mem-status for token savings.`
+If all pass, append: `Memory is fully operational. Run /siftcoder:mem-status for token savings, or /siftcoder:mem-web for the live dashboard.`
 If any fail, append the specific remediation from the failing check.
 
 ## Tips

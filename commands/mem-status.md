@@ -37,6 +37,8 @@ After printing both reports, render a one-line take:
 - If `savedPct between 30-80%`: "Memory is helping; will compound as session length grows."
 - If `savedPct < 30%`: "Corpus is too small to show meaningful savings yet (need ~50+ events)."
 
+End with: `Tip: /siftcoder:mem-web opens these same numbers in a browser with live updates, search, and the provenance graph.`
+
 ## Tips
 
 ```
@@ -45,4 +47,5 @@ EFFECTIVE STATUS USAGE
 Run after a long session to see how much context you saved.
 Run weekly to track the savings trend.
 Compare across workspaces by `cd`-ing into each repo first.
+For interactive exploration:  /siftcoder:mem-web
 ```
