@@ -6,19 +6,13 @@ node_modules/
 claude-mem/
 siftcoder-website/
 
-# Source files (not needed - dist/ contains compiled output)
-src/
-schemas/
+# Vendored / generated source we explicitly don't track
 !vendor/**/src/
 !vendor/**/schemas/
 
-# Test files (not needed for npm package)
+# Test config that's local-only
 jest.config.cjs
 jest.setup.ts
-tsconfig.test.json
-**/*.test.ts
-**/*.spec.ts
-__tests__/
 
 # Development config files
 .eslintrc.js

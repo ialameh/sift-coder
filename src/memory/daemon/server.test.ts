@@ -1,0 +1,346 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import { buildHandler } from './server.js';
+import { Storage, type DBHandle } from '../storage/storage.js';
+import { WAL } from './wal.js';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+class FakeDB implements DBHandle {
+  events: Array<Record<string, unknown>> = [];
+  summaries: Array<Record<string, unknown>> = [];
+  ftsRows: Array<{ id: number; text: string; ts: number; event_id: number }> = [];
+  sessions: Array<Record<string, unknown>> = [];
+  cache = new Map<string, unknown>();
+  private nextEventId = 1;
+  private nextSummaryId = 1;
+
+  exec(): void { /* noop */ }
+  loadExtension(): void { throw new Error('no'); }
+  prepare(sql: string) {
+    const stmt = sql.trim();
+    if (stmt.startsWith('INSERT OR IGNORE INTO sessions')) {
+      return {
+        run: (id: unknown, ts: unknown, cwd: unknown) => {
+          if (!this.sessions.find(s => s['id'] === id)) this.sessions.push({ id, started_at: ts, cwd });
+          return { lastInsertRowid: 0 };
+        },
+        get: () => undefined, all: () => [],
+      };
+    }
+    if (stmt.startsWith('INSERT INTO events')) {
+      return {
+        run: (ts: unknown, sid: unknown, tool: unknown, hash: unknown, payload: unknown) => {
+          const id = this.nextEventId++;
+          this.events.push({ id, ts, session_id: sid, tool, input_hash: hash, payload_json: payload, status: 'raw' });
+          return { lastInsertRowid: id };
+        },
+        get: () => undefined, all: () => [],
+      };
+    }
+    if (stmt.includes('summaries_fts MATCH')) {
+      return {
+        run: () => ({ lastInsertRowid: 0 }),
+        get: () => undefined,
+        all: (q: unknown, k: unknown) => this.ftsRows
+          .filter(r => r.text.toLowerCase().includes(String(q).toLowerCase()))
+          .slice(0, k as number)
+          .map(r => ({ id: r.id, event_id: r.event_id, text: r.text, ts: r.ts, score: -1 })),
+      };
+    }
+    if (stmt.includes('FROM summaries\n         WHERE id BETWEEN')) {
+      return {
+        run: () => ({ lastInsertRowid: 0 }),
+        get: () => undefined,
+        all: (lo: unknown, hi: unknown) => this.summaries.filter(s =>
+          (s['id'] as number) >= (lo as number) && (s['id'] as number) <= (hi as number)),
+      };
+    }
+    if (stmt.includes('FROM summaries WHERE id IN')) {
+      return {
+        run: () => ({ lastInsertRowid: 0 }),
+        get: () => undefined,
+        all: (...ids: unknown[]) => this.summaries.filter(s => ids.includes(s['id'])),
+      };
+    }
+    if (stmt.startsWith('INSERT INTO summaries')) {
+      return {
+        run: (eid: unknown, ts: unknown, model: unknown, ph: unknown, text: unknown) => {
+          const id = this.nextSummaryId++;
+          this.summaries.push({ id, event_id: eid, ts, model, prompt_hash: ph, text });
+          this.ftsRows.push({ id, text: text as string, ts: ts as number, event_id: eid as number });
+          return { lastInsertRowid: id };
+        },
+        get: () => undefined, all: () => [],
+      };
+    }
+    return { run: () => ({ lastInsertRowid: 0 }), get: () => undefined, all: () => [] };
+  }
+}
+
+let db: FakeDB;
+let storage: Storage;
+let wal: WAL;
+let walDir: string;
+beforeEach(() => {
+  db = new FakeDB();
+  storage = new Storage(db);
+  walDir = mkdtempSync(join(tmpdir(), 'srv-wal-'));
+  wal = new WAL(join(walDir, 'wal.ndjson'));
+  wal.open();
+});
+
+describe('buildHandler', () => {
+  it('responds to ping', async () => {
+    const h = buildHandler({ storage, wal, cwd: '/x' });
+    const r = await h({ kind: 'ping' });
+    expect(r).toEqual({ ok: true, data: { pong: true } });
+    rmSync(walDir, { recursive: true, force: true });
+  });
+
+  it('captures an event, redacting secrets and persisting an event id', async () => {
+    const h = buildHandler({ storage, wal, cwd: '/x' });
+    const r = await h({ kind: 'capture', sessionId: 's', tool: 'Read', payload: { token: 'AKIAABCDEFGHIJKLMNOP' } });
+    expect(r.ok).toBe(true);
+    expect(db.events).toHaveLength(1);
+    expect(JSON.parse(db.events[0]!['payload_json'] as string).token).toBe('[REDACTED:aws]');
+    rmSync(walDir, { recursive: true, force: true });
+  });
+
+  it('supplies its own ts when not provided', async () => {
+    const h = buildHandler({ storage, wal, cwd: '/x' });
+    const r = await h({ kind: 'capture', sessionId: 's', tool: 'Bash', payload: { cmd: 'ls' } });
+    expect(r.ok).toBe(true);
+    expect(typeof db.events[0]!['ts']).toBe('number');
+    rmSync(walDir, { recursive: true, force: true });
+  });
+
+  it('returns search hits when summaries match', async () => {
+    db.summaries.push({ id: 1, event_id: 1 });
+    db.ftsRows.push({ id: 1, text: 'hello world', ts: 0, event_id: 1 });
+    const h = buildHandler({ storage, wal, cwd: '/x' });
+    const r = await h({ kind: 'search', query: 'hello' }) as { ok: true; data: { hits: unknown[] } };
+    expect(r.ok).toBe(true);
+    expect((r.data.hits as unknown[]).length).toBe(1);
+    rmSync(walDir, { recursive: true, force: true });
+  });
+
+  it('uses default window when none provided', async () => {
+    db.summaries.push({ id: 1, event_id: 1, ts: 1, model: 'm', prompt_hash: 'p', text: 't', tokens_in: null, tokens_out: null, confidence: null });
+    const h = buildHandler({ storage, wal, cwd: '/x' });
+    const r = await h({ kind: 'timeline', nearId: 1 }) as { ok: true; data: { rows: unknown[] } };
+    expect(r.ok).toBe(true);
+    expect(r.data.rows).toHaveLength(1);
+    rmSync(walDir, { recursive: true, force: true });
+  });
+
+  it('uses default k when search is invoked without k', async () => {
+    db.summaries.push({ id: 1, event_id: 1 });
+    db.ftsRows.push({ id: 1, text: 'alpha', ts: 0, event_id: 1 });
+    const h = buildHandler({ storage, wal, cwd: '/x' });
+    const r = await h({ kind: 'search', query: 'alpha' }) as { ok: true; data: { hits: unknown[] } };
+    expect(r.ok).toBe(true);
+    expect(r.data.hits).toHaveLength(1);
+    rmSync(walDir, { recursive: true, force: true });
+  });
+
+  it('returns timeline rows around a near id', async () => {
+    db.summaries.push({ id: 1, event_id: 1, ts: 1, model: 'm', prompt_hash: 'p', text: 't1', tokens_in: null, tokens_out: null, confidence: null });
+    db.summaries.push({ id: 2, event_id: 1, ts: 2, model: 'm', prompt_hash: 'p', text: 't2', tokens_in: null, tokens_out: null, confidence: null });
+    const h = buildHandler({ storage, wal, cwd: '/x' });
+    const r = await h({ kind: 'timeline', nearId: 1, window: 1 }) as { ok: true; data: { rows: unknown[] } };
+    expect(r.ok).toBe(true);
+    expect(r.data.rows).toHaveLength(2);
+    rmSync(walDir, { recursive: true, force: true });
+  });
+
+  it('returns rows by id list via get', async () => {
+    db.summaries.push({ id: 5, event_id: 1, ts: 1, model: 'm', prompt_hash: 'p', text: 'x', tokens_in: null, tokens_out: null, confidence: null });
+    const h = buildHandler({ storage, wal, cwd: '/x' });
+    const r = await h({ kind: 'get', ids: [5] }) as { ok: true; data: { rows: unknown[] } };
+    expect(r.ok).toBe(true);
+    expect(r.data.rows).toHaveLength(1);
+    rmSync(walDir, { recursive: true, force: true });
+  });
+
+  it('invokes onShutdown for shutdown requests', async () => {
+    let stopped = false;
+    const h = buildHandler({ storage, wal, cwd: '/x', onShutdown: () => { stopped = true; } });
+    const r = await h({ kind: 'shutdown' });
+    expect(r.ok).toBe(true);
+    expect(stopped).toBe(true);
+    rmSync(walDir, { recursive: true, force: true });
+  });
+
+  it('handles shutdown without an onShutdown handler', async () => {
+    const h = buildHandler({ storage, wal, cwd: '/x' });
+    const r = await h({ kind: 'shutdown' });
+    expect(r.ok).toBe(true);
+    rmSync(walDir, { recursive: true, force: true });
+  });
+
+  it('returns ok:false when an error is thrown internally', async () => {
+    const broken = {
+      vecEnabled: false,
+      ensureSession: () => { throw new Error('boom'); },
+      recordEvent: () => 1,
+    } as unknown as Storage;
+    const h = buildHandler({ storage: broken, wal, cwd: '/x' });
+    const r = await h({ kind: 'capture', sessionId: 's', tool: 'Read', payload: {} });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toBe('boom');
+    rmSync(walDir, { recursive: true, force: true });
+  });
+
+  it('extracts code symbols from tool payloads when path looks like code', async () => {
+    const h = buildHandler({ storage, wal, cwd: '/x' });
+    const r = await h({
+      kind: 'capture', sessionId: 's', tool: 'Write',
+      payload: {
+        tool_input: { file_path: '/repo/auth.ts', content: 'export function login() {}\nexport class Auth {}' },
+      },
+    });
+    expect(r.ok).toBe(true);
+    const stored = JSON.parse(db.events[0]!['payload_json'] as string) as { symbols?: string[] };
+    expect(stored.symbols).toEqual(expect.arrayContaining(['function:login', 'class:Auth']));
+    rmSync(walDir, { recursive: true, force: true });
+  });
+
+  it('skips symbol extraction for non-code paths', async () => {
+    const h = buildHandler({ storage, wal, cwd: '/x' });
+    await h({
+      kind: 'capture', sessionId: 's', tool: 'Write',
+      payload: { tool_input: { file_path: '/repo/README.md', content: 'function login() {}' } },
+    });
+    const stored = JSON.parse(db.events[0]!['payload_json'] as string) as { symbols?: string[] };
+    expect(stored.symbols).toBeUndefined();
+    rmSync(walDir, { recursive: true, force: true });
+  });
+
+  it('honors a null symbol extractor (extraction disabled)', async () => {
+    const h = buildHandler({ storage, wal, cwd: '/x', symbols: null });
+    await h({
+      kind: 'capture', sessionId: 's', tool: 'Write',
+      payload: { tool_input: { file_path: '/repo/auth.ts', content: 'export function x() {}' } },
+    });
+    const stored = JSON.parse(db.events[0]!['payload_json'] as string) as { symbols?: string[] };
+    expect(stored.symbols).toBeUndefined();
+    rmSync(walDir, { recursive: true, force: true });
+  });
+
+  it('falls back gracefully when payload has no tool_input', async () => {
+    const h = buildHandler({ storage, wal, cwd: '/x' });
+    const r = await h({ kind: 'capture', sessionId: 's', tool: 'Bash', payload: { cmd: 'ls' } });
+    expect(r.ok).toBe(true);
+    rmSync(walDir, { recursive: true, force: true });
+  });
+
+  it('falls back when tool_input has no recognizable code field', async () => {
+    const h = buildHandler({ storage, wal, cwd: '/x' });
+    const r = await h({
+      kind: 'capture', sessionId: 's', tool: 'Write',
+      payload: { tool_input: { file_path: '/x.ts' } },
+    });
+    expect(r.ok).toBe(true);
+    rmSync(walDir, { recursive: true, force: true });
+  });
+
+  it('falls back when extracted code yields no symbols', async () => {
+    const h = buildHandler({ storage, wal, cwd: '/x' });
+    const r = await h({
+      kind: 'capture', sessionId: 's', tool: 'Write',
+      payload: { tool_input: { file_path: '/x.ts', content: 'const a = 1;' } },
+    });
+    expect(r.ok).toBe(true);
+    const stored = JSON.parse(db.events[0]!['payload_json'] as string) as { symbols?: string[] };
+    expect(stored.symbols).toBeUndefined();
+    rmSync(walDir, { recursive: true, force: true });
+  });
+
+  it('uses asyncSymbols extractor when provided, overriding the sync extractor', async () => {
+    const asyncStub = {
+      async extract() {
+        return [
+          { kind: 'function' as const, name: 'fromCdg' },
+          { kind: 'class' as const, name: 'Async' },
+        ];
+      },
+    };
+    const h = buildHandler({ storage, wal, cwd: '/x', asyncSymbols: asyncStub });
+    await h({
+      kind: 'capture', sessionId: 's', tool: 'Write',
+      payload: { tool_input: { file_path: '/x.ts', content: 'export function x() {}' } },
+    });
+    const stored = JSON.parse(db.events[0]!['payload_json'] as string) as { symbols?: string[] };
+    expect(stored.symbols).toEqual(['function:fromCdg', 'class:Async']);
+    rmSync(walDir, { recursive: true, force: true });
+  });
+
+  it('asyncSymbols falls through when path is not code', async () => {
+    let called = false;
+    const asyncStub = {
+      async extract() { called = true; return []; },
+    };
+    const h = buildHandler({ storage, wal, cwd: '/x', asyncSymbols: asyncStub });
+    await h({
+      kind: 'capture', sessionId: 's', tool: 'Write',
+      payload: { tool_input: { file_path: '/README.md', content: 'function x() {}' } },
+    });
+    expect(called).toBe(false);
+    rmSync(walDir, { recursive: true, force: true });
+  });
+
+  it('asyncSymbols returning [] leaves payload unannotated', async () => {
+    const asyncStub = { async extract() { return []; } };
+    const h = buildHandler({ storage, wal, cwd: '/x', asyncSymbols: asyncStub });
+    await h({
+      kind: 'capture', sessionId: 's', tool: 'Write',
+      payload: { tool_input: { file_path: '/x.ts', content: 'export const a = 1' } },
+    });
+    const stored = JSON.parse(db.events[0]!['payload_json'] as string) as { symbols?: string[] };
+    expect(stored.symbols).toBeUndefined();
+    rmSync(walDir, { recursive: true, force: true });
+  });
+
+  it('extracts symbols when path is provided via tool_input.path', async () => {
+    const h = buildHandler({ storage, wal, cwd: '/x' });
+    await h({
+      kind: 'capture', sessionId: 's', tool: 'Write',
+      payload: { tool_input: { path: '/x.py', content: 'def f(): pass' } },
+    });
+    const stored = JSON.parse(db.events[0]!['payload_json'] as string) as { symbols?: string[] };
+    expect(stored.symbols).toEqual(expect.arrayContaining(['function:f']));
+    rmSync(walDir, { recursive: true, force: true });
+  });
+
+  it('extracts symbols when path is provided via tool_input.notebook_path', async () => {
+    const h = buildHandler({ storage, wal, cwd: '/x' });
+    await h({
+      kind: 'capture', sessionId: 's', tool: 'Write',
+      payload: { tool_input: { notebook_path: '/x.py', file_text: 'def g(): pass' } },
+    });
+    const stored = JSON.parse(db.events[0]!['payload_json'] as string) as { symbols?: string[] };
+    expect(stored.symbols).toEqual(expect.arrayContaining(['function:g']));
+    rmSync(walDir, { recursive: true, force: true });
+  });
+
+  it('handles a non-object payload without throwing', async () => {
+    const h = buildHandler({ storage, wal, cwd: '/x' });
+    const r = await h({ kind: 'capture', sessionId: 's', tool: 'Bash', payload: 'plain string' });
+    expect(r.ok).toBe(true);
+    rmSync(walDir, { recursive: true, force: true });
+  });
+
+  it('coerces non-Error throws into a string error', async () => {
+    const broken = {
+      vecEnabled: false,
+      ensureSession: () => { throw 'plain'; },
+      recordEvent: () => 1,
+    } as unknown as Storage;
+    const h = buildHandler({ storage: broken, wal, cwd: '/x' });
+    const r = await h({ kind: 'capture', sessionId: 's', tool: 'Read', payload: {} });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toBe('plain');
+    rmSync(walDir, { recursive: true, force: true });
+  });
+});
