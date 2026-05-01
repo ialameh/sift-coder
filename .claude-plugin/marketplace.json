@@ -1,0 +1,23 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "siftcoder-marketplace",
+  "description": "Persistent project memory + local-LLM offload + Salesforce domain skills for Claude Code",
+  "owner": {
+    "name": "Sam Alameh",
+    "email": "issam@alameh.com"
+  },
+  "plugins": [
+    {
+      "name": "siftcoder",
+      "description": "Persistent project memory + local-LLM offload + Salesforce domain skills for Claude Code",
+      "version": "3.0.0",
+      "author": {
+        "name": "Sam Alameh",
+        "email": "issam@alameh.com"
+      },
+      "source": "./",
+      "category": "development",
+      "homepage": "https://github.com/ialameh/sift-coder"
+    }
+  ]
+}
