@@ -8,7 +8,7 @@ import os from 'node:os';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 
-const NS = process.env.SIFTCODER_NS || 'v3';
+const NS = process.env.SIFTCODER_NS || 'default';
 const INTERVAL_MS = 30_000;
 
 function key() {

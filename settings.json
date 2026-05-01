@@ -1,6 +1,6 @@
 {
   "siftcoder": {
-    "namespace": "v3",
+    "namespace": "default",
     "memory": {
       "drainBackend": "auto",
       "drainBackendCascade": ["ollama", "anthropic", "sampling"],

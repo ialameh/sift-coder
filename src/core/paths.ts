@@ -24,7 +24,7 @@ export function workspaceKey(projectDir: string = process.env.CLAUDE_PROJECT_DIR
 }
 
 export function resolvePaths(opts: { ns?: string; projectDir?: string } = {}): SiftcoderPaths {
-  const ns = opts.ns || process.env.SIFTCODER_NS || 'v3';
+  const ns = opts.ns || process.env.SIFTCODER_NS || 'default';
   const wsKey = workspaceKey(opts.projectDir);
   const base = path.join(os.homedir(), '.siftcoder', ns);
   const run = path.join(base, 'run');

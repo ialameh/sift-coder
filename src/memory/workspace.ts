@@ -43,7 +43,7 @@ export function workspaceKey(cwd: string): string {
 
 export function workspacePaths(cwd: string, home: string = homedir()): WorkspacePaths {
   const key = workspaceKey(cwd);
-  const ns = process.env['SIFTCODER_NS'] || 'v3';
+  const ns = process.env['SIFTCODER_NS'] || 'default';
   const root = join(home, '.siftcoder', ns, 'workspaces', key);
   const runDir = join(home, '.siftcoder', ns, 'run');
   const logDir = join(home, '.siftcoder', ns, 'logs');

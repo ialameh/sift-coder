@@ -13,7 +13,7 @@ import { existsSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-const SIFTCODER_NS = process.env.SIFTCODER_NS || 'v3';
+const SIFTCODER_NS = process.env.SIFTCODER_NS || 'default';
 
 const HOOK_BUDGET_MS = 250;
 

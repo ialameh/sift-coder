@@ -13,7 +13,7 @@ import { existsSync, readFileSync, renameSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, dirname } from 'node:path';
 
-const NS = process.env.SIFTCODER_NS || 'v3';
+const NS = process.env.SIFTCODER_NS || 'default';
 
 try {
   const flag = join(homedir(), '.siftcoder', NS, 'install-error.flag');

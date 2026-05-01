@@ -97,7 +97,7 @@ function fromEnv(): Partial<SiftcoderConfig> {
 }
 
 export function loadConfig(opts: { pluginRoot: string; projectDir?: string } = { pluginRoot: '' }): SiftcoderConfig {
-  const ns = process.env.SIFTCODER_NS || 'v3';
+  const ns = process.env.SIFTCODER_NS || 'default';
   const project = opts.projectDir || process.cwd();
 
   const layers: Array<Partial<SiftcoderConfig>> = [];

@@ -21,7 +21,7 @@ import { join, dirname, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
-const SIFTCODER_NS = process.env.SIFTCODER_NS || 'v3';
+const SIFTCODER_NS = process.env.SIFTCODER_NS || 'default';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SPAWN_LOG = join(homedir(), '.siftcoder', SIFTCODER_NS, 'logs', 'spawn.ndjson');

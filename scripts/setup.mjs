@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Interactive setup: probes Ollama, captures Anthropic key, writes ~/.siftcoder/v3/config.json.
+// Interactive setup: probes Ollama, captures Anthropic key, writes ~/.siftcoder/<NS>/config.json.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -7,7 +7,7 @@ import os from 'node:os';
 import readline from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 
-const NS = process.env.SIFTCODER_NS || 'v3';
+const NS = process.env.SIFTCODER_NS || 'default';
 const CONFIG_DIR = path.join(os.homedir(), '.siftcoder', NS);
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 

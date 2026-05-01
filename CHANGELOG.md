@@ -2,6 +2,19 @@
 
 All notable changes to SiftCoder. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning is [SemVer](https://semver.org/).
 
+## [1.0.6] — 2026-05-01
+
+### Changed
+
+- **Default namespace renamed `v3` → `default`.** The `v3` marker (visible in `siftcoder status` output as `"namespace": "v3"`) was a leftover from internal "third generation" naming during the rebuild and confused public users. State now lives at `~/.siftcoder/default/` instead of `~/.siftcoder/v3/`.
+- **Auto-migration on first run.** `hooks/session-start/ensure-built.mjs` checks for legacy `~/.siftcoder/v3/` and atomically renames to `~/.siftcoder/default/` when the new dir doesn't exist. Logs `namespace-migrated` event. Idempotent. No data loss.
+- Updated 18 file defaults: `bin/`, `monitors/`, all 8 hooks, `scripts/setup.mjs`, `src/core/{config,paths}.ts`, `src/memory/workspace.ts`, `.claude-plugin/plugin.json`, `.mcp.json`, `settings.json`.
+
+### Notes
+
+- Override via `SIFTCODER_NS=<name>` env var still works for users who explicitly want isolation.
+- If you set `SIFTCODER_NS=v3` explicitly, migration is skipped and you stay on the legacy path.
+
 ## [1.0.5] — 2026-05-01
 
 ### Fixed

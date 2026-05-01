@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
-const NS = process.env.SIFTCODER_NS || 'v3';
+const NS = process.env.SIFTCODER_NS || 'default';
 
 function loadScope(projectDir) {
   const candidates = [

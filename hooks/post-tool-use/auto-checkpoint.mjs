@@ -13,7 +13,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 
-const NS = process.env.SIFTCODER_NS || 'v3';
+const NS = process.env.SIFTCODER_NS || 'default';
 
 function workspaceKey(cwd) {
   let root = cwd;

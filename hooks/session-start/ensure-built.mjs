@@ -21,14 +21,35 @@
  */
 
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, appendFileSync, statSync, writeFileSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, appendFileSync, statSync, writeFileSync, readdirSync, rmSync, renameSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
 
-const NS = process.env.SIFTCODER_NS || 'v3';
+const NS = process.env.SIFTCODER_NS || 'default';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+/**
+ * Migrate legacy 'v3' namespace to 'default' on first run.
+ * v1.0.0–v1.0.5 used 'v3' as the state-isolation marker (leftover from internal
+ * "third generation" naming). v1.0.6+ uses 'default'. If user has data at the
+ * old path and nothing at the new path, atomically rename one-shot.
+ */
+function migrateLegacyNamespace() {
+  if (NS !== 'default' || process.env.SIFTCODER_NS) return;
+  try {
+    const root = join(homedir(), '.siftcoder');
+    const oldDir = join(root, 'v3');
+    const newDir = join(root, 'default');
+    if (existsSync(oldDir) && !existsSync(newDir)) {
+      renameSync(oldDir, newDir);
+      logEvent({ kind: 'namespace-migrated', from: 'v3', to: 'default' });
+    }
+  } catch { /* never throw from a hook */ }
+}
 
 function pluginRoot() {
   if (process.env.CLAUDE_PLUGIN_ROOT) return process.env.CLAUDE_PLUGIN_ROOT;
@@ -101,6 +122,8 @@ function clearInstallError() {
     if (existsSync(flag)) rmSync(flag, { force: true });
   } catch { /* ignore */ }
 }
+
+migrateLegacyNamespace();
 
 const root = pluginRoot();
 
