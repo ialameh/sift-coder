@@ -2,6 +2,21 @@
 
 All notable changes to SiftCoder. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning is [SemVer](https://semver.org/).
 
+## [1.0.2] — 2026-05-01
+
+Hotfix: on Node majors that ship ahead of `better-sqlite3` prebuilt binaries (e.g. Node 25 in 2026), `require('better-sqlite3')` crashes at module load and the WASM fallback also fails on init. Result: `siftcoder status`, the daemon, and the MCP server all fall over.
+
+### Fixed
+
+- **`hooks/session-start/ensure-built.mjs`** — after `npx tsc`, probes the native binding via a 8s subprocess `node -e "require('better-sqlite3')"`. On failure, runs `npm rebuild better-sqlite3 --silent` (180s budget) and re-probes. On second failure, drops an install-error flag with the manual recovery command and logs to `~/.siftcoder/v3/logs/install.ndjson` (events `native-rebuild`, `native-rebuild-ok`, `native-rebuild-fail`).
+- Idempotent: probe is fast (~30ms) when binding works; rebuild only fires when needed.
+
+### Manual recovery (if auto-rebuild is blocked)
+
+```bash
+! cd ~/.claude/plugins/cache/siftcoder-marketplace/siftcoder/<version> && npm rebuild better-sqlite3
+```
+
 ## [1.0.1] — 2026-05-01
 
 Hotfix: plugin marketplace installs were missing `dist/` (clones don't run `npm install`), so `bin/siftcoder.mjs` and the MCP server failed with `ERR_MODULE_NOT_FOUND` on first use.

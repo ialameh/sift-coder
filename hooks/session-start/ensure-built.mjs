@@ -133,6 +133,32 @@ if (!build.ok) {
   process.exit(0);
 }
 
+// Probe better-sqlite3 native binding. Node major versions ahead of the prebuilt
+// binaries (e.g. Node 25 in 2026) trigger a runtime crash on first require, with
+// the WASM fallback also failing on init. A targeted `npm rebuild better-sqlite3`
+// compiles the binding against the running Node ABI and resolves both paths.
+function nativeBindingOk() {
+  const r = spawnSync('node', ['-e', "require('better-sqlite3')"], {
+    cwd: root,
+    timeout: 8_000,
+    stdio: 'pipe',
+  });
+  return r.status === 0;
+}
+
+if (!nativeBindingOk()) {
+  logEvent({ kind: 'native-rebuild', root });
+  const rebuild = run('npm', ['rebuild', 'better-sqlite3', '--silent'], root, 180_000);
+  if (!rebuild.ok || !nativeBindingOk()) {
+    const msg = `better-sqlite3 native binding failed to build for Node ${process.version}. Run manually:\n  cd ${root} && npm rebuild better-sqlite3`;
+    process.stderr.write(`[siftcoder] ${msg}\n`);
+    writeInstallError(root, msg);
+    logEvent({ kind: 'native-rebuild-fail', stderr: (rebuild.stderr || '').slice(-500) });
+    process.exit(0);
+  }
+  logEvent({ kind: 'native-rebuild-ok', root });
+}
+
 // Clear any prior install error since we're now built
 clearInstallError();
 
