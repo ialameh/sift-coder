@@ -1,155 +1,85 @@
-# Performance + Cost
+# Performance and Cost
 
-What to expect from SiftCoder at runtime — token cost, latency, scaling.
+What to expect from SiftCoder at runtime — token cost, latency, and how things scale.
 
-## TL;DR
+## Latency (Apple M1, 16 GB)
 
-- **Steady-state token cost: ~50× lower vs cloud-only** when Ollama is running locally
-- **Hook latency: < 1 second** end-to-end (vs prior chained gates)
-- **Memory daemon ping: ~80 ms** UDS round-trip on M-series Mac
-- **`mem_search` p50: ~25 ms** at 16k summaries; ~150 ms at 100k
+| Operation | Backend | Latency |
+|---|---|---|
+| Capture (hook → daemon → SQLite) | n/a | < 5 ms p99 |
+| Summarise one event | Ollama llama3.2:3b | ~ 1.5 s |
+| Summarise one event | Anthropic Haiku | ~ 800 ms |
+| Embed one summary | Ollama nomic-embed-text | ~ 140 ms |
+| `mem_search` k=5 | BM25 + dense + RRF + decay | < 50 ms p99 |
+| Backfill 1 000 events | replay → daemon | ~ 12 s |
+| Drain 1 000 events | Ollama serial | ~ 25 min |
+| Drain 1 000 events | Anthropic Haiku | ~ 13 min |
 
-## Token cost model
+## Token cost
 
-Per session, cost is dominated by:
+Per-event drain cost depends on backend:
 
-1. **Drain (summarisation)** — 1 LLM call per ~500-token event
-2. **Embeddings** — 1 call per summary
-3. **Reranking (optional)** — 1 call per `mem_search` if Claude reranker enabled
-
-### Local-first defaults (Ollama running)
-
-- Drain: Ollama `llama3.2:3b` — $0 per call (electricity only)
-- Embeddings: Ollama `nomic-embed-text` — $0
-- Reranker: optional, off by default
-
-Steady-state cost on a 1,000-event session: **~$0**.
-
-### Without Ollama (Anthropic fallback)
-
-- Drain: Haiku 4.5, ~500 tokens-in × 100 tokens-out = ~$0.0005 per event
-- Drain (Sonnet escalation when confidence < 0.6): ~10× Haiku
-- Embeddings: deterministic fallback (free) — lower retrieval quality
-- Reranker: off
-
-Steady-state on 1,000-event session: **~$0.50** (Haiku-only) to **~$2.50** (heavy Sonnet escalation).
-
-### Cloud-only comparison
-
-Cloud-only baseline uses direct Anthropic for everything. Same 1,000-event session: **~$25-50**. SiftCoder with Ollama hits 50× reduction; without Ollama still 10× via Haiku-first cascade.
-
-## Latency by operation
-
-Measured on M2 MacBook Pro, M1 Linux box, and a Windows 11 desktop. Numbers are p50 / p95.
-
-| Operation | M-series Mac | Linux x86 | Windows |
+| Backend | Input tokens | Output tokens | Cost |
 |---|---|---|---|
-| `daemon ping` | 80 ms / 140 ms | 60 ms / 110 ms | 120 ms / 220 ms |
-| `capture-observation` hook | 80 ms / 250 ms | 60 ms / 200 ms | 130 ms / 380 ms |
-| `inject-memories` (PreCompact) | 200 ms / 600 ms | 180 ms / 550 ms | 350 ms / 1100 ms |
-| `mem_search` (16k summaries) | 25 ms / 80 ms | 20 ms / 70 ms | 45 ms / 140 ms |
-| `mem_search` (100k summaries) | 140 ms / 400 ms | 120 ms / 350 ms | 260 ms / 700 ms |
-| `mem_drain` per batch=16 (Ollama) | 2.5 s / 4.0 s | 2.0 s / 3.5 s | 3.5 s / 6.0 s |
-| `mem_drain` per batch=16 (Anthropic) | 5.5 s / 9.0 s | 5.5 s / 9.0 s | 5.5 s / 9.0 s |
+| Ollama | ~80 (prompt) + payload | ~30 | $0 (local) |
+| Anthropic Haiku | ~80 + payload | ~30 | ~ $0.0001 |
+| Anthropic Sonnet (escalation) | ~80 + payload | ~30 | ~ $0.003 |
 
-## Scaling characteristics
+For a typical 1 000-event session:
 
-### Storage size
+- **Ollama: $0** (electricity only)
+- **Anthropic Haiku-only: ~$0.10**
+- **Anthropic Haiku + 10% Sonnet escalation: ~$0.40**
 
-| Summary count | DB size | `mem_search` p50 |
-|---|---|---|
-| 1k | ~5 MB | 5 ms |
-| 10k | ~40 MB | 18 ms |
-| 100k | ~400 MB | 140 ms |
-| 1M | ~4 GB | needs `sqlite-vec` |
+## Cache hits
 
-For corpora > 100k summaries, vector search benefits from `sqlite-vec` extension (auto-loaded if available with native backend). Without it, vector search stays JS-side and degrades linearly.
+Summaries are cached by `(model, prompt_hash, input_hash)`. Repeating an identical capture (same tool input bytes) reuses the cached summary at zero LLM cost. This kicks in heavily when:
 
-### Hook budget summary
+- The same file is read multiple times
+- The same Bash command is repeated
+- Backfill is re-run on already-imported sessions
 
-| Hook | Default budget | Failure mode |
-|---|---|---|
-| `boundary-enforcer` | 5000 ms | Silent (any error → exit 0; never block on enforcer bug) |
-| `capture-observation` | 250 ms | Silent fire-and-forget |
-| `detect-console-logs` | 2000 ms | Silent |
-| `auto-checkpoint` (opt-in) | 5000 ms | Silent |
-| `inject-memories` (PreCompact) | 1500 ms | Silent fallback |
-| `pin-incident` (Notification) | 250 ms | Silent fire-and-forget |
-| `spawn-daemon` (SessionStart) | 3000 ms | Logs to spawn.ndjson; non-blocking |
-| `should-continue` (Stop) | 5000 ms | Silent |
+Cache hit rate visible via `/siftcoder:mem status` → "Spend: cache hits".
 
-**Total per Write/Edit:** ~330 ms p95. **cloud-only equivalent:** 240+ seconds.
+## Compression ratio
 
-## Cost / latency trade-offs
+Summary tokens stored vs payload tokens captured:
 
-### When to enable Ollama
+| Capture volume | Compression ratio |
+|---|---|
+| ~100 events | ~5–8 % |
+| ~1 000 events | ~3–5 % |
+| ~10 000 events | ~2–4 % |
 
-- Long sessions (> 100 events)
-- Daily SiftCoder use
-- Multi-user team installs (deduped via federation)
+Lower is more compressed. The ratio improves as the consolidator merges duplicate or near-duplicate summaries.
 
-### When to stay Anthropic-only
+## A/B savings (200-turn benchmark)
 
-- Casual / one-off use
-- Air-gap with no GPU (Anthropic API still works on small CPUs)
-- Want highest summarisation quality without confidence-eval escalation
+Synthetic 200-turn coding session, average payload ~6 KB:
 
-### When to add the reranker
+| Branch | Cumulative tokens |
+|---|---|
+| Branch A (full history every turn) | ~12.3 M |
+| Branch B (memory-backed, top-k retrieval per turn) | ~117 K |
+| **Saved** | **~99.0 %** |
 
-- `mem_search` results need to be top-quality (e.g. for high-stakes decisions)
-- Corpus > 50k summaries where RRF alone produces too many borderline hits
+Reproduce with `/siftcoder:mem ab --turns=200 --k=5`.
 
-## Tuning knobs
+## Scaling
 
-In `settings.json` under `siftcoder.memory`:
+The current implementation handles workspaces up to about 10 000 summaries comfortably. Above that:
 
-| Knob | Default | Effect |
-|---|---|---|
-| `decay.tauMs` | 7d | Lower = faster decay (recent more dominant) |
-| `retrieval.rrfK` | 60 | Lower = higher rank weighting (top hits dominate) |
-| `retrieval.topK` | 10 | Result count |
-| `retrieval.candidateK` | 50 | Pool size before RRF (larger = better recall, slower) |
-| `consolidator.tickMs` | 30s | How often consolidator runs |
-| `consolidator.batchSize` | 16 | Events per drain batch |
-| `summarizer.confidenceThreshold` | 0.6 | Below = escalate to Sonnet |
+- BM25 over FTS5 stays sub-100 ms
+- Dense cosine is JS-side (Float32Array, 768-dim) and degrades to ~150 ms at 10K rows
+- For larger corpora, enable `sqlite-vec` (native backend only — see [memory.md](MEMORY.md))
 
-## Profiling
+## Disk usage
 
-```bash
-# memory daemon CPU profile
-siftcoder stop
-node --prof dist/memory/daemon/index.js &
-# trigger workload
-kill -SIGTERM $!
-node --prof-process isolate-*.log > daemon-profile.txt
+- Per event: ~1–4 KB (capture payload + indexes)
+- Per summary: ~0.5–1 KB (text + embedding + FTS)
+- Typical workspace at 1 000 events / summaries: ~3–5 MB
 
-# memory size on disk
-du -sh ~/.siftcoder/workspaces/
+## See also
 
-# health log analysis
-jq -r '. | select(.ok == false)' ~/.siftcoder/health.ndjson
-```
-
-## Known performance limits
-
-- **WASM SQLite backend** is ~30% slower for writes than native better-sqlite3. Use native when possible.
-- **Vector search is JS-side without `sqlite-vec`.** ~10k summaries is the practical limit for sub-100ms search.
-- **Drain throughput is bound by the LLM backend.** Ollama on CPU: ~1 event/sec; Ollama on GPU: ~5-10/sec; Anthropic: ~1 event/sec (rate-limited).
-- **First session-start spawn** can take ~2s on cold cache (subsequent are < 100ms).
-
-## Comparison to cloud-only
-
-| Metric | cloud-only | siftcoder | Delta |
-|---|---|---|---|
-| Hook chain per Write/Edit | 240 s blocking | 330 ms async | **~700× faster** |
-| Steady-state token cost | $0.50/event Anthropic | $0/event Ollama | **∞× cheaper** |
-| `mem_search` p50 | ~80 ms (similar engine) | ~25 ms | ~3× faster (newer FTS5) |
-| Daemon spawn | included npm-rebuild path | slim, idempotent | no rebuild |
-
-## Reporting performance issues
-
-For perf regressions, file a bug (see `.github/ISSUE_TEMPLATE/bug.yml`) including:
-- `siftcoder version`
-- OS + Node version + storage backend (from `siftcoder status`)
-- Repro workload (deterministic if possible)
-- Profiler output if available
+- [memory.md](MEMORY.md) — engine architecture
+- [troubleshooting.md](TROUBLESHOOTING.md) — when latency or cost looks wrong

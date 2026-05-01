@@ -1,122 +1,110 @@
 # Usage
 
-Day-to-day patterns for using SiftCoder.
+Day-to-day patterns for working with SiftCoder.
 
-## Boot
+> First time? See [getting-started.md](getting-started.md) for install + setup.
 
-Daemon spawns automatically on session start. To verify:
+## Memory operations
 
-```bash
-node bin/siftcoder.mjs status
+The `/siftcoder:mem` command is the entry point for everything memory-related. Subcommands:
+
+```
+/siftcoder:mem setup        # one-time onboarding for a workspace
+/siftcoder:mem status       # capture/drain/spend report
+/siftcoder:mem check        # 5-point daemon health check
+/siftcoder:mem start        # spawn daemon explicitly
+/siftcoder:mem drain        # force-summarise pending events
+/siftcoder:mem backfill     # import past transcripts
+/siftcoder:mem web          # open browser dashboard
 ```
 
-If the daemon is not reachable, start it manually:
-
-```bash
-node bin/siftcoder.mjs start
-```
-
-## Memory
-
-Memory captures every tool observation (Read/Write/Edit/Bash/Grep/Glob) into events, then drains them into summaries via Ollama or Anthropic.
-
-### Query memory
-
-Inside Claude Code, the assistant can call MCP tools directly:
+You can also let Claude call the MCP tools directly during conversation:
 
 ```
 mem_search { query: "auth middleware decision", k: 5 }
-mem_get { id: "summary:142" }
-mem_why { id: "summary:142" }
-mem_timeline { id: "summary:142", before: 3, after: 3 }
+mem_get { ids: [142] }
+mem_why { kind: "summary", id: "142", depth: 3 }
+mem_timeline { near_id: 142, window: 10 }
 ```
 
-Or use the slash commands:
+`mem_search` auto-drains a small batch (4) on every call so the index stays current without manual intervention.
+
+## Coding workflows
 
 ```
-/siftcoder:mem list --limit 20
-/siftcoder:mem status
-/siftcoder:mem web        # opens web UI URL
+/siftcoder:build "<spec>"            # build from a spec
+/siftcoder:add-feature "<desc>"      # add a feature to existing code
+/siftcoder:fix "<issue>"             # bounded fix
+/siftcoder:investigate "<question>"  # read-only diagnosis
+/siftcoder:tdd "<spec>"              # write tests first, then code
+/siftcoder:refactor "<area>"         # behaviour-preserving cleanup
+/siftcoder:heal                      # self-healing build/test loop
 ```
 
-### Force drain
+Pair with `/siftcoder:scope` to constrain which files the assistant may touch.
 
-If you want pending events summarised right now (e.g. before ending a session):
-
-```
-/siftcoder:mem drain 64
-```
-
-### Backfill from past transcripts
-
-```bash
-node bin/siftcoder.mjs backfill transcripts
-```
-
-Reads Claude Code's local transcript directory, replays into the memory store.
-
-### Curate memory
+## Quality gates
 
 ```
-/siftcoder:mem prune
+/siftcoder:quality                   # format + lint + type-check + tests
+/siftcoder:review                    # memory- + convention-aware code review
+/siftcoder:security                  # security review
+/siftcoder:ripple "<file>"           # change-impact visualization
+/siftcoder:blast-radius "<change>"   # predict downstream effects
 ```
 
-Dispatches the `memory-curator` agent. Reports duplicates, contradictions, stale, orphans. Awaits `--confirm` before deleting.
-
-## Salesforce flow
+## Salesforce daily
 
 ```
-# diagnose an org
-/siftcoder:sf-architect
-
-# build a webhook endpoint
-/siftcoder:sf-webhook OrderEvent --hmac-header X-Signature
-
-# scaffold FFLib selector
-/siftcoder:apex-patterns selector Account
-
-# bulkify a class
-> use the apex-bulkifier agent on AccountService.cls
-
-# deploy
-/siftcoder:sf-deploy validate --target-org dev
-/siftcoder:sf-deploy preview --target-org dev
-/siftcoder:sf-deploy deploy --target-org dev
+/siftcoder:sf-architect              # org-level review
+/siftcoder:lwc create "<name>"       # LWC scaffold w/ tests
+/siftcoder:apex-patterns             # FFLib / Selector / Domain / Service / UoW
+/siftcoder:schema erd                # entity-relationship diagram
+/siftcoder:sf-deploy validate        # validate deployment
+/siftcoder:sf-test generate "<file>" # comprehensive tests
 ```
 
-## Quality on demand
+## Workflow control
 
 ```
-/siftcoder:quality           # format + lint + type-check
-/siftcoder:quality --fix     # auto-fix safe issues
-/siftcoder:quality --tests   # also run tests
+/siftcoder:autonomous "<goal>"       # long unattended run
+/siftcoder:swarm "<tasks>"           # parallel subagent dispatch
+/siftcoder:agent "<task>"            # plan → code → review → fix pipeline
+/siftcoder:checkpoint save <name>    # save restore point
+/siftcoder:checkpoint restore <name> # restore
+/siftcoder:handoff                   # persist context for next session
 ```
 
 ## Ideation
 
 ```
-/siftcoder:ideate                       # for current project
-/siftcoder:ideate caching               # focused topic
-/siftcoder:surprise-me                  # new project ideas
-/siftcoder:surprise-me --salesforce     # sfdx-shaped
-/siftcoder:surprise-me --tiny           # < 200 LOC
+/siftcoder:ideate "<area>"           # memory-grounded brainstorming
+/siftcoder:surprise-me               # novel project ideas
+/siftcoder:reverse-prompt deep       # extract a prompt that rebuilds this project
 ```
 
-## Reverse-prompt
+## Output compression
 
 ```
-/siftcoder:reverse-prompt              # deep mode (default)
-/siftcoder:reverse-prompt quick
-/siftcoder:reverse-prompt focus auth
+/siftcoder:compress full             # measured compression on natural-language output
+/siftcoder:compress off              # back to normal
 ```
 
-Output is a single conversational prompt that would rebuild the project. Useful for handoffs and spec extraction.
+Useful for long sessions where token output volume matters.
 
-## Compression
+## Discovery
+
+Forgot which command you want?
 
 ```
-/siftcoder:compress full       # default — drop articles, filler, hedging
-/siftcoder:compress lite       # less aggressive
-/siftcoder:compress ultra      # fragments encouraged
-/siftcoder:compress off
+/siftcoder:help                      # browse the command index
+/siftcoder:wizard                    # interactive multi-step flow
+/siftcoder:prompt                    # craft a precise prompt for a goal
+/siftcoder:status                    # show siftcoder progress
 ```
+
+## See also
+
+- [commands.md](commands.md) — full command reference
+- [skills.md](skills.md) — workflow contracts behind each command
+- [examples.md](EXAMPLES.md) — real session traces

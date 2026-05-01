@@ -1,185 +1,155 @@
 # Troubleshooting
 
+Common problems and fixes.
+
 ## Daemon
 
-### `daemon unreachable`
+### Daemon not reachable
 
 ```
-> node bin/siftcoder.mjs status
-daemon unreachable: connect ENOENT ~/.siftcoder/run/<key>.sock
+Error: connect ENOENT ~/.siftcoder/run/<key>.sock
 ```
 
-Start the daemon:
+The daemon either hasn't spawned yet or has shut down (idle timeout 30 min). Force a respawn:
 
-```bash
-node bin/siftcoder.mjs start
+```
+/siftcoder:mem start
 ```
 
-If start succeeds but status still fails, the socket path may be wrong (different `CLAUDE_PROJECT_DIR`). The socket is workspace-keyed via `sha1(cwd).slice(0,12)`. Make sure your shell `cwd` matches what Claude Code uses.
-
-### `start` succeeds, daemon dies immediately
-
-Check the spawn log:
+Or check what the SessionStart hook tried to do:
 
 ```bash
 tail -50 ~/.siftcoder/logs/spawn.ndjson
 ```
 
-Common causes:
-- Native binding load failed → WASM fallback should have kicked in; verify with `node -e "require('node-sqlite3-wasm')"`
-- Port collision (web UI sidecar) → daemon picks a free port automatically; if not, set `SIFTCODER_WEB_PORT=0` to disable
-- Permissions on `~/.siftcoder/` directory
+### Daemon won't start (native binding missing)
 
-### Native binding fails
-
-```
-[siftcoder] better-sqlite3 native binding unavailable: ...
-```
-
-Two causes:
-1. Node version mismatch with prebuilt binary → run `npm rebuild better-sqlite3`
-2. Glibc/libstdc++ too old (Linux) → install `libstdc++6` ≥ 9 or use the WASM fallback
-
-WASM is automatic — the daemon will boot anyway, just slower writes (~30%).
-
-## Ollama
-
-### `Ollama not detected` after install
+The plugin auto-rebuilds `better-sqlite3`'s native binding on session start. If that fails, the daemon falls back to the WASM SQLite backend. Logs:
 
 ```bash
-curl -s http://localhost:11434/api/tags
+tail -50 ~/.siftcoder/logs/<key>.ndjson
+tail -50 ~/.siftcoder/logs/spawn.ndjson
 ```
 
-If empty, Ollama daemon is not running:
+If both backends fail, manual recovery:
 
 ```bash
-brew services start ollama        # macOS
-systemctl --user start ollama     # Linux
+cd ~/.claude/plugins/cache/siftcoder-marketplace/siftcoder/<version>
+npm rebuild better-sqlite3 --build-from-source
 ```
 
-### Drain quality is low
+### Wrong workspace key
 
-Symptom: confidence-eval keeps escalating to Sonnet.
+`/siftcoder:mem status` prints `workspace: <key> (<cwd>)` on the first line. If the cwd isn't what you expect, ensure `CLAUDE_PROJECT_DIR` is set, or run from the project's git root. Non-git directories use the cwd path itself as the key.
 
-Fix: pull a larger model:
+## Drain
+
+### `mem_drain` returns errors with `"Method not found"`
+
+Claude Code's MCP host doesn't yet implement `sampling/createMessage`. Pick a backend:
 
 ```bash
-ollama pull llama3.1:8b
+# Ollama (recommended — local, free)
+brew install ollama && ollama pull llama3.2:3b
+brew services start ollama
+
+# OR Anthropic API (paid)
+export SIFTCODER_DRAIN_BACKEND=anthropic
+export ANTHROPIC_API_KEY=sk-...
 ```
 
-Then in `settings.json`:
+Then restart Claude Code so the MCP server picks up the env.
 
-```json
-{ "siftcoder": { "ollama": { "summarizeModel": "llama3.1:8b" } } }
-```
+### `mem_drain` returns errors with `"ECONNREFUSED"`
 
-Restart daemon: `node bin/siftcoder.mjs stop && node bin/siftcoder.mjs start`
-
-### Embedder dim mismatch
-
-Symptom:
-
-```
-mem_search error: vector dim 768 != stored 384
-```
-
-You changed embedder mid-corpus. Either:
+Ollama daemon stopped:
 
 ```bash
-# revert embedder
-SIFTCODER_EMBEDDER=deterministic node bin/siftcoder.mjs status
-
-# or reset stored vectors
-node bin/siftcoder.mjs mem reset-vectors --confirm
+brew services start ollama
+# or run interactively:
+ollama serve
 ```
+
+### Drain returns `processed: 0, errors: N`
+
+Look at `firstError` in the result. The MCP server surfaces the actual host error message. Common values:
+
+- `Method not found` → see above
+- `ECONNREFUSED` → see above
+- `ollama api 503` → Ollama daemon overloaded; retry
+- `anthropic api 429` → rate limit; wait or reduce batch
+- `JSON parse error` → model output didn't match the JSON schema; usually transient
+
+## Memory
+
+### `mem_search` returns no hits
+
+1. Confirm capture worked: `/siftcoder:mem status` should show `events captured > 0`
+2. Confirm drain worked: same status should show `summarized > 0`
+3. If only `events` populated, run `/siftcoder:mem drain`
+4. If both zero, run `/siftcoder:mem backfill` to import past Claude Code transcripts
+
+### Capture stopped working mid-session
+
+The daemon may have idle-shut-down after 30 min without traffic. Force respawn:
+
+```bash
+kill $(cat ~/.siftcoder/workspaces/<key>/run.pid 2>/dev/null) 2>/dev/null
+rm -f ~/.siftcoder/run/<key>.sock
+# next tool call → SessionStart hook respawns
+```
+
+Or just restart Claude Code.
+
+## Web
+
+### Browser shows 401 on style.css / app.js
+
+The MCP server should rewrite asset URLs in the SPA shell to include the auth token. If you see 401s, you may have an out-of-date plugin install:
+
+```
+/plugin install siftcoder
+```
+
+### `/siftcoder:mem web` says "bridge not active"
+
+The daemon hasn't started or `SIFTCODER_NO_HTTP=1` is set. Run `/siftcoder:mem start` (or unset the env var and respawn).
 
 ## Hooks
 
-### Hook output appearing in chat
+### Boundary-enforcer blocks all writes
 
-Some hooks write to stdout to surface hints. If this is too noisy, set:
+Your `.siftcoder/scope.json` allow-globs are too narrow. Loosen them or remove the file to disable the enforcer:
+
+```bash
+rm .siftcoder/scope.json   # falls back to "no scope, allow all"
+```
+
+### Auto-checkpoint creating too many commits
+
+It's opt-in — disable in `settings.json`:
 
 ```json
-{ "siftcoder": { "hooks": { "verbosity": "error" } } }
+{ "siftcoder": { "hooks": { "autoCheckpoint": { "enabled": false } } } }
 ```
-
-### Boundary enforcer blocking edits unexpectedly
-
-Check your scope:
-
-```bash
-cat .siftcoder/scope.json
-```
-
-If `allow` is too narrow, widen it. To disable enforcement for the project, delete the file.
-
-### Hook timing out
-
-Hooks have explicit timeouts in `hooks/hooks.json`. If something is consistently timing out, either the daemon is unreachable (silent failure path) or the hook has a real bug. Inspect:
-
-```bash
-tail -50 ~/.siftcoder/logs/spawn.ndjson
-```
-
-## MCP
-
-### `siftcoder-memory` not appearing in tool list
-
-Ensure `.mcp.json` is recognised. Restart Claude Code. Verify the build is current:
-
-```bash
-npm run build
-ls dist/memory/mcp/server.js   # must exist
-```
-
-### MCP tool calls returning errors
-
-The MCP server talks to the daemon over UDS. If the daemon is down, MCP tools will fail. Check `siftcoder status` first.
-
-## Memory not capturing
-
-1. Check daemon is up — `siftcoder status`
-2. Check hooks are wired — `cat hooks/hooks.json` (PostToolUse should list `capture-observation.mjs`)
-3. Check capture log — `~/.siftcoder/logs/capture.ndjson`
-4. Check WAL has appends — `~/.siftcoder/workspaces/<key>/wal.log`
-
-## Performance
-
-### Search is slow
-
-If `mem_search` is taking &gt; 100ms, your corpus is large enough to benefit from `sqlite-vec`. This requires the native backend (better-sqlite3 with extension loading). Verify:
-
-```bash
-node bin/siftcoder.mjs status | jq .backend
-# expect: "native"
-```
-
-If on WASM, vector search stays JS-side. Acceptable up to ~10k summaries.
-
-### Drain is slow
-
-- Switch to a smaller Ollama model (`llama3.2:3b`) — fast first pass, escalate to Sonnet only when confidence is low
-- Increase batch size in `settings.json` consolidator block — more parallelism per tick
 
 ## Resetting state
 
-```bash
-# import prior memory
-node bin/siftcoder.mjs backfill ~/.siftcoder
-
-# verify
-node bin/siftcoder.mjs status
-```
-
-If a prior daemon is still running, stop it before reinstalling — they bind to the same `~/.siftcoder/run/*.sock` paths .
-
-## Reset everything
+Wipes all captured memory + summaries. Daemon stops automatically when its workspace dir is gone.
 
 ```bash
-node bin/siftcoder.mjs stop
 rm -rf ~/.siftcoder
-node bin/siftcoder.mjs setup
-node bin/siftcoder.mjs start
 ```
 
-This wipes all memory.
+## Where to look first
+
+When something is off, run these in order:
+
+```bash
+/siftcoder:mem check               # 5 health-check points
+/siftcoder:mem status              # capture / drain / spend
+tail -50 ~/.siftcoder/logs/<key>.ndjson
+tail -50 ~/.siftcoder/logs/spawn.ndjson
+```
+
+If those don't surface the issue, open an issue with the output of all three.

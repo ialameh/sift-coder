@@ -1,97 +1,82 @@
-# Salesforce in SiftCoder
+# Salesforce
 
-SiftCoder ships first-class Salesforce support because Claude Code has no native domain bias for it.
+SiftCoder ships first-class Salesforce support because Claude Code has no native domain bias for it. 12 skills, 4 agents, 18 commands.
 
-## Surface
+## Commands
 
-### Skills (11)
-
-- `salesforce-apex` — Apex patterns, FFLib, bulk safety, governor limits, security
-- `salesforce-lwc` — LWC wires, lifecycle, state, performance, testing
-- `salesforce-deploy` — sfdx flow, validate/preview/deploy/quick/rollback
-- `salesforce-architecture` — capacity, security, integrations, tech debt
-- `salesforce-test` — test factories, coverage, sandbox sanitising
-- `salesforce-flow` — Flow architecture, debug, trigger-order interactions
-- `salesforce-security` — sharing, CRUD/FLS, Shield, review readiness
-- `salesforce-comply` — regulated org controls and auditability
-- `salesforce-cpq` — CPQ object model, quote lifecycle, pricing risks
-- `salesforce-agentforce` — Agentforce architecture and grounding patterns
-- `salesforce-einstein` — Einstein and AI feature integration patterns
-
-### Agents (3)
-
-- `salesforce-architect` — read-only org-level review
-- `apex-bulkifier` — targeted bulk-safety refactor
-- `lwc-debugger` — LWC issue diagnosis
-
-### Commands (10)
-
-- `/siftcoder:sf-deploy` `[validate|preview|deploy|quick|rollback]`
-- `/siftcoder:sf-test` `[generate|coverage|run|factory]`
-- `/siftcoder:sf-debug` `[parse|tail|limits]`
-- `/siftcoder:sf-architect` (dispatches the agent)
-- `/siftcoder:sf-package` `[create|version|install|uninstall]`
-- `/siftcoder:sf-connect` `[named-cred|external-cred|oauth]`
-- `/siftcoder:sf-webhook` (HMAC-verified inbound)
-- `/siftcoder:apex-patterns` `[selector|domain|service|uow]`
-- `/siftcoder:lwc` `[create|debug|wire|event]`
-- `/siftcoder:schema` `[object|field|erd|migrate]`
-
-## Project shape
-
-SiftCoder assumes sfdx source format (`force-app/main/default/...`). For metadata-format orgs, convert first:
-
-```bash
-sf project convert source --target-org legacy
+### Apex
+```
+/siftcoder:apex-patterns          # FFLib / Selector / Domain / Service / UnitOfWork patterns
+/siftcoder:sf-test "<file>"       # comprehensive test gen
+/siftcoder:sf-debug "<log>"       # debug-log analysis
 ```
 
-## End-to-end example: ship a webhook endpoint
-
+### LWC
 ```
-# 1. Generate the endpoint
-/siftcoder:sf-webhook OrderEvent --hmac-header X-Signature
-
-# 2. Validate against sandbox
-/siftcoder:sf-deploy validate --target-org dev
-
-# 3. Bulk-safety check (the apex-bulkifier agent)
-> run apex-bulkifier on classes/OrderEventWebhookResource.cls
-
-# 4. Tests
-/siftcoder:sf-test run OrderEventWebhookResource_Test
-
-# 5. Architecture review (full org)
-/siftcoder:sf-architect
-
-# 6. Deploy
-/siftcoder:sf-deploy deploy --target-org dev
+/siftcoder:lwc create "<name>"    # scaffold component + tests
+/siftcoder:lwc-debug              # wire / lifecycle / state diagnosis
 ```
 
-## What SiftCoder does NOT do for Salesforce
+### Schema
+```
+/siftcoder:schema erd             # entity-relationship diagram
+/siftcoder:schema-migrate         # migration with risk classification
+```
 
-- **Run sfdx for you blindly.** All deploys go through `validate` first, with previews for production.
-- **Bypass governor limits.** Bulk safety is the default position; the bulkifier agent flags violations.
-- **Hardcode credentials.** Webhooks and OAuth flows generate Named Credentials; secrets live in External Credentials or Custom Settings.
-- **Touch managed packages without explicit user direction.**
+### Architecture
+```
+/siftcoder:sf-architect           # org-level review (read-only)
+/siftcoder:sf-flow                # Flow design + workflow conversion
+/siftcoder:sf-cpq                 # CPQ configuration assistance
+/siftcoder:sf-agentforce          # Agentforce setup
+/siftcoder:sf-einstein            # Einstein integration
+```
 
-## Common pitfalls SiftCoder catches
+### Deploy + ops
+```
+/siftcoder:sf-deploy validate     # validate deployment
+/siftcoder:sf-deploy diff         # diff against org
+/siftcoder:sf-deploy rollback     # rollback to checkpoint
+/siftcoder:sf-package             # unlocked package management
+```
 
-- SOQL/DML in loops — `apex-bulkifier`
-- Test classes with `SeeAllData=true` left on — `salesforce-test` skill
-- Missing FLS/CRUD checks — `salesforce-architecture` skill
-- Profile-based perms instead of permission sets — `salesforce-architecture` skill
-- Wire adapter not firing because param is undefined at construction — `lwc-debugger`
-- `composed: false` event not crossing shadow DOM — `lwc-debugger`
-- Production deploy without `--test-level RunLocalTests` — `salesforce-deploy` skill
-- Deploy without preview — `salesforce-deploy` skill
+### Integrations + security
+```
+/siftcoder:sf-connect             # Named/External Credentials, OAuth
+/siftcoder:sf-webhook             # inbound webhook scaffold w/ HMAC
+/siftcoder:sf-comply              # compliance review
+/siftcoder:sf-security            # security audit
+```
 
-## CI/CD pattern
+## Agents
 
-The skill recommends:
+| Agent | Use |
+|---|---|
+| `salesforce-architect` | Org architecture review; capacity table + risk register |
+| `apex-bulkifier` | Targeted bulk-safety refactor (row-by-row → batch) |
+| `lwc-debugger` | LWC issue diagnosis |
+| `memory-curator` | Memory store maintenance (works for any project, not Salesforce-specific) |
 
-1. PR opens → validate against integration sandbox with `RunLocalTests`
-2. PR merged → quick-deploy from validated job-id
-3. Release branch → validate against UAT
-4. UAT signoff → quick-deploy to prod
+## Skills
 
-The plugin doesn't ship CI templates — every Salesforce shop's CI is too org-specific. But all the steps are runnable individually via the commands above.
+12 SF-specific skill folders under `skills/salesforce/`:
+
+`salesforce-apex` · `salesforce-lwc` · `salesforce-deploy` · `salesforce-architecture` · `salesforce-test` · `salesforce-agentforce` · `salesforce-einstein` · `salesforce-cpq` · `salesforce-comply` · `salesforce-flow` · `salesforce-security` · `schema-migrate`
+
+Each skill encodes platform-specific rules: governor limits, SOQL/LDV, permission sets, sharing model, deployment metadata API quirks.
+
+## Memory + Salesforce
+
+The memory engine is platform-agnostic but particularly useful for Salesforce work:
+
+- **Capture** records every Apex test execution, deploy attempt, and metadata pull
+- **`mem_why`** traces decisions across long-running customisation work
+- **`mem_search`** answers "have we hit this governor-limit pattern before?" or "what was our reason for not using Flow here?"
+
+Pair `/siftcoder:sf-architect` with `mem_search` for "give me a review grounded in what we already decided."
+
+## See also
+
+- [agents.md](agents.md) — full agent table
+- [skills.md](skills.md) — all skills
+- [commands.md](commands.md) — full command reference

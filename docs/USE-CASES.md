@@ -1,128 +1,120 @@
-# Use cases
+# Use Cases
 
-When to reach for SiftCoder, organised by who you are and what you're doing.
+When to reach for SiftCoder, organised by what you're trying to do.
 
-## By developer type
+## "I keep losing context between sessions"
 
-### Solo full-stack dev
-- **Daily:** memory captures everything; `/siftcoder:ideate` for next features; `/siftcoder:tdd` for new code
-- **Weekly:** `/siftcoder:knowledge` for memory hygiene; `/siftcoder:codemap-trust` to know what's stable
-- **One-off:** `/siftcoder:reverse-prompt` when handing off a project
+```
+/siftcoder:mem setup           # one-time per project
+# ...work normally...
+mem_search { query: "<topic>" }
+mem_why  { kind: "summary", id: "<id>" }
+```
 
-### Salesforce admin / dev
-- **Daily:** `/siftcoder:sf-deploy validate` before every deploy; `/siftcoder:apex-patterns` for FFLib scaffolding
-- **Per-org:** `/siftcoder:sf-architect` for quarterly review; `/siftcoder:salesforce-security` before audit
-- **Domain-specific:** `/siftcoder:sf-agentforce` / `sf-einstein` / `sf-cpq` / `sf-flow`
+Capture is automatic from session 1. After ~50 events, recall noticeably improves.
 
-### Senior engineer / tech lead
-- **Per PR:** `/siftcoder:review` (memory-grounded) + native `/review`; `/siftcoder:blast-radius` for risk
-- **Per quarter:** `/siftcoder:codemap-trust`; `/siftcoder:fortune` for tech-debt forecasting
-- **Mentoring:** `/siftcoder:duck` to coach junior thinking; `/siftcoder:archaeologist` to teach context
+## "I want to spend less on Anthropic API"
 
-### Engineering manager / PM
-- **Per spec:** `/siftcoder:improve-spec` then `/siftcoder:gap-analysis` after build
-- **Per release:** `/siftcoder:handoff` for stakeholder updates
-- **Strategic:** `/siftcoder:feasibility` for new features; `/siftcoder:fortune` for risk reports
+```
+brew install ollama
+ollama pull llama3.2:3b nomic-embed-text
+brew services start ollama
+```
 
-### Compliance / security engineer
-- **Per audit:** `/siftcoder:comply` + `/siftcoder:salesforce-comply` (industry clouds)
-- **Per PR (risk-flagged):** `/siftcoder:security` + native `/security-review` + `/siftcoder:salesforce-security`
+Drain auto-detects Ollama and routes summarisation locally. ~50× cost reduction on repeat sessions.
 
-## By problem type
+## "I'm onboarding to a new repo"
 
-### "I'm stuck"
-- `/siftcoder:duck` — rubber-duck through it (AI asks, you answer)
-- `/siftcoder:investigate` — read-only diagnosis if there's a concrete bug
-- `/siftcoder:ideate` — if stuck on what to do next
+```
+/siftcoder:codemap                # evidence-based codebase doc
+/siftcoder:reverse-prompt deep    # what would rebuild this from scratch?
+/siftcoder:archaeologist          # why is X this way?
+```
 
-### "Something's broken"
-- `/siftcoder:fix` — bounded fix
-- `/siftcoder:heal` — multi-strategy auto-recovery
-- `/siftcoder:investigate` — diagnose first if cause unclear
+## "I want to add a feature without breaking things"
 
-### "I'm joining a new project"
-- `/siftcoder:onboard` (if SiftCoder is fresh) → then `/siftcoder:reverse-prompt` (project map)
-- `/siftcoder:codemap-fast` for quick orientation
-- `/siftcoder:codemap` for deep map
-- `/siftcoder:codemap-trust` for "where's the risk"
+```
+/siftcoder:scope add "src/feature/**"
+/siftcoder:add-feature "<description>"
+/siftcoder:review                 # before merging
+/siftcoder:ripple "<file>"        # see what depends on what you changed
+```
 
-### "I'm leaving / handing off"
-- `/siftcoder:handoff` — structured end-of-session note
-- `/siftcoder:reverse-prompt deep` — single-prompt project rebuild
+## "I'm doing Salesforce architecture review"
 
-### "I want to ship something new"
-- `/siftcoder:improve-spec` (if spec exists) → `/siftcoder:planner` agent → `/siftcoder:build`
-- `/siftcoder:tdd` for test-first discipline
-- `/siftcoder:add-feature` for incremental on existing
+```
+/siftcoder:sf-architect           # read-only org review
+/siftcoder:sf-comply              # compliance map
+/siftcoder:sf-security            # security audit
+```
 
-### "I want to ship faster"
-- `/siftcoder:autonomous` — long unattended runs (with safety brakes)
-- `/siftcoder:swarm` — parallel subagents on independent tasks
+## "Build me something fresh"
 
-### "I want to ship safer"
-- `/siftcoder:scope` — bound where AI can write
-- `/siftcoder:chroot` — explicit file-list jail
-- `/siftcoder:preview` — diff-before-apply
-- `/siftcoder:pair` — approve-each-step
+```
+/siftcoder:surprise-me            # novel project ideas
+/siftcoder:build "<spec>"         # build from spec
+```
 
-### "I want to learn from past sessions"
-- `/siftcoder:trace` — see what AI did and why
-- `/siftcoder:session-eval` — extract patterns + lessons
-- `/siftcoder:knowledge` — whole-store curation
+## "Long-running migration / refactor"
 
-### "I want creative ideas"
-- `/siftcoder:ideate` — for current project (memory-grounded)
-- `/siftcoder:surprise-me` — for new projects
-- `/siftcoder:dream` — unconstrained exploration
+```
+/siftcoder:checkpoint save before-migration
+/siftcoder:autonomous "<goal>"
+# ... if it goes wrong ...
+/siftcoder:checkpoint restore before-migration
+```
 
-### "I want to refactor"
-- `/siftcoder:refactor` — same-behaviour structural change
-- `/siftcoder:zen` — aggressive simplification
-- `/siftcoder:optimize` — performance-driven
-- `/siftcoder:ghost` — explore "what if we did X" in isolation
+`autonomous` runs unattended; checkpoints give you a panic button.
 
-## By task size
+## "Bug I can't reproduce"
 
-### One-line change
-- Direct edit; no skill needed
-- Optional: `/siftcoder:preview` if user wants approval gate
+```
+/siftcoder:investigate "<symptoms>"
+/siftcoder:timewarp "<commit-or-time>"
+/siftcoder:duck                   # rubber-duck mode if all else fails
+```
 
-### Single-file change (~100 LOC)
-- `/siftcoder:fix` or `/siftcoder:add-feature` depending on shape
-- `/siftcoder:tdd` if quality matters
+## "Explain this code to me"
 
-### Multi-file change (~1000 LOC)
-- `/siftcoder:planner` agent → `/siftcoder:coder` agent
-- `/siftcoder:scope` to bound
-- `/siftcoder:swarm` if parts are independent
+```
+/siftcoder:archaeologist "src/auth/middleware.ts"
+/siftcoder:narrator "src/auth/middleware.ts"
+/siftcoder:codemap-fast            # quick structural scan first
+```
 
-### Whole-system change (refactor / migration)
-- `/siftcoder:checkpoint` first
-- `/siftcoder:planner` for structured plan
-- `/siftcoder:autonomous` if hours-scale
-- `/siftcoder:migrate` if data is involved
+## "Generate documentation"
 
-## By time of day
+```
+/siftcoder:document architecture
+/siftcoder:document user-manual
+/siftcoder:codemap-export json     # machine-readable
+/siftcoder:update-docs             # sync existing docs with code
+```
 
-### Start of session
-- `/siftcoder:mem status` — daemon healthy?
-- `/siftcoder:continue` — resume from `/pause` if applicable
+## "Test coverage gap"
 
-### Mid-session
-- Skills auto-load by trigger description; you don't have to invoke
+```
+/siftcoder:test "<file>" --kind=mutation
+/siftcoder:fuzz-mind "<area>"
+/siftcoder:invariant               # discover implicit invariants worth testing
+```
 
-### End of session
-- `/siftcoder:handoff` — structured note
-- `/siftcoder:pause` — if mid-thought (different from handoff)
-- `/siftcoder:mem drain` — force-summarise pending
+## "Help me decide between two approaches"
 
-### Weekly hygiene
-- `/siftcoder:knowledge` — memory curation
-- `/siftcoder:mem prune` — dispatches memory-curator agent
+```
+/siftcoder:ghost "what if we used X instead"
+/siftcoder:fortune                 # which choice creates worse debt?
+```
 
-## When NOT to use SiftCoder
+## "I just want to know what siftcoder commands exist"
 
-- One-off questions Claude Code answers natively — use native
-- Pure code review (general best-practice) — built-in `/review`
-- Pure security scan (OWASP) — built-in `/security-review`
-- Trivial tasks where overhead exceeds value
+```
+/siftcoder:help
+/siftcoder:wizard                  # interactive guided flow
+/siftcoder:examples                # browse session traces
+```
+
+## See also
+
+- [commands.md](commands.md) — full command reference
+- [usage.md](USAGE.md) — daily patterns

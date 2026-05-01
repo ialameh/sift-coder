@@ -1,120 +1,100 @@
 # Configuration
 
-SiftCoder reads config in this order (highest priority first):
+SiftCoder reads configuration from three layers, highest priority first:
 
-1. Environment variables
-2. `.siftcoder/config.json` in the current project
-3. `~/.siftcoder/config.json` (user-global)
-4. Plugin-shipped `settings.json` defaults
+1. **Environment variables** (per-shell, per-process)
+2. **Project config** at `.siftcoder/config.json` (committed with the repo, optional)
+3. **User config** at `~/.siftcoder/config.json` (global, optional)
+4. **Plugin defaults** in `settings.json` (shipped)
 
 ## Environment variables
 
-| Var | Default | Effect |
+### Drain (summarization) backend
+
+| Variable | Default | Values |
 |---|---|---|
-| `SIFTCODER_NS` | `default` | Namespace under `~/.siftcoder/` (lets prior installs coexist) |
-| `SIFTCODER_DRAIN_BACKEND` | `auto` | `ollama` / `anthropic` / `sampling` / `auto` |
-| `SIFTCODER_EMBEDDER` | `auto` | `ollama` / `cdg` / `deterministic` / `auto` |
-| `ANTHROPIC_API_KEY` | (unset) | Required for Anthropic fallback |
-| `SIFTCODER_OLLAMA_HOST` / `OLLAMA_HOST` | `http://localhost:11434` | Ollama endpoint |
-| `SIFTCODER_OLLAMA_EMBED_MODEL` | `nomic-embed-text` | Ollama embed model |
-| `SIFTCODER_OLLAMA_MODEL` | `llama3.2:3b` | Ollama summarise model |
+| `SIFTCODER_DRAIN_BACKEND` | auto | `ollama` · `anthropic` · `mcp` · `auto` |
+| `SIFTCODER_OLLAMA_HOST` | `http://localhost:11434` | URL |
+| `SIFTCODER_OLLAMA_MODEL` | `llama3.2:3b` | any pulled Ollama model |
+| `ANTHROPIC_API_KEY` | unset | required for `anthropic` backend |
+| `SIFTCODER_ANTHROPIC_API_KEY` | unset | scoped key (preferred over the global) |
 
-## Settings.json schema
+Auto-detect order: Ollama (local, free) → Anthropic (paid) → MCP host sampling (currently unsupported by Claude Code).
 
-Plugin defaults at `settings.json` in the plugin root. User config files use the same shape. Top-level key is `siftcoder`.
+### Embedder
+
+| Variable | Default | Values |
+|---|---|---|
+| `SIFTCODER_EMBEDDER` | auto | `ollama` · `cdg` · `deterministic` · `auto` |
+| `SIFTCODER_OLLAMA_EMBED_MODEL` | `nomic-embed-text` | any embedding model |
+| `SIFTCODER_OLLAMA_EMBED_DIM` | `768` | match the model |
+| `SIFTCODER_CDG_URL` | unset | remote CDG service URL |
+| `SIFTCODER_CDG_TOKEN` | unset | optional Bearer for CDG |
+
+Auto-detect order: CDG (if `SIFTCODER_CDG_URL` set) → Ollama (`nomic-embed-text` loaded) → DeterministicEmbedder (hash-bucket, fallback only).
+
+### Memory daemon
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `SIFTCODER_NS` | unset | Optional namespace under `~/.siftcoder/` (lets multiple installs coexist) |
+| `SIFTCODER_NO_HTTP` | unset | Set to `1` to disable the web bridge |
+| `SIFTCODER_HTTP_PORT` | derived from workspace key | Override the HTTP bridge port |
+| `SIFTCODER_RERANK` | unset | Set to `1` to enable Claude cross-encoder rerank in `mem_search` |
+
+### CLI
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `CLAUDE_PROJECT_DIR` | `pwd` | Workspace cwd resolution; matches the directory Claude Code launched from |
+
+## `settings.json`
+
+Plugin defaults. Override via project's `.claude/settings.json` or user's `~/.claude/settings.json`.
 
 ```json
 {
   "siftcoder": {
-    "namespace": "default",
+    "hooks": {
+      "autoCheckpoint": { "enabled": false }
+    },
     "memory": {
-      "drainBackend": "auto",
-      "drainBackendCascade": ["ollama", "anthropic", "sampling"],
-      "embedder": "auto",
-      "embedderCascade": ["ollama", "cdg", "deterministic"],
-      "decay": {
-        "tauMs": 604800000,
-        "halfLifeDays": 7
+      "drain": {
+        "batchSize": 16,
+        "maxRetries": 3
       },
       "retrieval": {
         "rrfK": 60,
-        "topK": 10,
-        "candidateK": 50
-      },
-      "consolidator": {
-        "tickMs": 30000,
-        "batchSize": 16
-      },
-      "summarizer": {
-        "modelHaiku": "claude-haiku-4-5-20251001",
-        "modelSonnet": "claude-sonnet-4-6",
-        "confidenceThreshold": 0.6
+        "decayTauHours": 168
       }
-    },
-    "hooks": {
-      "captureObservationBudgetMs": 250,
-      "injectMemoriesBudgetMs": 1500,
-      "boundaryEnforcerTimeoutMs": 5000
-    },
-    "ollama": {
-      "endpoint": "http://localhost:11434",
-      "embedModel": "nomic-embed-text",
-      "summarizeModel": "llama3.2:3b"
     }
   }
 }
 ```
 
-## Project scope (`.siftcoder/scope.json`)
+## Per-project `.siftcoder/`
 
-Used by the boundary enforcer hook to limit Write/Edit to certain paths.
+Optional directory committed with the repo:
+
+```
+.siftcoder/
+├── config.json        # project-level overrides
+├── scope.json         # boundary-enforcer hook allow-globs
+└── privacy.json       # custom redaction patterns
+```
+
+### `scope.json` example
 
 ```json
 {
-  "allow": [
-    "src/**",
-    "tests/**",
-    "*.md"
-  ],
-  "deny": [
-    "src/secrets/**",
-    ".env*"
-  ]
+  "allow": ["src/**", "test/**", "docs/**"],
+  "deny": ["secrets/**", "**/.env*"]
 }
 ```
 
-If `scope.json` is absent, all writes are permitted (only the boundary enforcer hook is bypassed; Claude Code's own permissions still apply).
+The `boundary-enforcer.mjs` hook reads this and blocks Write/Edit outside the allow-globs.
 
-## Backends — what gets chosen
+## See also
 
-### Drain (summarisation)
-
-`auto` cascade: try in order, first available wins.
-
-1. **Ollama** if `OLLAMA_HOST` is reachable and `summarizeModel` is pulled
-2. **Anthropic** if `ANTHROPIC_API_KEY` is set
-3. **MCP host sampling** if Claude Code supports `sampling/createMessage` (currently stubbed)
-
-To force one: `SIFTCODER_DRAIN_BACKEND=ollama`.
-
-### Embeddings
-
-`auto` cascade:
-
-1. **Ollama** with `nomic-embed-text` (or configured embed model)
-2. **CDG** (Code Dependency Graph remote, if configured)
-3. **Deterministic** hash-bucket fallback (always works; lower quality)
-
-Switching embedders mid-corpus produces dim-mismatch errors. Run `siftcoder mem reset-vectors` after a change.
-
-## Verifying config
-
-```bash
-node bin/siftcoder.mjs status
-```
-
-Reports:
-- daemon health
-- pending event count
-- chosen backends
-- memory totals
+- [troubleshooting.md](TROUBLESHOOTING.md) — when configuration looks wrong
+- [memory.md](MEMORY.md) — what each backend choice does

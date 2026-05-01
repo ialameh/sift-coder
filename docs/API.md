@@ -1,225 +1,119 @@
-# API Reference
+# MCP Tools
 
-Programmatic surfaces SiftCoder exposes.
+The `siftcoder-memory` MCP server exposes five tools to Claude Code. Declared inline in `.claude-plugin/plugin.json` under `mcpServers`; starts automatically when Claude Code attaches.
 
-## MCP server: `siftcoder-memory`
+## Tools
 
-Declared in `.mcp.json`. Auto-loaded by Claude Code when the plugin is installed.
+### `mem_search`
+
+Hybrid retrieval over summaries.
 
 ```json
 {
-  "mcpServers": {
-    "siftcoder-memory": {
-      "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/memory/mcp/server.js"],
-      "env": { "SIFTCODER_NS": "default" }
-    }
-  }
+  "query": "auth middleware decision",
+  "k": 5
 }
 ```
 
-### Tools
+Returns top-`k` summary rows ranked by BM25 + dense cosine fused via Reciprocal Rank Fusion, with Ebbinghaus decay applied. Optional Claude rerank when `SIFTCODER_RERANK=1`.
 
-#### `mem_search`
+Side effect: drains a small batch (4) of pending events before searching, so retrieval is always against the freshest data.
 
-Hybrid BM25 + dense-vector retrieval, RRF fused, Ebbinghaus-decayed.
+### `mem_get`
 
-```typescript
-mem_search({ query: string, k?: number = 10 })
-  → { hits: Array<{ id: string, ts: string, text: string, score: number }> }
+Fetch full summary rows by ids.
+
+```json
+{
+  "ids": [142, 287, 304]
+}
 ```
 
-Examples:
+Returns `text`, `model`, `confidence`, `tokens_in`, `tokens_out`, `ts`.
 
-```
-mem_search { query: "auth middleware decision", k: 5 }
-mem_search { query: "why are we using jwt vs session" }
-```
-
-#### `mem_get`
-
-Fetch full summary by id.
-
-```typescript
-mem_get({ id: string })
-  → { id, ts, text, model, confidence, eventId } | null
-```
-
-#### `mem_timeline`
+### `mem_timeline`
 
 Chronological neighbours around a memory id.
 
-```typescript
-mem_timeline({ id: string, before?: number = 5, after?: number = 5 })
-  → { rows: Array<{ id, ts, text }> }
-```
-
-#### `mem_why`
-
-BFS the provenance graph from a node; returns the cause chain.
-
-```typescript
-mem_why({ id: string, maxDepth?: number = 5 })
-  → { chain: Array<{ from, to, edge_type, confidence }> }
-```
-
-Edge types: `causes`, `derives_from`, `calls`, `imports`, `contradicts`, `edits`, `references`, `extends`, `implements`, `instantiates`, `similar_to`.
-
-#### `mem_drain`
-
-Force-drain pending events through the summariser. Rarely needed; consolidator runs automatically.
-
-```typescript
-mem_drain({ batch?: number = 16 })
-  → { processed: number, summarized: number, failed: number }
-```
-
-## CLI: `bin/siftcoder.mjs`
-
-```bash
-siftcoder version
-siftcoder setup           # interactive Ollama probe + Anthropic key + config
-siftcoder start           # spawn daemon detached
-siftcoder stop
-siftcoder status          # daemon health + counts + namespace + workspace
-siftcoder drain [batch]   # force-drain pending events
-siftcoder backfill [root] [--dry-run] [--workspace <key>]
-siftcoder backfill transcripts
-siftcoder web             # print web UI URL
-```
-
-Exit codes:
-- `0` — success
-- `1` — daemon unreachable / runtime error
-- `2` — invalid arguments
-
-## UDS protocol (low-level — for advanced integrations)
-
-Daemon listens on `~/.siftcoder/<NS>/run/<workspace-key>.sock`.
-
-Wire format: 4-byte big-endian uint32 length prefix + UTF-8 JSON body.
-
-Request `kind` discriminators:
-
-| kind | params | response data |
-|---|---|---|
-| `ping` | (none) | `{ pong: true }` |
-| `capture` | `{ sessionId, tool, payload, ts?, source? }` | `{ id, tokensEst }` |
-| `search` | `{ query, k? }` | `{ hits: [...] }` |
-| `timeline` | `{ nearId, window? }` | `{ rows: [...] }` |
-| `get` | `{ ids: number[] }` | `{ rows: [...] }` |
-| `shutdown` | (none) | `{ stopping: true }` |
-
-Response shape: `{ ok: true, data: ... }` or `{ ok: false, error: string }`.
-
-## Programmatic memory ingest
-
-```bash
-siftcoder backfill transcripts                    # from local CC transcript dir
-siftcoder backfill ~/.siftcoder         # from prior install
-```
-
-Or directly via UDS:
-
-```javascript
-import net from 'node:net';
-const sock = '/Users/me/.siftcoder/run/<key>.sock';
-const c = net.createConnection(sock);
-const body = Buffer.from(JSON.stringify({
-  kind: 'capture',
-  sessionId: 'my-session',
-  tool: 'Read',
-  payload: { file: '/x.ts', content: '...' },
-}));
-const header = Buffer.alloc(4);
-header.writeUInt32BE(body.length, 0);
-c.write(Buffer.concat([header, body]));
-```
-
-## TypeScript surfaces
-
-For embedding the engine in other Node tools:
-
-```typescript
-import { Storage } from '@siftcoder/core/dist/memory/storage/storage.js';
-import { backfill } from '@siftcoder/core/dist/memory/migration/import.js';
-import { resolvePaths, workspaceKey } from '@siftcoder/core/dist/core/paths.js';
-import { loadConfig } from '@siftcoder/core/dist/core/config.js';
-import { ChrootManager } from '@siftcoder/core/dist/services/chroot.js';
-import { StateManager } from '@siftcoder/core/dist/services/state.js';
-import { Budget } from '@siftcoder/core/dist/services/tokens.js';
-```
-
-Public type definitions in `dist/**/*.d.ts`.
-
-## Settings schema
-
-`settings.json` (plugin defaults). User overrides at `~/.siftcoder/<NS>/config.json` or `.siftcoder/config.json` (project).
-
-```typescript
-interface SiftcoderConfig {
-  siftcoder: {
-    namespace: string;
-    memory: {
-      drainBackend: 'auto' | 'ollama' | 'anthropic' | 'sampling';
-      drainBackendCascade: Array<'ollama' | 'anthropic' | 'sampling'>;
-      embedder: 'auto' | 'ollama' | 'cdg' | 'deterministic';
-      embedderCascade: string[];
-      decay: { tauMs: number; halfLifeDays: number };
-      retrieval: { rrfK: number; topK: number; candidateK: number };
-      consolidator: { tickMs: number; batchSize: number };
-      summarizer: { modelHaiku: string; modelSonnet: string; confidenceThreshold: number };
-    };
-    hooks: {
-      captureObservationBudgetMs: number;
-      injectMemoriesBudgetMs: number;
-      boundaryEnforcerTimeoutMs: number;
-      autoCheckpoint: { enabled: boolean; everyEdits: number; everyMs: number };
-    };
-    ollama: { endpoint: string; embedModel: string; summarizeModel: string };
-  };
+```json
+{
+  "near_id": 142,
+  "window": 10
 }
 ```
 
-## Hook event payload contracts
+Returns 10 summaries on each side of `near_id`, ordered by timestamp.
 
-Hooks receive Claude Code event JSON on stdin. Reference shapes:
+### `mem_why`
 
-### PreToolUse / PostToolUse
+Trace causal provenance from a memory node.
 
 ```json
 {
-  "tool_name": "Write" | "Edit" | "Read" | "Bash" | "Grep" | "Glob",
-  "tool_input": { "file_path": string, "content"?: string, ... },
-  "tool_response": { ... },
-  "session_id": string,
-  "cwd": string
+  "kind": "summary",
+  "id": "142",
+  "depth": 4
 }
 ```
 
-### PreCompact
+Walks the typed provenance graph: `causes`, `derives_from`, `calls`, `imports`, `supersedes`. Returns a depth-4 BFS with edge types and confidences.
+
+### `mem_drain`
+
+Force-drain pending events into summaries.
 
 ```json
 {
-  "transcript_path": string,
-  "trigger": "auto" | "manual"
+  "batch": 16
 }
 ```
 
-### Notification
+Returns `{ processed, errors, pending, firstError? }`. `firstError` surfaces the actual host LLM error message when any event failed.
+
+## Backend selection
+
+The MCP server resolves the LLM backend at boot in this order:
+
+1. `SIFTCODER_DRAIN_BACKEND=ollama|anthropic|mcp` — explicit override
+2. **Ollama** at `http://localhost:11434` reachable
+3. **Anthropic** if `ANTHROPIC_API_KEY` set
+4. **MCP host sampling** otherwise
+
+Logged to stderr: `siftcoder-mem mcp: drain backend = <choice>`.
+
+## Sample interaction
+
+User: *"What did we decide about the auth caching strategy?"*
+
+Claude internally:
+
+```
+mem_search { query: "auth caching strategy", k: 5 }
+```
+
+Result:
 
 ```json
-{
-  "message": string,
-  "title": string,
-  "session_id": string
-}
+[
+  {
+    "id": 142,
+    "ts": 1735000000,
+    "model": "llama3.2:3b",
+    "text": "Decided to skip in-memory cache; redis already in stack handles auth session lookups",
+    "confidence": 0.91
+  }
+]
 ```
 
-Hook exit codes: `0` allow / pass, `2` block (PreToolUse only). Any other → silent no-op.
+Then optionally:
 
-## Versioning
+```
+mem_why { kind: "summary", id: "142", depth: 3 }
+```
 
-SiftCoder follows SemVer. The 12-axis API surface above is **stable** within a major version.
+Returns the chain of events and decisions that led to summary 142.
 
-Internal modules under `src/` not exported from `dist/index.js` are not part of the API.
+## See also
+
+- [memory.md](MEMORY.md) — engine details
+- [configuration.md](CONFIG.md) — env vars for backend tuning
