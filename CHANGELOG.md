@@ -2,6 +2,14 @@
 
 All notable changes to SiftCoder. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning is [SemVer](https://semver.org/).
 
+## [1.0.3] — 2026-05-01
+
+Hotfix on top of v1.0.2: the v1.0.2 native-binding probe used `require('better-sqlite3')` only, which can pass when the binding loads OK but actually fails at the first SQLite call (Node-25 / prebuild-ABI mismatch case). The probe missed the case it was added to catch.
+
+### Fixed
+
+- **`hooks/session-start/ensure-built.mjs`** — probe now opens an in-memory DB and runs `select 1` to verify the binding works at runtime, not just at load. Catches the load-OK / runtime-broken case. 10s budget. Triggers `npm rebuild better-sqlite3` correctly when needed.
+
 ## [1.0.2] — 2026-05-01
 
 Hotfix: on Node majors that ship ahead of `better-sqlite3` prebuilt binaries (e.g. Node 25 in 2026), `require('better-sqlite3')` crashes at module load and the WASM fallback also fails on init. Result: `siftcoder status`, the daemon, and the MCP server all fall over.

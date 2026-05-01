@@ -134,15 +134,17 @@ if (!build.ok) {
 }
 
 // Probe better-sqlite3 native binding. Node major versions ahead of the prebuilt
-// binaries (e.g. Node 25 in 2026) trigger a runtime crash on first require, with
-// the WASM fallback also failing on init. A targeted `npm rebuild better-sqlite3`
-// compiles the binding against the running Node ABI and resolves both paths.
+// binaries (e.g. Node 25 in 2026) often pass `require()` (binding loads) but fail
+// at the first actual SQLite call. Probe must therefore open + query an in-memory
+// DB to catch the load-OK / runtime-broken case. A targeted `npm rebuild
+// better-sqlite3` compiles the binding against the running Node ABI and resolves
+// both load-time and runtime failures.
 function nativeBindingOk() {
-  const r = spawnSync('node', ['-e', "require('better-sqlite3')"], {
-    cwd: root,
-    timeout: 8_000,
-    stdio: 'pipe',
-  });
+  const r = spawnSync(
+    'node',
+    ['-e', "const D=require('better-sqlite3');const v=new D(':memory:').prepare('select 1 as v').get().v;if(v!==1)process.exit(2)"],
+    { cwd: root, timeout: 10_000, stdio: 'pipe' },
+  );
   return r.status === 0;
 }
 
