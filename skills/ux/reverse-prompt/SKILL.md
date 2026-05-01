@@ -16,7 +16,7 @@ Generate a single conversational prompt — what you'd say to an agent to rebuil
 ## Process
 
 1. **Determine mode.** If user says "quick", "deep", "focus on X" — use that. Otherwise default Deep.
-2. **Cache check.** Compute fingerprint = sha1(top-level tree + manifest hash). Check `~/.siftcoder/v3/reverse-prompt-cache/<fingerprint>.json`. If &lt; 24h old and matching mode — use it.
+2. **Cache check.** Compute fingerprint = sha1(top-level tree + manifest hash). Check `~/.siftcoder/reverse-prompt-cache/<fingerprint>.json`. If &lt; 24h old and matching mode — use it.
 3. **Scan.**
    - Quick: `ls`, `cat package.json`, `cat README.md`. That's it.
    - Deep: launch Explore subagent to map architecture; read 5-10 key files; sample test files; check git log.

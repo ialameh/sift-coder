@@ -51,4 +51,4 @@ Domain knowledge for Apex development. Use **with** Claude Code's native Plan/Ex
 
 ## When using subagents
 
-Dispatch to the native `general-purpose` agent for refactors, the built-in `Plan` agent for architecture, and the V3 `apex-bulkifier` agent for targeted bulk-safety passes.
+Dispatch to the native `general-purpose` agent for refactors, the built-in `Plan` agent for architecture, and the `apex-bulkifier` agent for targeted bulk-safety passes.

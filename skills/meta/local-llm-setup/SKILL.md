@@ -32,7 +32,7 @@ ollama pull llama3.1:8b
 
 ```bash
 curl -s http://localhost:11434/api/tags | jq '.models[].name'
-siftcoder setup       # writes ~/.siftcoder/v3/config.json with detected backends
+siftcoder setup       # writes ~/.siftcoder/config.json with detected backends
 siftcoder status      # shows daemon health
 ```
 

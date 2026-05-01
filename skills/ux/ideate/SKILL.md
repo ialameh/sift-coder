@@ -1,6 +1,6 @@
 ---
 name: ideate
-description: Use when the user asks to brainstorm features, expand a project, or "what should I build next" / "give me ideas for X" / "how could we extend Y". Memory-aware — pulls prior decisions and avoids re-suggesting rejected ideas. Improved from V1 ideate command.
+description: Use when the user asks to brainstorm features, expand a project, or "what should I build next" / "give me ideas for X" / "how could we extend Y". Memory-aware — pulls prior decisions and avoids re-suggesting rejected ideas.
 ---
 
 # Ideate — feature strategy with memory grounding

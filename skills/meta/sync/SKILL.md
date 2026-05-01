@@ -22,14 +22,14 @@ Local → remote sync. Backup or federation. PII redacted in transit.
    - Compute size + hash
 3. **Transfer.** With progress + retry on transient failure.
 4. **Verify.** Hash match on remote.
-5. **Log** the sync to memory + a `~/.siftcoder/v3/sync.ndjson` ledger.
+5. **Log** the sync to memory + a `~/.siftcoder/sync.ndjson` ledger.
 6. **Schedule next.** Optional: cron-shaped recurrence (via `/schedule` skill).
 
 ## Output shape
 
 ```
 Sync target:    <path / URL / peer>
-Source:         ~/.siftcoder/v3/
+Source:         ~/.siftcoder/
 
 Pre-flight:
   Memory snapshot:    ✓ point-in-time captured

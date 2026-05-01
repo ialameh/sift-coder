@@ -28,11 +28,11 @@ Quick orientation index. For deep help, use native `/help`.
 - `docs/MEMORY.md` — memory engine deep dive
 - `docs/SALESFORCE.md` — SF skill reference
 - `docs/TROUBLESHOOTING.md` — common issues
-- `docs/MIGRATION.md` — V1 → V3 upgrade
+- 
 - `docs/EXAMPLES.md` — real session traces
 - `docs/USE-CASES.md` — when to use what
-- `docs/COMPARISON-METHOD.md` — V1 vs V3 audit method
-- `docs/V1-V3-DEEP-COMPARISON.md` — V1 vs V3 verdict
-- `docs/QUALITY-GATE.md`, `docs/FINAL-REPORT.md` — V3 self-review
+- 
+- 
+- `docs/QUALITY-GATE.md` — quality gate review
 
 `$ARGUMENTS` (if provided) is the topic to focus on. Otherwise surface this index.

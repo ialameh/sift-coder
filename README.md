@@ -2,7 +2,7 @@
 
 > Persistent project memory + local-LLM offload + Salesforce domain skills for Claude Code.
 
-[![CI](https://github.com/ialameh/siftcoder/actions/workflows/ci.yml/badge.svg)](https://github.com/ialameh/siftcoder/actions/workflows/ci.yml)
+[![CI](https://github.com/ialameh/sift-coder/actions/workflows/ci.yml/badge.svg)](https://github.com/ialameh/sift-coder/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](https://nodejs.org/)
 
@@ -11,9 +11,7 @@ SiftCoder is a Claude Code plugin that adds four things Claude Code does not hav
 1. **Persistent, queryable memory** across sessions — with provenance (`mem_why`), decay, and RRF retrieval.
 2. **Local-LLM offload** (Ollama) for summarisation and embeddings — cuts steady-state token cost ~50×.
 3. **Salesforce domain expertise** as skills + agents — Apex, LWC, Schema, Deploy, Architecture.
-4. **Workflow contracts** for the useful V1 jobs-to-be-done: build, fix, investigate, review, test, autonomous, docs, quality, ideation, project discovery, and compression.
-
-V2 is a clean replacement for V1, not a compatibility layer. It keeps V1 value where it is real and drops V1 names or mechanisms when they do not add value. See [docs/REPLACEMENT-CONTRACT.md](docs/REPLACEMENT-CONTRACT.md).
+4. **Workflow contracts** for build, fix, investigate, review, test, autonomous, docs, quality, ideation, project discovery, and compression.
 
 ---
 
@@ -31,8 +29,8 @@ Claude Code already has Plan/Explore/general-purpose subagents, native skills, n
 Requires Node ≥ 20.
 
 ```bash
-git clone https://github.com/ialameh/siftcoder.git
-cd siftcoder
+git clone https://github.com/ialameh/sift-coder.git
+cd sift-coder
 npm install
 npm run build
 ```
@@ -119,7 +117,7 @@ Domain-specific (4) plus disciplined generics (11) — both add value over nativ
 
 ### Commands (107)
 
-Each skill has a thin slash-command wrapper for direct invocation. Multi-action consolidation where it reduces sprawl (e.g. `/siftcoder:mem [action]` covers 7 V1 mem-* commands).
+Each skill has a thin slash-command wrapper for direct invocation. Multi-action consolidation where it reduces sprawl (e.g. `/siftcoder:mem [action]` covers all memory operations).
 
 ### MCP tools
 
@@ -131,9 +129,9 @@ The `siftcoder-memory` MCP server exposes:
 - `mem_why(id)` — provenance BFS
 - `mem_drain(batch)` — force-drain pending events
 
-### Hooks (7 active + 1 opt-in, down from V1's 13)
+### Hooks (7 active + 1 opt-in)
 
-Memory-feeding + minimal safety only. **No more 210s blocking format/lint/type-check chain on every edit.**
+Memory-feeding + minimal safety only. No long-running blocking chains on edit.
 
 | Event | Hook | Purpose |
 |---|---|---|
@@ -155,7 +153,7 @@ The auto-checkpoint hook is disabled by default. Enable via `settings.json` → 
 ```bash
 SIFTCODER_DRAIN_BACKEND=ollama          # ollama | anthropic | sampling | auto
 SIFTCODER_EMBEDDER=ollama               # ollama | cdg | deterministic | auto
-SIFTCODER_NS=v3                         # namespace under ~/.siftcoder/
+SIFTCODER_NS=default                    # namespace under ~/.siftcoder/
 ANTHROPIC_API_KEY=sk-...                # for fallback / escalation
 OLLAMA_HOST=http://localhost:11434
 ```
@@ -191,7 +189,7 @@ See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md). Common:
 - **Daemon not reachable** → `node bin/siftcoder.mjs start`
 - **Native binding failed** → falls back to WASM SQLite automatically; check postinstall log
 - **Ollama not detected** → `curl http://localhost:11434/api/tags` should return models
-- **Memory not capturing** → check `~/.siftcoder/v3/logs/spawn.ndjson`
+- **Memory not capturing** → check `~/.siftcoder/logs/spawn.ndjson`
 
 ## Architecture
 
@@ -208,21 +206,6 @@ Claude Code session ─┬─ Skills (markdown)
                                                ├─ Provenance graph
                                                ├─ Summariser (Ollama → Anthropic)
                                                └─ Embedder (Ollama → deterministic)
-```
-
-## Migrating from V1 / V2
-
-If you used the legacy `siftcoder` plugin (versions ≤ 2.x), note:
-
-- State lives at `~/.siftcoder/v3/` instead of `~/.siftcoder/` — no collision
-- 100+ legacy commands removed; see [docs/MIGRATION.md](docs/MIGRATION.md) for what's gone and what's replaced
-- Hook chain trimmed; quality gates moved to on-demand `/siftcoder:quality`
-- `vendor/sift-compress/` extracted to a separate plugin
-
-Migration tool to import legacy memory:
-
-```bash
-node bin/siftcoder.mjs backfill --from-v2 ~/.siftcoder
 ```
 
 ## Contributing

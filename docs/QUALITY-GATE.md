@@ -1,15 +1,15 @@
-# Quality Gate — SiftCoder v3 self-review
+# Quality Gate — SiftCoder quality gate review
 
-Self-review against the audit's V2 rebuild priorities and modern Claude Code best practices.
+Self-review against modern Claude Code best practices.
 
 ## P0 — public-release blockers
 
 | Item | Status | Evidence |
 |---|---|---|
 | Trim hook layer (kill 210s chain, slim SessionStart) | ✅ | `hooks/hooks.json` — 7 hooks, no quality-gates chain, single SessionStart hook |
-| Remove `claude-plugins-official/`, `everything-claude-code/`, vendor sift-compress, `templates/` | ✅ | none present in V3 tree |
+| Remove `claude-plugins-official/`, `everything-claude-code/`, vendor sift-compress, `templates/` | ✅ | none present |
 | Modular README + ARCHITECTURE + CONTRIBUTING + CHANGELOG | ✅ | all present, README ~250 lines |
-| Migrate memory subsystem cleanly, change socket path namespace | ✅ | `~/.siftcoder/v3/` — verified across hooks, CLI, paths.ts |
+| Migrate memory subsystem cleanly, change socket path namespace | ✅ | `~/.siftcoder/` — verified across hooks, CLI, paths.ts |
 | Single `.mcp.json` | ✅ | `.mcp.json` present, references dist build |
 | Plugin `settings.json` defaults | ✅ | present at root |
 | `monitors/` for daemon health | ✅ | `monitors/memory-daemon-health.mjs` |
@@ -27,7 +27,7 @@ Self-review against the audit's V2 rebuild priorities and modern Claude Code bes
 | Plugin `bin/` entry for CLI | ✅ | `bin/siftcoder.mjs` |
 | Local-first defaults: Ollama embedder + Ollama summariser when available | ✅ | `settings.json` cascades, setup probes Ollama |
 | Improved `ideate` + `surprise-me` | ✅ | both as skills + thin command wrappers |
-| Preserve V1 value without requiring V1 command compatibility | ✅ | README lists 84 skills / 87 commands; commands are thin wrappers over skills |
+| Preserve core value without requiring prior command compatibility | ✅ | README lists 84 skills / 87 commands; commands are thin wrappers over skills |
 | Keep generic agents only when they add stricter contracts than native dispatch | ✅ | 12 agents; generic agents declare memory/evidence/scope/deviation value |
 | `central` config loader | ✅ | `src/core/config.ts` with deep-merge layering |
 | Typed errors | ✅ | `src/core/errors.ts` |
@@ -52,9 +52,9 @@ Self-review against the audit's V2 rebuild priorities and modern Claude Code bes
 ## Follow-up recommendations
 
 1. Run `npm run build`, `npm run lint`, and `npm test` on a normal OS runner.
-2. Keep expanding V1's useful procedural depth into V2 skills, especially Salesforce and autonomous workflows.
+2. Keep expanding procedural depth in skills, especially Salesforce and autonomous workflows.
 3. Add issue templates, `SECURITY.md`, and public support policy before external release.
-4. Run a real session end-to-end before tagging v3.0.0: install plugin, capture events, drain, query `mem_search`, confirm hooks fire.
+4. Run a real session end-to-end before tagging the next release: install plugin, capture events, drain, query `mem_search`, confirm hooks fire.
 
 ## Passes
 

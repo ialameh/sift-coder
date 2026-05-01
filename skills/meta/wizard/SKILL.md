@@ -32,7 +32,7 @@ Step 2 of 5
 
 Decision: Where should the memory daemon store data?
 
-  1. Default (~/.siftcoder/v3/) — recommended for most users
+  1. Default (~/.siftcoder/) — recommended for most users
   2. Custom path (you'll be asked next)
   3. In-project (.siftcoder/) — useful for ephemeral sandboxes
 
@@ -44,7 +44,7 @@ Pick (1-3):
 - **memory-setup** — first-time daemon setup w/ Ollama probe + Anthropic key + scope
 - **salesforce-onboard** — sfdx project setup w/ deploy targets + test policy
 - **release-prep** — version bump + changelog + tag + checklist before public push
-- **migration** — V1 → V3 backfill walkthrough w/ verification
+- **migration** — backfill walkthrough w/ verification
 
 ## Rules
 

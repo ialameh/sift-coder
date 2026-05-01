@@ -12,7 +12,7 @@ Declared in `.mcp.json`. Auto-loaded by Claude Code when the plugin is installed
     "siftcoder-memory": {
       "command": "node",
       "args": ["${CLAUDE_PLUGIN_ROOT}/dist/memory/mcp/server.js"],
-      "env": { "SIFTCODER_NS": "v3" }
+      "env": { "SIFTCODER_NS": "default" }
     }
   }
 }
@@ -83,7 +83,7 @@ siftcoder start           # spawn daemon detached
 siftcoder stop
 siftcoder status          # daemon health + counts + namespace + workspace
 siftcoder drain [batch]   # force-drain pending events
-siftcoder backfill --from-v2 [v1-root] [--dry-run] [--workspace <key>]
+siftcoder backfill [root] [--dry-run] [--workspace <key>]
 siftcoder backfill transcripts
 siftcoder web             # print web UI URL
 ```
@@ -116,14 +116,14 @@ Response shape: `{ ok: true, data: ... }` or `{ ok: false, error: string }`.
 
 ```bash
 siftcoder backfill transcripts                    # from local CC transcript dir
-siftcoder backfill --from-v2 ~/.siftcoder         # from V1 SQLite
+siftcoder backfill ~/.siftcoder         # from prior install
 ```
 
 Or directly via UDS:
 
 ```javascript
 import net from 'node:net';
-const sock = '/Users/me/.siftcoder/v3/run/<key>.sock';
+const sock = '/Users/me/.siftcoder/run/<key>.sock';
 const c = net.createConnection(sock);
 const body = Buffer.from(JSON.stringify({
   kind: 'capture',
@@ -142,7 +142,7 @@ For embedding the engine in other Node tools:
 
 ```typescript
 import { Storage } from '@siftcoder/core/dist/memory/storage/storage.js';
-import { backfillFromV2 } from '@siftcoder/core/dist/memory/migration/v2-import.js';
+import { backfill } from '@siftcoder/core/dist/memory/migration/import.js';
 import { resolvePaths, workspaceKey } from '@siftcoder/core/dist/core/paths.js';
 import { loadConfig } from '@siftcoder/core/dist/core/config.js';
 import { ChrootManager } from '@siftcoder/core/dist/services/chroot.js';
@@ -220,6 +220,6 @@ Hook exit codes: `0` allow / pass, `2` block (PreToolUse only). Any other → si
 
 ## Versioning
 
-SiftCoder follows SemVer. The 12-axis API surface above is **stable** across the v3 line. Breaking changes will require a v4 major bump.
+SiftCoder follows SemVer. The 12-axis API surface above is **stable** within a major version.
 
 Internal modules under `src/` not exported from `dist/index.js` are not part of the API.

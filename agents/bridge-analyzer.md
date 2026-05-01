@@ -119,7 +119,7 @@ Rollout:
 - **Cite per claim.** "A exposes endpoint X at file:line"; "B requires Y at file:line".
 - **Pick exactly one pattern.** Document why others were rejected.
 - **Failure modes mandatory.** "What happens if A is down" must be answered.
-- **Versioning policy upfront.** "We'll figure out v2 later" = pain.
+- **Versioning policy upfront.** "We.ll figure out a major version later" = pain.
 
 ## Anti-patterns
 

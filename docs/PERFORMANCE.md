@@ -4,8 +4,8 @@ What to expect from SiftCoder at runtime — token cost, latency, scaling.
 
 ## TL;DR
 
-- **Steady-state token cost: ~50× lower than V1** when Ollama is running locally
-- **Hook latency: < 1 second** end-to-end (V1 was up to 240 seconds per Write/Edit)
+- **Steady-state token cost: ~50× lower vs cloud-only** when Ollama is running locally
+- **Hook latency: < 1 second** end-to-end (vs prior chained gates)
 - **Memory daemon ping: ~80 ms** UDS round-trip on M-series Mac
 - **`mem_search` p50: ~25 ms** at 16k summaries; ~150 ms at 100k
 
@@ -34,9 +34,9 @@ Steady-state cost on a 1,000-event session: **~$0**.
 
 Steady-state on 1,000-event session: **~$0.50** (Haiku-only) to **~$2.50** (heavy Sonnet escalation).
 
-### V1 comparison
+### Cloud-only comparison
 
-V1 used direct Anthropic for everything. Same 1,000-event session: **~$25-50**. V3 with Ollama hits 50× reduction; without Ollama still 10× via Haiku-first cascade.
+Cloud-only baseline uses direct Anthropic for everything. Same 1,000-event session: **~$25-50**. SiftCoder with Ollama hits 50× reduction; without Ollama still 10× via Haiku-first cascade.
 
 ## Latency by operation
 
@@ -78,7 +78,7 @@ For corpora > 100k summaries, vector search benefits from `sqlite-vec` extension
 | `spawn-daemon` (SessionStart) | 3000 ms | Logs to spawn.ndjson; non-blocking |
 | `should-continue` (Stop) | 5000 ms | Silent |
 
-**Total per Write/Edit:** ~330 ms p95. **V1 equivalent:** 240+ seconds.
+**Total per Write/Edit:** ~330 ms p95. **cloud-only equivalent:** 240+ seconds.
 
 ## Cost / latency trade-offs
 
@@ -124,10 +124,10 @@ kill -SIGTERM $!
 node --prof-process isolate-*.log > daemon-profile.txt
 
 # memory size on disk
-du -sh ~/.siftcoder/v3/workspaces/
+du -sh ~/.siftcoder/workspaces/
 
 # health log analysis
-jq -r '. | select(.ok == false)' ~/.siftcoder/v3/health.ndjson
+jq -r '. | select(.ok == false)' ~/.siftcoder/health.ndjson
 ```
 
 ## Known performance limits
@@ -137,9 +137,9 @@ jq -r '. | select(.ok == false)' ~/.siftcoder/v3/health.ndjson
 - **Drain throughput is bound by the LLM backend.** Ollama on CPU: ~1 event/sec; Ollama on GPU: ~5-10/sec; Anthropic: ~1 event/sec (rate-limited).
 - **First session-start spawn** can take ~2s on cold cache (subsequent are < 100ms).
 
-## Comparison to V1 perf
+## Comparison to cloud-only
 
-| Metric | V1 | V3 | Delta |
+| Metric | cloud-only | siftcoder | Delta |
 |---|---|---|---|
 | Hook chain per Write/Edit | 240 s blocking | 330 ms async | **~700× faster** |
 | Steady-state token cost | $0.50/event Anthropic | $0/event Ollama | **∞× cheaper** |

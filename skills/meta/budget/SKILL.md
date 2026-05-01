@@ -18,7 +18,7 @@ Token + cost awareness. Set a limit; track usage; surface warnings; optimise.
 
 1. Limit can be **tokens** (int) or **USD** (float w/ pricing assumption).
 2. Scope: **session** (default) | **daily** | **monthly** | **per-task**.
-3. Persist to `~/.siftcoder/v3/budget.json`.
+3. Persist to `~/.siftcoder/budget.json`.
 4. Warn at 80%, hard-stop at 100% (configurable).
 
 ## Method (status)

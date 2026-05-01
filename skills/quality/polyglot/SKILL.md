@@ -69,7 +69,7 @@ Boundaries (N found):
 ## Subagent dispatch
 
 - `Explore` to find boundaries
-- `Bridge` agent (V3 plans) — but native bridge skill covers similar territory
+- `Bridge` agent — native bridge skill covers similar territory
 - `general-purpose` for the comparison work
 
 ## Value over native CC

@@ -131,8 +131,8 @@ node bin/siftcoder.mjs drain 64
 # backfill from past Claude Code transcripts
 node bin/siftcoder.mjs backfill transcripts
 
-# from V1/V2 install
-node bin/siftcoder.mjs backfill --from-v2 ~/.siftcoder
+# from prior installs install
+node bin/siftcoder.mjs backfill ~/.siftcoder
 
 # web UI
 node bin/siftcoder.mjs web   # prints URL like http://127.0.0.1:5710

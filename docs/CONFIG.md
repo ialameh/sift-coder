@@ -4,14 +4,14 @@ SiftCoder reads config in this order (highest priority first):
 
 1. Environment variables
 2. `.siftcoder/config.json` in the current project
-3. `~/.siftcoder/v3/config.json` (user-global)
+3. `~/.siftcoder/config.json` (user-global)
 4. Plugin-shipped `settings.json` defaults
 
 ## Environment variables
 
 | Var | Default | Effect |
 |---|---|---|
-| `SIFTCODER_NS` | `v3` | Namespace under `~/.siftcoder/` (lets V1/V2/V3 coexist) |
+| `SIFTCODER_NS` | `default` | Namespace under `~/.siftcoder/` (lets prior installs coexist) |
 | `SIFTCODER_DRAIN_BACKEND` | `auto` | `ollama` / `anthropic` / `sampling` / `auto` |
 | `SIFTCODER_EMBEDDER` | `auto` | `ollama` / `cdg` / `deterministic` / `auto` |
 | `ANTHROPIC_API_KEY` | (unset) | Required for Anthropic fallback |
@@ -26,7 +26,7 @@ Plugin defaults at `settings.json` in the plugin root. User config files use the
 ```json
 {
   "siftcoder": {
-    "namespace": "v3",
+    "namespace": "default",
     "memory": {
       "drainBackend": "auto",
       "drainBackendCascade": ["ollama", "anthropic", "sampling"],

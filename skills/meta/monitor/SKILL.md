@@ -5,12 +5,12 @@ description: Use to set up health monitoring for SiftCoder daemon, memory store,
 
 # monitor
 
-Health monitoring config. Pairs with V3's `monitors/` directory.
+Health monitoring config. Pairs with the `monitors/` directory.
 
 ## Built-in monitors
 
 - **memory-daemon-health** (`monitors/memory-daemon-health.mjs`) — pings UDS every 30s
-  - Output: `~/.siftcoder/v3/health.ndjson`
+  - Output: `~/.siftcoder/health.ndjson`
 
 ## What this skill does
 

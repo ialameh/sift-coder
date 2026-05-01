@@ -24,11 +24,6 @@ Master table of contents for the `docs/` tree.
 2. [skills/salesforce/](../skills/salesforce/) — 12 platform skills
 3. [agents/salesforce-architect.md](../agents/salesforce-architect.md), [apex-bulkifier.md](../agents/apex-bulkifier.md), [lwc-debugger.md](../agents/lwc-debugger.md)
 
-### Migrating from V1
-1. [docs/MIGRATION.md](MIGRATION.md) — V1 → V3 command/agent/hook delta
-2. [docs/REPLACEMENT-CONTRACT.md](REPLACEMENT-CONTRACT.md) — V2-replaces-V1 stance
-3. `siftcoder backfill --from-v2` — data migration tool
-
 ### Plugin contributor
 1. [CONTRIBUTING.md](../CONTRIBUTING.md)
 2. [ARCHITECTURE.md](../ARCHITECTURE.md) — design contract
@@ -36,12 +31,8 @@ Master table of contents for the `docs/` tree.
 4. [docs/API.md](API.md) — MCP tools reference
 
 ### Auditor / reviewer
-1. [docs/V1-V3-DEEP-COMPARISON.md](V1-V3-DEEP-COMPARISON.md) — V1 vs V3 verdict (12 axes scored)
-2. [docs/COMPARISON-METHOD.md](COMPARISON-METHOD.md) — methodology + master prompt
-3. [docs/QUALITY-GATE.md](QUALITY-GATE.md) — V3 self-review
-4. [docs/FINAL-REPORT.md](FINAL-REPORT.md) — V3 rebuild closing report
-5. [docs/V1-V2-AUDIT.md](V1-V2-AUDIT.md) — forensic V1 audit
-6. [SECURITY.md](../SECURITY.md) — threat model + disclosure
+1. [docs/QUALITY-GATE.md](QUALITY-GATE.md) — quality gate review
+2. [SECURITY.md](../SECURITY.md) — threat model + disclosure
 
 ## By capability
 
@@ -86,13 +77,7 @@ Master table of contents for the `docs/` tree.
 - [docs/PERFORMANCE.md](PERFORMANCE.md) — token cost + latency
 - [docs/SALESFORCE.md](SALESFORCE.md) — Salesforce reference
 - [docs/TROUBLESHOOTING.md](TROUBLESHOOTING.md) — common issues
-- [docs/MIGRATION.md](MIGRATION.md) — V1 → V3 upgrade
 - [docs/EXAMPLES.md](EXAMPLES.md) — real session traces
 - [docs/USE-CASES.md](USE-CASES.md) — when to use what
-- [docs/COMPARISON-METHOD.md](COMPARISON-METHOD.md) — V1 vs V3 audit method
-- [docs/V1-V3-DEEP-COMPARISON.md](V1-V3-DEEP-COMPARISON.md) — V1 vs V3 verdict
-- [docs/V1-V2-AUDIT.md](V1-V2-AUDIT.md) — forensic V1 audit
-- [docs/REPLACEMENT-CONTRACT.md](REPLACEMENT-CONTRACT.md) — V2 replaces V1
-- [docs/QUALITY-GATE.md](QUALITY-GATE.md) — V3 self-review
-- [docs/FINAL-REPORT.md](FINAL-REPORT.md) — V3 rebuild closing report
+- [docs/QUALITY-GATE.md](QUALITY-GATE.md) — quality gate review
 - [docs/INDEX.md](INDEX.md) — this file

@@ -81,7 +81,7 @@ Generate docs. Doc-type-aware — architecture vs API ref vs user manual have di
 
 ## Subagent dispatch
 
-- `documenter` agent (V3 plans)
+- `documenter` agent
 - `Explore` for source pass
 - `Bash` (Mermaid CLI) if diagrams need rendering
 

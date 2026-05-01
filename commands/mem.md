@@ -6,7 +6,7 @@ allowed-tools: Bash
 
 # /siftcoder:mem
 
-Single entry point for memory daemon operations. Replaces V1's seven `mem-*` commands.
+Single entry point for memory daemon operations. 
 
 ## Actions
 

@@ -1,5 +1,5 @@
 ---
-description: On-demand format / lint / type-check (replaces V1 PostToolUse 210s blocking chain)
+description: On-demand format / lint / type-check 
 argument-hint: [--tests] [--fix] [--report-only]
 allowed-tools: Bash, Read, Edit
 ---

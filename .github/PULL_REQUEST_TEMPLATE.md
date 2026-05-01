@@ -52,7 +52,7 @@ For security fixes, see SECURITY.md and email maintainers BEFORE opening a publi
 
 <!-- For breaking changes only -->
 - Migration steps for existing users:
-- Affected V1/V2 users:
+- 
 - Deprecation timeline:
 
 ## Documentation

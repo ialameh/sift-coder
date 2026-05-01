@@ -1,6 +1,6 @@
 {
   "name": "siftcoder",
-  "version": "3.0.0",
+  "version": "1.0.0",
   "description": "Persistent project memory + local-LLM offload + Salesforce domain skills for Claude Code",
   "author": {
     "name": "Sam Alameh",
@@ -18,7 +18,7 @@
       "command": "node",
       "args": ["${CLAUDE_PLUGIN_ROOT}/dist/memory/mcp/server.js"],
       "env": {
-        "SIFTCODER_NS": "v3"
+        "SIFTCODER_NS": "default"
       }
     }
   },

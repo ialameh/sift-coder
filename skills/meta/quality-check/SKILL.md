@@ -1,11 +1,11 @@
 ---
 name: quality-check
-description: Use when the user finishes a code change and wants format / lint / type-check / tests run together, or asks "is this clean?" / "any issues?". On-demand replacement for the V1 PostToolUse 210s blocking chain.
+description: Use when the user finishes a code change and wants format / lint / type-check / tests run together, or asks "is this clean?" / "any issues?". On-demand replacement for prior chained quality gates.
 ---
 
 # On-demand quality check
 
-V1 ran format + lint + type-check on every Write/Edit via PostToolUse hooks. This added ~3.5min latency per edit. V3 replaces that with this on-demand skill.
+Prior plugins ran format + lint + type-check on every Write/Edit via PostToolUse hooks, adding ~3.5min latency per edit. SiftCoder replaces that with this on-demand skill.
 
 ## Default sequence
 

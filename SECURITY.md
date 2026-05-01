@@ -4,9 +4,7 @@
 
 | Version | Supported |
 |---|---|
-| 3.x (current) | ✅ |
-| 2.x (legacy SiftCoder) | ❌ end-of-life on V3 GA |
-| 1.x | ❌ |
+| 1.x (current) | ✅ |
 
 ## Reporting a vulnerability
 
@@ -25,7 +23,7 @@ We acknowledge within 72 hours, ship patches for confirmed vulnerabilities withi
 
 ## Threat model
 
-SiftCoder runs locally and stores data in `~/.siftcoder/v3/`. The threat surface:
+SiftCoder runs locally and stores data in `~/.siftcoder/`. The threat surface:
 
 | Surface | Threats | Mitigations |
 |---|---|---|
@@ -36,23 +34,23 @@ SiftCoder runs locally and stores data in `~/.siftcoder/v3/`. The threat surface
 | Ollama backend | RCE via malicious model | only accept models from explicit allow-list; document recommended models |
 | Anthropic API | API key exfil | key read from env only; never logged; never embedded in capture payloads |
 | Hooks | shell injection via tool-input strings | hooks consume JSON only; no shell interpolation of payloads |
-| `siftcoder backfill --from-v2` | path traversal via custom v1Root | resolved + checked against home dir; fails closed on suspicious paths |
+| `siftcoder backfill` | path traversal via custom roots | resolved + checked against home dir; fails closed on suspicious paths |
 
 ## What's intentionally not in scope
 
 - Full sandboxing of arbitrary Apex / LWC / TypeScript code that the assistant writes — that's the user's CI / deploy gate's job
 - Network-level confidentiality of Ollama / Anthropic traffic — relies on TLS at the destination
-- Multi-tenant isolation on shared dev hosts — V3 is single-user-per-OS-account by design
+- Multi-tenant isolation on shared dev hosts — single-user-per-OS-account by design
 
 ## Known limitations
 
 - Memory store is **not encrypted at rest**. Sensitive data should be excluded from capture via `.siftcoder/scope.json` or `.siftcoder/privacy.json` redaction patterns.
 - Webhook scaffolds (`/siftcoder:sf-webhook`) ship with HMAC verification by default but **users must rotate secrets** — there is no automatic rotation.
-- Cloud-sync / federation features were intentionally removed in V3; if your workflow needs them, do not bridge to a third-party service without security review.
+- Cloud-sync / federation features are not shipped; if your workflow needs them, do not bridge to a third-party service without security review.
 
 ## Disclosure history
 
-This project is at v3.0.0 — no public CVEs to date.
+This project is at v1.0.0 — no public CVEs to date.
 
 ## Coordinated disclosure
 

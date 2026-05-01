@@ -14,6 +14,6 @@ Produce a single conversational prompt that, given to an agent, would rebuild th
 - `deep` — full architecture + conventions (~3-5k tokens, default)
 - `focus <area>` — one feature, with surrounding context (~1-2k tokens)
 
-Caches by project fingerprint at `~/.siftcoder/v3/reverse-prompt-cache/`.
+Caches by project fingerprint at `~/.siftcoder/reverse-prompt-cache/`.
 
 See `skills/reverse-prompt/SKILL.md`.

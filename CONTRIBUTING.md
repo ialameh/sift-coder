@@ -137,7 +137,7 @@ Maintainers only. Steps:
 
 1. Update `CHANGELOG.md` — move `Unreleased` to a new version section
 2. Bump `package.json` version
-3. Tag: `git tag v3.x.y && git push --tags`
+3. Tag: `git tag v1.x.y && git push --tags`
 4. GitHub Action publishes to npm and creates GitHub release
 
 ## Code of conduct

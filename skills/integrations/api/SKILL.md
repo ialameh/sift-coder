@@ -65,7 +65,7 @@ Captured: <id>
 
 - **Spec first.** Code from spec, not the other way.
 - **Decisions documented.** Future you forgets why; the table prevents re-deciding.
-- **Versioning policy stated upfront.** "We'll figure out v2 later" = pain.
+- **Versioning policy stated upfront.** "We.ll figure out a major version later" = pain.
 - **Auth + rate-limit + idempotency are not optional.**
 
 ## Anti-patterns

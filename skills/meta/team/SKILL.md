@@ -9,7 +9,7 @@ Team knowledge sharing. Patterns + decisions cross human boundaries; SiftCoder f
 
 ## Surfaces
 
-- **Federation** — multiple workspaces share a memory cluster (already in V3 memory engine)
+- **Federation** — multiple workspaces share a memory cluster (already in the memory engine)
 - **Pattern publishing** — captured patterns can be tagged for team-visibility
 - **Decision broadcasting** — high-priority decisions auto-shared
 - **Privacy** — what stays local vs what shares

@@ -1,6 +1,6 @@
 ---
 name: codemap-diff
-description: Use to compare two refs/branches/tags semantically — what changed in architecture, not just lines. "What's different about V2 vs main", "compare branches".
+description: Use to compare two refs/branches/tags semantically — what changed in architecture, not just lines. "What.s different between branches", "compare branches".
 ---
 
 # codemap-diff

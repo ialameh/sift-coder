@@ -1,6 +1,6 @@
 ---
 name: surprise-me
-description: Use when the user wants a brand-new project idea / side project / weekend build / "I'm bored, give me something to build". Generates novel project concepts, not features for an existing repo. Improved from V1 surprise-me command.
+description: Use when the user wants a brand-new project idea / side project / weekend build / "I'm bored, give me something to build". Generates novel project concepts, not features for an existing repo.
 ---
 
 # Surprise Me — project opportunity generator

@@ -20,7 +20,7 @@ First-session walkthrough. Opinionated. Single happy path. The user lands workin
    - **Has key, no Ollama** → setup with Anthropic fallback; suggest installing Ollama for cost reduction
    - **Has neither** → walk through Ollama install (recommended) or Anthropic key (faster)
 3. **Start daemon.** `siftcoder start`. Verify socket.
-4. **Optional backfill.** If user has prior CC sessions, offer `siftcoder backfill --from-v2` (when implemented) or `siftcoder backfill transcripts`.
+4. **Optional backfill.** If user has prior CC sessions, offer `siftcoder backfill ` (when implemented) or `siftcoder backfill transcripts`.
 5. **First task.** Suggest a real task: "try `/siftcoder:reverse-prompt quick` to map this project."
 
 ## Output shape

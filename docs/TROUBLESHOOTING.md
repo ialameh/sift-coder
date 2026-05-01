@@ -6,7 +6,7 @@
 
 ```
 > node bin/siftcoder.mjs status
-daemon unreachable: connect ENOENT ~/.siftcoder/v3/run/<key>.sock
+daemon unreachable: connect ENOENT ~/.siftcoder/run/<key>.sock
 ```
 
 Start the daemon:
@@ -22,13 +22,13 @@ If start succeeds but status still fails, the socket path may be wrong (differen
 Check the spawn log:
 
 ```bash
-tail -50 ~/.siftcoder/v3/logs/spawn.ndjson
+tail -50 ~/.siftcoder/logs/spawn.ndjson
 ```
 
 Common causes:
 - Native binding load failed → WASM fallback should have kicked in; verify with `node -e "require('node-sqlite3-wasm')"`
 - Port collision (web UI sidecar) → daemon picks a free port automatically; if not, set `SIFTCODER_WEB_PORT=0` to disable
-- Permissions on `~/.siftcoder/v3/` directory
+- Permissions on `~/.siftcoder/` directory
 
 ### Native binding fails
 
@@ -118,7 +118,7 @@ If `allow` is too narrow, widen it. To disable enforcement for the project, dele
 Hooks have explicit timeouts in `hooks/hooks.json`. If something is consistently timing out, either the daemon is unreachable (silent failure path) or the hook has a real bug. Inspect:
 
 ```bash
-tail -50 ~/.siftcoder/v3/logs/spawn.ndjson
+tail -50 ~/.siftcoder/logs/spawn.ndjson
 ```
 
 ## MCP
@@ -140,8 +140,8 @@ The MCP server talks to the daemon over UDS. If the daemon is down, MCP tools wi
 
 1. Check daemon is up — `siftcoder status`
 2. Check hooks are wired — `cat hooks/hooks.json` (PostToolUse should list `capture-observation.mjs`)
-3. Check capture log — `~/.siftcoder/v3/logs/capture.ndjson`
-4. Check WAL has appends — `~/.siftcoder/v3/workspaces/<key>/wal.log`
+3. Check capture log — `~/.siftcoder/logs/capture.ndjson`
+4. Check WAL has appends — `~/.siftcoder/workspaces/<key>/wal.log`
 
 ## Performance
 
@@ -161,25 +161,25 @@ If on WASM, vector search stays JS-side. Acceptable up to ~10k summaries.
 - Switch to a smaller Ollama model (`llama3.2:3b`) — fast first pass, escalate to Sonnet only when confidence is low
 - Increase batch size in `settings.json` consolidator block — more parallelism per tick
 
-## Migration from V1 / V2
+## Resetting state
 
 ```bash
-# import legacy memory
-node bin/siftcoder.mjs backfill --from-v2 ~/.siftcoder
+# import prior memory
+node bin/siftcoder.mjs backfill ~/.siftcoder
 
 # verify
 node bin/siftcoder.mjs status
 ```
 
-If a V1 daemon is still running, stop it before installing V3 — they bind to the same `~/.siftcoder/run/*.sock` paths in V1's namespace, but V3 uses `~/.siftcoder/v3/run/*.sock` so they shouldn't collide.
+If a prior daemon is still running, stop it before reinstalling — they bind to the same `~/.siftcoder/run/*.sock` paths .
 
 ## Reset everything
 
 ```bash
 node bin/siftcoder.mjs stop
-rm -rf ~/.siftcoder/v3
+rm -rf ~/.siftcoder
 node bin/siftcoder.mjs setup
 node bin/siftcoder.mjs start
 ```
 
-This wipes all memory for the v3 namespace. V1/V2 data at `~/.siftcoder/` is untouched.
+This wipes all memory.

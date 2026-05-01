@@ -155,10 +155,10 @@ mem_search { "siftcoder roadmap" } → 4 hits
   - already-built: memory engine, Salesforce skills, MCP, hooks
   - already-explored: cloud sync (rejected — security review nightmare)
   - in-progress: nothing
-  - recently mentioned: better backfill from V2
+  - recently mentioned: better backfill from prior install
 
 Safe portfolio (3):
-  1. V2 backfill — ports legacy memory; well-scoped, ~2 days. Mem: prior code in dist/
+  1. backfill — ports prior memory; well-scoped, ~2 days. Mem: prior code in dist/
   2. Trace dashboard — visualise mem_why graph in web UI; ~3 days
   3. CI mode — run skills as CI gates (review/security/quality on PRs)
 

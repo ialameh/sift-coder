@@ -15,7 +15,7 @@ Named savepoint. Richer than `git tag` — captures *intent*, *scope*, *memory s
    - Scope: copy of `.siftcoder/scope.json`
    - Memory: pin top-N memory items by recency
    - Notes: user's reason
-3. **Persist** to `.siftcoder/checkpoints/<id>.json` via the V3 `StateManager` service (`src/services/state.ts`).
+3. **Persist** to `.siftcoder/checkpoints/<id>.json` via the `StateManager` service (`src/services/state.ts`).
 4. **Memory capture** with `kind: checkpoint`.
 
 ## Restore method
