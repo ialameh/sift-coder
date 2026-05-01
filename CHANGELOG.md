@@ -2,6 +2,14 @@
 
 All notable changes to SiftCoder. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning is [SemVer](https://semver.org/).
 
+## [1.0.4] — 2026-05-01
+
+Hotfix: `scripts/setup.mjs` crashed with `ERR_USE_AFTER_CLOSE` when stdin was not a TTY (e.g. running setup via `node bin/siftcoder.mjs setup < /dev/null` or under any non-interactive pipe). Readline.question fired against a closed stream.
+
+### Fixed
+
+- **`scripts/setup.mjs`** — detects non-TTY stdin via `process.stdin.isTTY`. Skips the `ANTHROPIC_API_KEY` prompt in non-interactive mode and prints a hint to export the env var instead. Writes config either way using whatever's already in the environment. Interactive TTY behaviour unchanged.
+
 ## [1.0.3] — 2026-05-01
 
 Hotfix on top of v1.0.2: the v1.0.2 native-binding probe used `require('better-sqlite3')` only, which can pass when the binding loads OK but actually fails at the first SQLite call (Node-25 / prebuild-ABI mismatch case). The probe missed the case it was added to catch.

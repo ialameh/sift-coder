@@ -20,20 +20,22 @@ async function probeOllama() {
   }
 }
 
-export async function run() {
+export async function run({ nonInteractive = !stdin.isTTY } = {}) {
   fs.mkdirSync(CONFIG_DIR, { recursive: true });
   console.log('SiftCoder v3 setup');
   console.log('==================');
 
-  const rl = readline.createInterface({ input: stdin, output: stdout });
+  const rl = nonInteractive ? null : readline.createInterface({ input: stdin, output: stdout });
 
   const ollama = await probeOllama();
   console.log(`Ollama at http://localhost:11434: ${ollama ? 'reachable ✓' : 'not reachable'}`);
 
   let anthropicKey = process.env.ANTHROPIC_API_KEY || '';
-  if (!anthropicKey) {
+  if (!anthropicKey && rl) {
     const a = await rl.question('ANTHROPIC_API_KEY (blank to skip): ');
     anthropicKey = a.trim();
+  } else if (!anthropicKey && nonInteractive) {
+    console.log('ANTHROPIC_API_KEY: not set (non-interactive mode; export the env var to capture)');
   }
 
   const cfg = {
@@ -58,7 +60,7 @@ export async function run() {
   console.log(`Recommended drain backend: ${cfg.siftcoder.memory.drainBackend}`);
   console.log(`Recommended embedder:     ${cfg.siftcoder.memory.embedder}`);
   console.log('\nNext: run `siftcoder start` (or restart Claude Code).');
-  rl.close();
+  if (rl) rl.close();
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
