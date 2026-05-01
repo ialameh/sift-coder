@@ -2,6 +2,12 @@
 
 All notable changes to SiftCoder. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning is [SemVer](https://semver.org/).
 
+## [1.0.5] — 2026-05-01
+
+### Fixed
+
+- **`scripts/setup.mjs`** — header read literal `"SiftCoder v3 setup"` (leftover from internal "third generation" naming during the rebuild). Now reads version from `package.json` so output matches the public release: `SiftCoder v1.0.5 setup`. Internal `~/.siftcoder/v3/` namespace path stays unchanged — it's the state-isolation marker, not the public version.
+
 ## [1.0.4] — 2026-05-01
 
 Hotfix: `scripts/setup.mjs` crashed with `ERR_USE_AFTER_CLOSE` when stdin was not a TTY (e.g. running setup via `node bin/siftcoder.mjs setup < /dev/null` or under any non-interactive pipe). Readline.question fired against a closed stream.

@@ -22,8 +22,9 @@ async function probeOllama() {
 
 export async function run({ nonInteractive = !stdin.isTTY } = {}) {
   fs.mkdirSync(CONFIG_DIR, { recursive: true });
-  console.log('SiftCoder v3 setup');
-  console.log('==================');
+  const pkg = JSON.parse(fs.readFileSync(path.join(import.meta.dirname || path.dirname(new URL(import.meta.url).pathname), '..', 'package.json'), 'utf8'));
+  console.log(`SiftCoder v${pkg.version} setup`);
+  console.log('='.repeat(`SiftCoder v${pkg.version} setup`.length));
 
   const rl = nonInteractive ? null : readline.createInterface({ input: stdin, output: stdout });
 
