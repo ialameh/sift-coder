@@ -1,0 +1,18 @@
+node_modules/
+dist/
+coverage/
+.DS_Store
+*.log
+.env
+.env.local
+.vscode/
+.idea/
+*.tsbuildinfo
+
+# local runtime state
+.siftcoder/
+~/.siftcoder/
+
+# Personal scratchpad for in-flight ideas (not committed)
+IDEAS.md
+.ideas/

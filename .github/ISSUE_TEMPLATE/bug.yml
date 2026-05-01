@@ -1,0 +1,107 @@
+name: Bug report
+description: Report something that's broken
+title: "[bug] "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. Please complete the form below.
+        For security issues, do **not** use this template — see [SECURITY.md](../../SECURITY.md).
+
+  - type: input
+    id: version
+    attributes:
+      label: SiftCoder version
+      description: Output of `siftcoder version`
+      placeholder: "e.g. 3.0.0"
+    validations:
+      required: true
+
+  - type: input
+    id: node
+    attributes:
+      label: Node version
+      description: Output of `node --version`
+      placeholder: "e.g. v22.10.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      options:
+        - macOS
+        - Linux
+        - Windows
+        - WSL
+    validations:
+      required: true
+
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Storage backend
+      description: Output of `siftcoder status` shows this
+      options:
+        - better-sqlite3 (native)
+        - node-sqlite3-wasm
+        - unknown
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: Clear description of the bug
+      placeholder: When I run X, I expected Y but got Z
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction steps
+      description: Minimum steps that trigger the bug
+      placeholder: |
+        1. siftcoder start
+        2. /siftcoder:mem drain
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+      description: Include error messages verbatim, log lines, stack traces
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Daemon log excerpt (optional)
+      description: |
+        From `~/.siftcoder/v3/logs/<workspace-key>.ndjson`. Last 20 lines around the error.
+      render: text
+
+  - type: checkboxes
+    id: confirms
+    attributes:
+      label: Confirmations
+      options:
+        - label: I searched existing issues before filing
+          required: true
+        - label: This is not a security issue (those go via SECURITY.md)
+          required: true

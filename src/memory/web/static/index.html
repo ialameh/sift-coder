@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SiftCoder Memory</title>
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+<header>
+  <h1>SiftCoder Memory</h1>
+  <div id="health" class="health">loading...</div>
+</header>
+<nav>
+  <button data-tab="overview" class="active">Overview</button>
+  <button data-tab="events">Events</button>
+  <button data-tab="summaries">Summaries</button>
+  <button data-tab="search">Search</button>
+  <button data-tab="why">Provenance</button>
+  <button data-tab="ab">A/B savings</button>
+  <button id="refresh">↻</button>
+</nav>
+<main>
+  <section id="tab-overview" class="tab active">
+    <h2>Capture</h2>
+    <div id="overview-capture"></div>
+    <h2>Drain</h2>
+    <div id="overview-drain"></div>
+    <h2>Spend</h2>
+    <div id="overview-spend"></div>
+    <h2>Compression</h2>
+    <div id="overview-context"></div>
+  </section>
+
+  <section id="tab-events" class="tab">
+    <table>
+      <thead><tr><th>id</th><th>tool</th><th>status</th><th>session</th><th>when</th></tr></thead>
+      <tbody id="events-body"></tbody>
+    </table>
+  </section>
+
+  <section id="tab-summaries" class="tab">
+    <table>
+      <thead><tr><th>id</th><th>model</th><th>conf</th><th>text</th><th>when</th></tr></thead>
+      <tbody id="summaries-body"></tbody>
+    </table>
+  </section>
+
+  <section id="tab-search" class="tab">
+    <form id="search-form">
+      <input id="search-q" placeholder="search query..." autocomplete="off" />
+      <input id="search-k" type="number" min="1" max="50" value="5" />
+      <button type="submit">Search</button>
+    </form>
+    <table>
+      <thead><tr><th>score</th><th>id</th><th>recency</th><th>text</th></tr></thead>
+      <tbody id="search-body"></tbody>
+    </table>
+  </section>
+
+  <section id="tab-why" class="tab">
+    <form id="why-form">
+      <input id="why-kind" placeholder="kind (e.g. event)" value="event" />
+      <input id="why-id" placeholder="id" />
+      <input id="why-depth" type="number" min="1" max="10" value="4" />
+      <button type="submit">Trace</button>
+    </form>
+    <ul id="why-body"></ul>
+  </section>
+
+  <section id="tab-ab" class="tab">
+    <form id="ab-form">
+      <label>turns <input id="ab-turns" type="number" min="1" max="2000" value="100" /></label>
+      <label>k <input id="ab-k" type="number" min="1" max="50" value="5" /></label>
+      <button type="submit">Run</button>
+    </form>
+    <div id="ab-result"></div>
+  </section>
+</main>
+<script src="/app.js"></script>
+</body>
+</html>

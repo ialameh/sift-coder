@@ -1,0 +1,27 @@
+name: Question / discussion
+description: Ask a usage question or start a design discussion
+title: "[question] "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before asking, please check:
+        - `README.md`
+        - `docs/USAGE.md`, `docs/CONFIG.md`, `docs/TROUBLESHOOTING.md`
+        - existing issues + discussions
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: What are you trying to accomplish? What did you try?
+    validations:
+      required: true
