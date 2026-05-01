@@ -2,6 +2,34 @@
 
 Common problems and fixes.
 
+## Install
+
+### `Cannot find module .../dist/memory/...`
+
+The plugin was installed without building. SessionStart hook `ensure-built.mjs` auto-fixes this on next session start.
+
+If the hook didn't fire (e.g. you ran `siftcoder` CLI before any Claude Code session), build manually:
+
+```bash
+! cd ~/.claude/plugins/cache/siftcoder-marketplace/siftcoder/<version> && npm install && npm run build
+```
+
+Replace `<version>` with the installed version (`1.0.0` etc.). The `!` prefix runs the command in the current Claude Code prompt.
+
+The auto-build runs `npm install` (skipped if `node_modules/` already populated) then `npx tsc`. Logs to `~/.siftcoder/v3/logs/install.ndjson`.
+
+### Build fails with "Cannot find module 'typescript'"
+
+`node_modules/` is incomplete. Install fully:
+
+```bash
+! cd ~/.claude/plugins/cache/siftcoder-marketplace/siftcoder/<version> && rm -rf node_modules && npm install && npm run build
+```
+
+### Banner: "SiftCoder install incomplete"
+
+`ensure-built.mjs` failed and dropped a flag at `~/.siftcoder/v3/install-error.flag`. Run the printed command, then restart your Claude Code session.
+
 ## Daemon
 
 ### Daemon not reachable

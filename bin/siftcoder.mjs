@@ -95,7 +95,17 @@ function rpc(req) {
   });
 }
 
+function ensureBuilt() {
+  const sentinel = path.join(ROOT, 'dist', 'memory', 'mcp', 'server.js');
+  if (fs.existsSync(sentinel)) return;
+  console.error('[siftcoder] dist/ missing. Build with:');
+  console.error(`  cd ${ROOT} && npm install && npm run build`);
+  console.error('Or restart your Claude Code session — the SessionStart hook will auto-build.');
+  process.exit(1);
+}
+
 async function openStorage() {
+  ensureBuilt();
   const p = paths();
   const { Storage } = await import(path.join(ROOT, 'dist', 'memory', 'storage', 'storage.js'));
   fs.mkdirSync(path.dirname(p.db), { recursive: true });

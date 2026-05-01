@@ -61,8 +61,18 @@
         "hooks": [
           {
             "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/session-start/ensure-built.mjs",
+            "timeout": 300
+          },
+          {
+            "type": "command",
             "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/session-start/spawn-daemon.mjs",
             "timeout": 3
+          },
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/session-start/install-error-banner.mjs",
+            "timeout": 1
           }
         ]
       }

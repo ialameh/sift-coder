@@ -2,6 +2,22 @@
 
 All notable changes to SiftCoder. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning is [SemVer](https://semver.org/).
 
+## [1.0.1] — 2026-05-01
+
+Hotfix: plugin marketplace installs were missing `dist/` (clones don't run `npm install`), so `bin/siftcoder.mjs` and the MCP server failed with `ERR_MODULE_NOT_FOUND` on first use.
+
+### Fixed
+
+- **`hooks/session-start/ensure-built.mjs`** (NEW) — auto-runs `npm install` (if needed) then `npx tsc` on first session start when `dist/memory/mcp/server.js` is missing or stale relative to `src/`. Idempotent. Logs to `~/.siftcoder/v3/logs/install.ndjson`. Budget 300s on first run, < 50ms on subsequent.
+- **`hooks/session-start/install-error-banner.mjs`** (NEW) — surfaces a one-shot user-facing banner with the exact `! cd … && npm install && npm run build` command if `ensure-built.mjs` fails. Auto-clears after first display.
+- **`scripts/postinstall.mjs`** — also builds `dist/` if absent (covers `npm install` paths). Falls back gracefully if `npx tsc` fails.
+- **`bin/siftcoder.mjs`** — preflight `ensureBuilt()` check on `openStorage()` surfaces a clear error message with the exact recovery command instead of an opaque `ERR_MODULE_NOT_FOUND`.
+- **`docs/TROUBLESHOOTING.md`** — new "Install" section documenting the auto-fix + manual command.
+
+### Hooks count
+
+7 active + 1 opt-in unchanged. SessionStart now chains 3 hooks: `ensure-built` → `spawn-daemon` → `install-error-banner`. All non-blocking.
+
 ## [1.0.0] — 2026-05-01
 
 Initial public release.
