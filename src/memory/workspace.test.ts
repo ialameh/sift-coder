@@ -50,17 +50,17 @@ describe('workspacePaths', () => {
     else process.env['SIFTCODER_NS'] = origNs;
   });
 
-  it('produces all expected sub-paths under the given home directory (default ns v3)', () => {
+  it('produces all expected sub-paths under the given home directory (default namespace)', () => {
     delete process.env['SIFTCODER_NS'];
     const home = mkdtempSync(join(tmpdir(), 'siftcoder-home-'));
     const cwd = tmpdir();
     const p = workspacePaths(cwd, home);
-    expect(p.root).toBe(join(home, '.siftcoder', 'v3', 'workspaces', p.key));
+    expect(p.root).toBe(join(home, '.siftcoder', 'default', 'workspaces', p.key));
     expect(p.db).toBe(join(p.root, 'db.sqlite'));
     expect(p.wal).toBe(join(p.root, 'wal.ndjson'));
     expect(p.pid).toBe(join(p.root, 'run.pid'));
-    expect(p.socket).toBe(join(home, '.siftcoder', 'v3', 'run', `${p.key}.sock`));
-    expect(p.log).toBe(join(home, '.siftcoder', 'v3', 'logs', `${p.key}.ndjson`));
+    expect(p.socket).toBe(join(home, '.siftcoder', 'default', 'run', `${p.key}.sock`));
+    expect(p.log).toBe(join(home, '.siftcoder', 'default', 'logs', `${p.key}.ndjson`));
     rmSync(home, { recursive: true, force: true });
   });
 

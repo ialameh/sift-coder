@@ -69,14 +69,14 @@ function decodeFirstFrame(buffer) {
   return JSON.parse(buffer.subarray(4, 4 + len).toString('utf8'));
 }
 
-function rpc(req) {
+function rpc(req, timeoutMs = 5000) {
   return new Promise((resolve, reject) => {
     const c = net.createConnection(paths().sock);
     const chunks = [];
     const t = setTimeout(() => {
       c.destroy();
       reject(new Error('timeout'));
-    }, 5000);
+    }, timeoutMs);
     c.on('data', (d) => chunks.push(d));
     c.on('end', () => {
       clearTimeout(t);
@@ -225,7 +225,7 @@ switch (cmd) {
     break;
   }
   case 'backfill': {
-    const r = await rpc('backfill', { source: args[0] || 'transcripts' });
+    const r = await rpc({ kind: 'backfill', source: args[0] || 'transcripts' }, 300000);
     console.log(JSON.stringify(r, null, 2));
     break;
   }
@@ -239,6 +239,109 @@ switch (cmd) {
     console.log(`http://127.0.0.1:${port}`);
     break;
   }
+  case 'info': {
+    const wantJson = args.includes('--json');
+    const p = paths();
+    const pluginManifestPath = path.join(ROOT, '.claude-plugin', 'plugin.json');
+    let pluginManifestVersion = null;
+    try { pluginManifestVersion = JSON.parse(fs.readFileSync(pluginManifestPath, 'utf8')).version ?? null; } catch { /* ignore */ }
+
+    let daemonState = 'unreachable';
+    let daemonData = null;
+    try {
+      const r = await rpc({ kind: 'status' });
+      daemonState = r.ok ? 'running' : 'error';
+      daemonData = r.ok ? r.data : { error: r.error };
+    } catch (e) {
+      daemonState = 'unreachable';
+      daemonData = { error: e.message };
+    }
+
+    let pid = null;
+    let uptimeSec = null;
+    try {
+      pid = parseInt(fs.readFileSync(p.pid, 'utf8').trim(), 10);
+      const stat = fs.statSync(p.pid);
+      uptimeSec = Math.max(0, Math.round((Date.now() - stat.mtimeMs) / 1000));
+      try { process.kill(pid, 0); } catch { pid = null; uptimeSec = null; }
+    } catch { /* no pid file or process gone */ }
+
+    let ollama = false;
+    let anthropic = false;
+    try {
+      ensureBuilt();
+      const { OllamaClient } = await import(path.join(ROOT, 'dist', 'memory', 'ollama-client.js'));
+      const { AnthropicClient } = await import(path.join(ROOT, 'dist', 'memory', 'anthropic-client.js'));
+      ollama = await OllamaClient.available().catch(() => false);
+      anthropic = AnthropicClient.available(process.env);
+    } catch { /* dist may be missing pre-build */ }
+
+    let dbCounts = null;
+    let dbSizeBytes = null;
+    try {
+      const storage = await openStorage();
+      dbCounts = counts(storage);
+      try { dbSizeBytes = fs.statSync(p.db).size; } catch { /* ignore */ }
+    } catch { /* db not initialized yet */ }
+
+    let webUrl = null;
+    try {
+      if (fs.existsSync(p.httpPort)) webUrl = `http://127.0.0.1:${fs.readFileSync(p.httpPort, 'utf8').trim()}`;
+    } catch { /* ignore */ }
+
+    const info = {
+      siftcoder: { version: pkgVersion(), pluginManifestVersion },
+      runtime: { node: process.version, platform: process.platform, arch: process.arch },
+      install: { root: ROOT },
+      namespace: NS,
+      workspace: { key: key(), cwd: process.cwd(), gitToplevel: gitToplevel(process.cwd()) },
+      paths: { base: p.base, socket: p.sock, db: p.db, pid: p.pid, httpPortFile: p.httpPort },
+      daemon: { state: daemonState, pid, uptimeSec, data: daemonData },
+      backends: { ollama, anthropic },
+      ...(dbCounts ? { counts: dbCounts } : {}),
+      ...(dbSizeBytes !== null ? { dbSizeBytes } : {}),
+      ...(webUrl ? { webUrl } : {}),
+    };
+
+    if (wantJson) {
+      console.log(JSON.stringify(info, null, 2));
+    } else {
+      const fmtUptime = (s) => {
+        if (s == null) return 'n/a';
+        if (s < 60) return `${s}s`;
+        if (s < 3600) return `${Math.floor(s / 60)}m ${s % 60}s`;
+        return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+      };
+      const fmtBytes = (b) => {
+        if (b == null) return 'n/a';
+        if (b < 1024) return `${b} B`;
+        if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KiB`;
+        if (b < 1024 * 1024 * 1024) return `${(b / 1024 / 1024).toFixed(1)} MiB`;
+        return `${(b / 1024 / 1024 / 1024).toFixed(2)} GiB`;
+      };
+      const lines = [];
+      lines.push(`siftcoder v${info.siftcoder.version}` + (info.siftcoder.pluginManifestVersion && info.siftcoder.pluginManifestVersion !== info.siftcoder.version ? ` (plugin manifest: v${info.siftcoder.pluginManifestVersion})` : ''));
+      lines.push('');
+      lines.push(`runtime     node ${info.runtime.node} ${info.runtime.platform}/${info.runtime.arch}`);
+      lines.push(`install     ${info.install.root}`);
+      lines.push(`namespace   ${info.namespace}`);
+      lines.push(`workspace   ${info.workspace.key}  cwd=${info.workspace.cwd}`);
+      if (info.workspace.gitToplevel) lines.push(`            git=${info.workspace.gitToplevel}`);
+      lines.push('');
+      lines.push(`daemon      ${info.daemon.state}` + (info.daemon.pid ? `  pid=${info.daemon.pid}  uptime=${fmtUptime(info.daemon.uptimeSec)}` : ''));
+      lines.push(`socket      ${info.paths.socket}`);
+      lines.push(`db          ${info.paths.db}` + (info.dbSizeBytes != null ? `  (${fmtBytes(info.dbSizeBytes)})` : ''));
+      if (info.webUrl) lines.push(`web         ${info.webUrl}`);
+      lines.push('');
+      lines.push(`backends    ollama=${info.backends.ollama ? 'up' : 'down'}  anthropic=${info.backends.anthropic ? 'configured' : 'no key'}`);
+      if (info.counts) {
+        const c = info.counts;
+        lines.push(`counts      events=${c.events}  raw=${c.raw}  summarized=${c.summarized}  skipped=${c.skipped}  summaries=${c.summaries}  embeddings=${c.embeddings}`);
+      }
+      console.log(lines.join('\n'));
+    }
+    break;
+  }
   case 'setup': {
     const setup = await import(path.join(ROOT, 'scripts', 'setup.mjs'));
     await setup.run();
@@ -247,13 +350,14 @@ switch (cmd) {
   default:
     console.log(`siftcoder v${pkgVersion()}
 Usage:
-  siftcoder version
-  siftcoder setup           one-time interactive setup
-  siftcoder start           spawn daemon (detached)
-  siftcoder stop            stop daemon
-  siftcoder status          daemon health + counts
-  siftcoder drain [batch]   force-drain pending events
-  siftcoder backfill        backfill memory from past transcripts
-  siftcoder web             print web UI URL
+  siftcoder version             print version only
+  siftcoder info [--json]       full runtime details (version, daemon, paths, backends, counts)
+  siftcoder setup               one-time interactive setup
+  siftcoder start               spawn daemon (detached)
+  siftcoder stop                stop daemon
+  siftcoder status              daemon health + counts
+  siftcoder drain [batch]       force-drain pending events
+  siftcoder backfill            backfill memory from past transcripts
+  siftcoder web                 print web UI URL
 `);
 }

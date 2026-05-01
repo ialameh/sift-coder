@@ -42,7 +42,7 @@ Current monitors:
 Recommended additions:
   - ollama-latency        — your stack uses Ollama; track p95 of /api/generate
   - anthropic-budget      — track tokens_used vs limit; alert at 80%
-  - disk-space            — alert if ~/.siftcoder/v3 < 1GB free
+  - disk-space            — alert if ~/.siftcoder/default < 1GB free
 
 Weekly digest:
   - daemon uptime: 99.4%

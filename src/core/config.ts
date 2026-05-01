@@ -1,7 +1,7 @@
 /**
  * Central config loader.
  *
- * Order: env → project .siftcoder/config.json → user ~/.siftcoder/v3/config.json → plugin settings.json.
+ * Order: env → project .siftcoder/config.json → user ~/.siftcoder/default/config.json → plugin settings.json.
  * Validates against the schema in this file; throws on shape errors.
  */
 
@@ -30,7 +30,7 @@ export interface SiftcoderConfig {
 }
 
 const DEFAULTS: SiftcoderConfig = {
-  namespace: 'v3',
+  namespace: 'default',
   memory: {
     drainBackend: 'auto',
     drainBackendCascade: ['ollama', 'anthropic', 'sampling'],

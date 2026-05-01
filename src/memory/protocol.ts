@@ -10,7 +10,8 @@ export type RequestKind =
   | 'get'
   | 'ping'
   | 'status'
-  | 'shutdown';
+  | 'shutdown'
+  | 'backfill';
 
 export interface CaptureRequest {
   kind: 'capture';
@@ -51,6 +52,18 @@ export interface ShutdownRequest {
   kind: 'shutdown';
 }
 
+export interface BackfillRequest {
+  kind: 'backfill';
+  /** Source kind. Currently only 'transcripts'. */
+  source?: 'transcripts';
+  /** Optional cap on number of transcripts to scan (newest first). */
+  limit?: number;
+  /** Optional cap on frames per transcript. */
+  perTranscriptLimit?: number;
+  /** If true, scan only this workspace's encoded cwd. Defaults to true. */
+  workspaceOnly?: boolean;
+}
+
 export type Request =
   | CaptureRequest
   | SearchRequest
@@ -58,7 +71,8 @@ export type Request =
   | GetRequest
   | PingRequest
   | StatusRequest
-  | ShutdownRequest;
+  | ShutdownRequest
+  | BackfillRequest;
 
 export interface OkResponse<T = unknown> {
   ok: true;

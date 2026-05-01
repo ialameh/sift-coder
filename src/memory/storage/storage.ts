@@ -111,6 +111,13 @@ export class Storage {
       .run(sessionId, ts, cwd);
   }
 
+  hasEvent(sessionId: string, inputHash: string): boolean {
+    const row = this.db
+      .prepare('SELECT 1 AS x FROM events WHERE session_id = ? AND input_hash = ? LIMIT 1')
+      .get(sessionId, inputHash) as Record<string, unknown> | undefined;
+    return !!row;
+  }
+
   recordEvent(input: CaptureInput): number {
     const inputHash = hashInput(input.payload);
     const result = this.db

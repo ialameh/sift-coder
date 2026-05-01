@@ -1,0 +1,155 @@
+site_name: SiftCoder Field Guide
+site_description: Persistent project memory, local-LLM offload, and Salesforce domain skills for Claude Code — the deep how-and-why guide.
+site_url: https://ialameh.github.io/sift-coder/
+repo_name: ialameh/sift-coder
+repo_url: https://github.com/ialameh/sift-coder
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.expand
+    - navigation.indexes
+    - navigation.top
+    - navigation.footer
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - search.share
+    - content.code.copy
+    - content.code.annotate
+    - content.action.edit
+    - content.tabs.link
+  icon:
+    repo: fontawesome/brands/github
+    edit: material/pencil
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/ialameh/sift-coder
+  generator: false
+
+markdown_extensions:
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+      toc_depth: 3
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.betterem
+  - pymdownx.caret
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+plugins:
+  - search:
+      lang: en
+
+nav:
+  - Home: index.md
+  - Quickstart:
+      - quickstart/index.md
+      - First five minutes: quickstart/first-five-minutes.md
+      - Verifying the install: quickstart/verifying.md
+      - When to reach for SiftCoder: quickstart/when-to-use.md
+  - Foundations:
+      - foundations/index.md
+      - Mental model: foundations/mental-model.md
+      - Architecture overview: foundations/architecture.md
+      - The memory model: foundations/memory-model.md
+      - Retrieval and ranking: foundations/retrieval.md
+      - Namespaces and workspaces: foundations/namespaces.md
+      - Backends (Ollama, Anthropic, sampling): foundations/backends.md
+      - Hooks lifecycle: foundations/hooks.md
+  - Operations:
+      - operations/index.md
+      - Daily workflow: operations/daily-workflow.md
+      - Backfilling from transcripts: operations/backfill.md
+      - Drain and consolidation: operations/drain.md
+      - The web UI: operations/web-ui.md
+      - Health monitoring: operations/monitoring.md
+      - Pruning and curation: operations/pruning.md
+      - Cost optimization: operations/cost.md
+      - Troubleshooting: operations/troubleshooting.md
+  - Reference:
+      - reference/index.md
+      - CLI commands: reference/cli.md
+      - Slash commands: reference/slash-commands.md
+      - Skills catalogue: reference/skills.md
+      - Agents catalogue: reference/agents.md
+      - Hooks catalogue: reference/hooks.md
+      - Configuration: reference/configuration.md
+      - MCP server: reference/mcp.md
+      - Wire protocol: reference/protocol.md
+      - File and directory layout: reference/layout.md
+      - Glossary: reference/glossary.md
+  - Salesforce:
+      - salesforce/index.md
+      - Apex patterns: salesforce/apex-patterns.md
+      - Schema migrations: salesforce/schema.md
+      - Deploy and rollback: salesforce/deploy.md
+      - Security and compliance: salesforce/security.md
+      - LWC workflows: salesforce/lwc.md
+      - Org architecture review: salesforce/architecture.md
+  - Cookbook:
+      - cookbook/index.md
+      - Onboarding a new repo: cookbook/onboarding.md
+      - Capturing a debugging session: cookbook/debugging.md
+      - Pattern memory across projects: cookbook/patterns.md
+      - Multi-agent refactor: cookbook/swarm.md
+      - Ghost mode for solo coding: cookbook/ghost.md
+      - Salesforce migration: cookbook/sf-migration.md
+  - Project:
+      - project/index.md
+      - Roadmap: project/roadmap.md
+      - Changelog: project/changelog.md
+      - Contributing: project/contributing.md
+      - Code of conduct: project/code-of-conduct.md
+      - Security policy: project/security.md
+      - License: project/license.md

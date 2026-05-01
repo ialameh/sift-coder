@@ -1,6 +1,6 @@
 {
   "name": "siftcoder",
-  "version": "1.0.6",
+  "version": "1.0.8",
   "description": "Persistent project memory + local-LLM offload + Salesforce domain skills for Claude Code",
   "author": {
     "name": "Sam Alameh",
@@ -10,13 +10,23 @@
   "license": "MIT",
   "homepage": "https://github.com/ialameh/sift-coder",
   "repository": "https://github.com/ialameh/sift-coder",
-  "keywords": ["memory", "salesforce", "agents", "ai", "claude-code", "ollama", "rag"],
+  "keywords": [
+    "memory",
+    "salesforce",
+    "agents",
+    "ai",
+    "claude-code",
+    "ollama",
+    "rag"
+  ],
   "skills": "./skills",
   "commands": "./commands",
   "mcpServers": {
     "siftcoder-memory": {
       "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/memory/mcp/server.js"],
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/dist/memory/mcp/server.js"
+      ],
       "env": {
         "SIFTCODER_NS": "default"
       }

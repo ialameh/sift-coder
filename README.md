@@ -3,8 +3,11 @@
 > Persistent project memory + local-LLM offload + Salesforce domain skills for Claude Code.
 
 [![CI](https://github.com/ialameh/sift-coder/actions/workflows/ci.yml/badge.svg)](https://github.com/ialameh/sift-coder/actions/workflows/ci.yml)
+[![Docs](https://github.com/ialameh/sift-coder/actions/workflows/docs.yml/badge.svg)](https://ialameh.github.io/sift-coder/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](https://nodejs.org/)
+
+📖 **Full documentation: [ialameh.github.io/sift-coder](https://ialameh.github.io/sift-coder/)** — quickstart, mental model, architecture, every CLI command, every skill, every agent, troubleshooting, and a cookbook of real workflows.
 
 SiftCoder is a Claude Code plugin that adds four things Claude Code does not have natively:
 

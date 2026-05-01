@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Memory daemon health monitor.
-// Pings UDS socket every 30s, writes JSON line to ~/.siftcoder/v3/health.ndjson.
+// Pings UDS socket every 30s, writes JSON line to ~/.siftcoder/<ns>/health.ndjson (default ns: 'default').
 
 import net from 'node:net';
 import path from 'node:path';

@@ -12,6 +12,7 @@ import type { Embedder } from '../embedder.js';
 import { hybridSearch } from '../retrieval.js';
 import { RegexSymbolExtractor, looksLikeCodePath, type SymbolExtractor, type AsyncSymbolExtractor } from '../symbols.js';
 import { approximate } from '../tokens.js';
+import { listTranscripts, readTranscript, parseTranscript } from '../replay.js';
 
 export interface ServerDeps {
   storage: Storage;
@@ -127,6 +128,80 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
         case 'shutdown': {
           if (deps.onShutdown) deps.onShutdown();
           return { ok: true, data: { stopping: true } };
+        }
+
+        case 'backfill': {
+          const source = req.source ?? 'transcripts';
+          if (source !== 'transcripts') {
+            return { ok: false, error: `unsupported backfill source: ${source}` };
+          }
+          const workspaceOnly = req.workspaceOnly ?? true;
+          const transcripts = listTranscripts({
+            cwd: workspaceOnly ? deps.cwd : undefined,
+            limit: req.limit,
+          });
+          let scanned = 0;
+          let captured = 0;
+          let skippedDuplicate = 0;
+          let errors = 0;
+          let firstError: string | undefined;
+          for (const t of transcripts) {
+            scanned++;
+            let jsonl: string;
+            try {
+              jsonl = readTranscript(t.path);
+            } catch (e) {
+              errors++;
+              firstError ??= e instanceof Error ? e.message : String(e);
+              continue;
+            }
+            const frames = parseTranscript(jsonl, t.sessionId, { limit: req.perTranscriptLimit });
+            for (const f of frames) {
+              try {
+                let annotated: unknown;
+                if (deps.asyncSymbols) {
+                  annotated = await annotateSymbolsAsync(f.payload, deps.asyncSymbols);
+                } else {
+                  const extractor = deps.symbols === null ? null : (deps.symbols ?? defaultExtractor);
+                  annotated = extractor ? annotateSymbols(f.payload, extractor) : f.payload;
+                }
+                const { value: redactedPayload } = redact(annotated);
+                const stamped =
+                  redactedPayload && typeof redactedPayload === 'object' && !Array.isArray(redactedPayload)
+                    ? { ...(redactedPayload as Record<string, unknown>), _source: f.source }
+                    : { value: redactedPayload, _source: f.source };
+                deps.storage.ensureSession(f.sessionId, deps.cwd, f.ts);
+                const inputHash = hashInput(stamped);
+                if (deps.storage.hasEvent(f.sessionId, inputHash)) {
+                  skippedDuplicate++;
+                  continue;
+                }
+                deps.wal.append({
+                  ts: f.ts,
+                  sessionId: f.sessionId,
+                  tool: f.tool,
+                  inputHash,
+                  payload: stamped,
+                });
+                const tokensEst = approximate(JSON.stringify(stamped));
+                deps.storage.recordEvent({
+                  ts: f.ts,
+                  sessionId: f.sessionId,
+                  tool: f.tool,
+                  payload: stamped,
+                  tokensEst,
+                });
+                captured++;
+              } catch (e) {
+                errors++;
+                firstError ??= e instanceof Error ? e.message : String(e);
+              }
+            }
+          }
+          return {
+            ok: true,
+            data: { source, scanned, captured, skippedDuplicate, errors, ...(firstError ? { firstError } : {}) },
+          };
         }
       }
     } catch (err) {

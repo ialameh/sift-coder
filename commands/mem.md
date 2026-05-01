@@ -15,6 +15,8 @@ Single entry point for memory daemon operations.
 | `start` | Spawn the daemon detached (idempotent) |
 | `stop` | Stop the daemon for this workspace |
 | `status` | Show health, counts, backend cascade choices |
+| `info [--json]` | Full runtime details: version, daemon pid/uptime, namespace, workspace, paths, backends, counts, db size |
+| `version` | Print version only |
 | `check` | Verify daemon reachable; auto-start if not |
 | `setup` | Interactive first-time setup (Ollama probe, Anthropic key, config) |
 | `drain [batch]` | Force a drain pass (default batch=32) |
@@ -27,6 +29,8 @@ Single entry point for memory daemon operations.
 
 ```
 /siftcoder:mem status
+/siftcoder:mem info
+/siftcoder:mem info --json
 /siftcoder:mem drain 64
 /siftcoder:mem setup
 /siftcoder:mem backfill transcripts

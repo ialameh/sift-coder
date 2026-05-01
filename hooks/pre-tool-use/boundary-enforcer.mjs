@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // PreToolUse boundary enforcer.
-// Reads scope file at .siftcoder/scope.json (project) or ~/.siftcoder/v3/scope.json (global).
+// Reads scope file at .siftcoder/scope.json (project) or ~/.siftcoder/default/scope.json (global).
 // Blocks Write/Edit on paths outside listed allow-globs. Read is logged but allowed.
 // Failure mode: any error → log to stderr, exit 0 (do NOT block on enforcer bugs).
 

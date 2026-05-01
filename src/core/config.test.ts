@@ -16,7 +16,7 @@ describe('loadConfig', () => {
 
   it('returns defaults when no overrides', () => {
     const cfg = loadConfig({ pluginRoot: '' });
-    expect(cfg.namespace).toBe('v3');
+    expect(cfg.namespace).toBe('default');
     expect(cfg.memory.drainBackend).toBe('auto');
     expect(cfg.memory.embedder).toBe('auto');
     expect(cfg.memory.retrieval.rrfK).toBe(60);

@@ -1,0 +1,77 @@
+name: Deploy SiftCoder Field Guide
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'requirements-docs.txt'
+      - '.github/workflows/docs.yml'
+      - 'CHANGELOG.md'
+      - 'README.md'
+      - 'CONTRIBUTING.md'
+      - 'SECURITY.md'
+      - 'CODE_OF_CONDUCT.md'
+      - 'LICENSE'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-docs.txt
+
+      - name: Install MkDocs and theme
+        run: pip install -r requirements-docs.txt
+
+      - name: Stage repo-root files into docs/project
+        run: |
+          mkdir -p docs/project
+          cp CHANGELOG.md docs/project/changelog.md
+          cp CONTRIBUTING.md docs/project/contributing.md
+          cp SECURITY.md docs/project/security.md
+          cp LICENSE docs/project/license.md
+          if [ -f CODE_OF_CONDUCT.md ]; then cp CODE_OF_CONDUCT.md docs/project/code-of-conduct.md; fi
+          # Rewrite repo-relative links inside the staged copies so they resolve
+          # both on the published docs site and on the original GitHub view of
+          # the source files at repo root.
+          sed -i 's|](ARCHITECTURE.md|](https://github.com/ialameh/sift-coder/blob/main/ARCHITECTURE.md|g' docs/project/contributing.md
+
+      - name: Build site
+        run: mkdocs build --strict --site-dir _site
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
