@@ -110,6 +110,6 @@ Patterns are not a substitute for thinking. A few cases where the skill should b
 
 - The `apex-bulkifier` agent (under `agents/apex-bulkifier.md`) is a narrow refactor agent that takes a single row-by-row class and converts it to bulk-safe form. Use it when you've inherited a class that violates the rules; use the skill when you're writing fresh code.
 - The [security chapter](security.md) overlaps — `with sharing`, CRUD/FLS, and SOQL injection are all enforced there too.
-- The [test pack](../reference/skills.md#salesforce-test) includes the test data factory templates the skill references.
+- The [test pack](../reference/skills.md#sf-test) includes the test data factory templates the skill references.
 
 The next chapter walks through schema work — adding fields, migrating relationships, generating ERDs from metadata.
