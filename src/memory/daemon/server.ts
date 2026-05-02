@@ -277,7 +277,10 @@ export function startServer(deps: ServerDeps): Server {
   if (existsSync(deps.socketPath)) {
     try { unlinkSync(deps.socketPath); } catch { /* ignore */ }
   }
-  const server = createServer((socket: Socket) => {
+  // allowHalfOpen: true — prevents Node from auto-closing the write side when the client
+  // sends EOF (c.end()). Without this, async handlers (e.g. drain calling Gemini) finish
+  // after EOF lands and socket.write() is silently dropped.
+  const server = createServer({ allowHalfOpen: true }, (socket: Socket) => {
     const decoder = new FrameDecoder();
     socket.on('data', async (chunk: Buffer) => {
       let frames: unknown[];
@@ -292,6 +295,7 @@ export function startServer(deps: ServerDeps): Server {
         const res = await handler(frame as Request);
         socket.write(encodeFrame(res));
       }
+      socket.end();
     });
     socket.on('error', () => { /* client may drop */ });
   });
