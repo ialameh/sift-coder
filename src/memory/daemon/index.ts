@@ -26,7 +26,18 @@ import { CdgSymbolExtractor, AsyncFromSync } from '../cdg-adapter.js';
 import { CdgEmbedder } from '../cdg-embedder.js';
 import { RegexSymbolExtractor } from '../symbols.js';
 
-const IDLE_SHUTDOWN_MS = 30 * 60 * 1000;
+/**
+ * Idle-shutdown window in ms. Disabled by default so a quiet Claude Code
+ * session (lunch, meeting, end-of-day pause) doesn't silently kill the
+ * daemon and lose subsequent captures. Set `SIFTCODER_IDLE_SHUTDOWN_MS`
+ * to a positive integer to enable; set to 0 to keep it disabled.
+ */
+const IDLE_SHUTDOWN_MS = (() => {
+  const raw = process.env['SIFTCODER_IDLE_SHUTDOWN_MS'];
+  if (raw === undefined || raw === '') return 0;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+})();
 
 async function main() {
   const cwd = process.env.SIFTCODER_WORKSPACE_CWD || process.cwd();
@@ -127,12 +138,19 @@ async function main() {
     logger.info('http bridge enabled', {});
   }
 
-  const idleTimer = setInterval(() => {
-    if (stopping || Date.now() - lastClientTs > IDLE_SHUTDOWN_MS) {
-      clearInterval(idleTimer);
-      shutdown();
-    }
-  }, 60_000);
+  const idleTimer = IDLE_SHUTDOWN_MS > 0
+    ? setInterval(() => {
+        if (stopping || Date.now() - lastClientTs > IDLE_SHUTDOWN_MS) {
+          clearInterval(idleTimer);
+          shutdown();
+        }
+      }, 60_000)
+    : setInterval(() => {
+        if (stopping) {
+          clearInterval(idleTimer);
+          shutdown();
+        }
+      }, 60_000);
 
   function shutdown() {
     consolidator.stop();

@@ -2,6 +2,12 @@
 
 All notable changes to SiftCoder. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning is [SemVer](https://semver.org/).
 
+## [1.0.9] — 2026-05-02
+
+### Fixed
+
+- **Daemon no longer auto-shuts on idle.** `src/memory/daemon/index.ts` had a hardcoded `IDLE_SHUTDOWN_MS = 30 * 60 * 1000` that killed the daemon after 30 minutes without a socket connection. In practice this meant a quiet stretch in a Claude Code session (lunch, a meeting, deep reading) silently killed the daemon and subsequent `PostToolUse` captures dropped on the floor until the next `SessionStart` hook restarted it. Idle shutdown is now disabled by default. Set `SIFTCODER_IDLE_SHUTDOWN_MS=<ms>` to opt back in if you really want the cleanup behaviour.
+
 ## [1.0.8] — 2026-05-02
 
 ### Added
