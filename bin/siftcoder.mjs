@@ -136,22 +136,41 @@ function counts(storage) {
 }
 
 async function drain(batch) {
+  // Guard: drain opens the DB directly. If the daemon is running it already holds the lock.
+  try {
+    const ping = await rpc({ kind: 'ping' });
+    if (ping.ok) {
+      throw new Error(
+        'daemon is running and holds the database lock.\n' +
+        '  Use the MCP interface instead:  /siftcoder:mem drain ' + batch + '\n' +
+        '  Or stop the daemon first:       siftcoder stop'
+      );
+    }
+  } catch (e) {
+    if (e.message.startsWith('daemon is running')) throw e;
+    // Socket unreachable — daemon not running, safe to open DB directly.
+  }
+
   const storage = await openStorage();
   const { Summarizer } = await import(path.join(ROOT, 'dist', 'memory', 'daemon', 'summarizer.js'));
   const { DeterministicEmbedder } = await import(path.join(ROOT, 'dist', 'memory', 'embedder.js'));
+  const { GeminiClient } = await import(path.join(ROOT, 'dist', 'memory', 'gemini-client.js'));
   const { OllamaClient } = await import(path.join(ROOT, 'dist', 'memory', 'ollama-client.js'));
   const { AnthropicClient } = await import(path.join(ROOT, 'dist', 'memory', 'anthropic-client.js'));
 
   let modelClient;
   let backend;
-  if (await OllamaClient.available()) {
+  if (GeminiClient.available(process.env)) {
+    modelClient = new GeminiClient();
+    backend = 'gemini';
+  } else if (await OllamaClient.available()) {
     modelClient = new OllamaClient();
     backend = 'ollama';
   } else if (AnthropicClient.available(process.env)) {
     modelClient = new AnthropicClient();
     backend = 'anthropic';
   } else {
-    throw new Error('no drain backend available: start Ollama or set ANTHROPIC_API_KEY');
+    throw new Error('no drain backend available: set GEMINI_API_KEY, start Ollama, or set ANTHROPIC_API_KEY');
   }
 
   const summarizer = new Summarizer(storage, modelClient);
@@ -207,15 +226,23 @@ switch (cmd) {
     break;
   }
   case 'status': {
-    const storage = await openStorage();
     let daemon = 'unreachable';
+    let countsData = null;
     try {
-      const r = await rpc({ kind: 'ping' });
+      const r = await rpc({ kind: 'status' });
       daemon = r.ok ? 'running' : 'error';
+      countsData = r.ok ? r.data.counts : null;
     } catch {
       daemon = 'unreachable';
     }
-    console.log(JSON.stringify({ daemon, namespace: NS, workspace: key(), socket: paths().sock, counts: counts(storage) }, null, 2));
+    // Only open DB directly when daemon isn't holding the lock.
+    if (!countsData) {
+      try {
+        const storage = await openStorage();
+        countsData = counts(storage);
+      } catch { /* db not yet initialized */ }
+    }
+    console.log(JSON.stringify({ daemon, namespace: NS, workspace: key(), socket: paths().sock, counts: countsData }, null, 2));
     break;
   }
   case 'drain': {
@@ -278,11 +305,17 @@ switch (cmd) {
 
     let dbCounts = null;
     let dbSizeBytes = null;
-    try {
-      const storage = await openStorage();
-      dbCounts = counts(storage);
+    // Prefer counts from the running daemon (avoids opening DB while it holds the lock).
+    if (daemonState === 'running' && daemonData?.counts) {
+      dbCounts = daemonData.counts;
       try { dbSizeBytes = fs.statSync(p.db).size; } catch { /* ignore */ }
-    } catch { /* db not initialized yet */ }
+    } else {
+      try {
+        const storage = await openStorage();
+        dbCounts = counts(storage);
+        try { dbSizeBytes = fs.statSync(p.db).size; } catch { /* ignore */ }
+      } catch { /* db not initialized yet */ }
+    }
 
     let webUrl = null;
     try {
