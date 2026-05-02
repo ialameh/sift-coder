@@ -36,7 +36,11 @@ function startEcho(reply: (req: unknown) => unknown): Promise<void> {
   });
 }
 
-describe('MemoryClient.send', () => {
+// Unix domain sockets do not behave like filesystem paths on Windows;
+// net.createServer(path) creates a named pipe, not a UDS file, so existsSync
+// and connect both fail. Skip on Windows — the protocol logic is tested via
+// the FrameDecoder unit tests which have no socket dependency.
+describe.skipIf(process.platform === 'win32')('MemoryClient.send', () => {
   it('round-trips an ok response', async () => {
     await startEcho(() => ({ ok: true, data: { pong: true } }));
     const c = new MemoryClient({ socketPath });
