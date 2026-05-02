@@ -5,7 +5,7 @@
  *
  * Writes to a path (filesystem-backed) or to a provided WritableStream-like target (stdout for daemons).
  */
-import { openSync, writeSync, fsyncSync } from 'node:fs';
+import { openSync, writeSync, fsyncSync, closeSync } from 'node:fs';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
@@ -23,7 +23,7 @@ export interface LogSink {
 }
 
 export class FileSink implements LogSink {
-  private fd: number;
+  private fd: number | null;
   private readonly fsync: boolean;
 
   constructor(path: string, fsync = false) {
@@ -32,9 +32,16 @@ export class FileSink implements LogSink {
   }
 
   write(line: string): void {
+    if (this.fd === null) return;
     writeSync(this.fd, line);
     /* c8 ignore next -- fsync is opt-in; covered separately if enabled */
     if (this.fsync) fsyncSync(this.fd);
+  }
+
+  close(): void {
+    if (this.fd === null) return;
+    closeSync(this.fd);
+    this.fd = null;
   }
 }
 

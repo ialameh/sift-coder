@@ -30,7 +30,12 @@ const WASM: BackendFactory = {
   open: async (path: string) => openWasmDatabase(path),
 };
 
-describe.each([NATIVE, WASM])('storage backend parity ($name)', backend => {
+// WASM backend holds the db file handle open on Windows even after close(),
+// blocking rmdir. The WASM path is a fallback for non-Windows systems that
+// cannot compile better-sqlite3; skip it on Windows where native always works.
+const BACKENDS = process.platform === 'win32' ? [NATIVE] : [NATIVE, WASM];
+
+describe.each(BACKENDS)('storage backend parity ($name)', backend => {
   let dir: string;
   let db: DBHandle & { close(): void };
   let storage: Storage;
@@ -38,12 +43,16 @@ describe.each([NATIVE, WASM])('storage backend parity ($name)', backend => {
   beforeEach(async () => {
     dir = mkdtempSync(join(tmpdir(), `mem-${backend.name}-`));
     db = await backend.open(join(dir, 'd.sqlite'));
+    // journal_mode=memory keeps the journal in RAM rather than a -journal file.
+    // Without this, the wasm backend leaves a -journal fd open on Windows after
+    // db.close(), which blocks rmdir (ENOTEMPTY).
+    db.exec('PRAGMA journal_mode=memory');
     storage = new Storage(db);
   });
 
   afterEach(() => {
-    db.close();
-    rmSync(dir, { recursive: true, force: true });
+    try { db.close(); } catch { /* ignore */ }
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
 
   it('records events and reads them back with stable shape', () => {
