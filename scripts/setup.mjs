@@ -6,6 +6,7 @@ import path from 'node:path';
 import os from 'node:os';
 import readline from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
+import { URL } from 'node:url';
 
 const NS = process.env.SIFTCODER_NS || 'default';
 const CONFIG_DIR = path.join(os.homedir(), '.siftcoder', NS);

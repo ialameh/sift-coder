@@ -87,10 +87,11 @@ async function main() {
   const sampling = new McpSamplingClient(bridge);
 
   // Drain backend resolution. Priority:
-  //   1. SIFTCODER_DRAIN_BACKEND=ollama|anthropic|mcp explicit override.
-  //   2. Auto-detect: Ollama at http://localhost:11434 → use Ollama (local, free).
-  //   3. ANTHROPIC_API_KEY set → use direct Anthropic.
-  //   4. MCP host sampling (works once Claude Code ships sampling/createMessage).
+  //   1. SIFTCODER_DRAIN_BACKEND=gemini|ollama|anthropic|mcp explicit override.
+  //   2. Auto-detect: GEMINI_API_KEY set → Gemini (fast, low-cost cloud).
+  //   3. Auto-detect: Ollama at http://localhost:11434 → Ollama (local, free).
+  //   4. ANTHROPIC_API_KEY set → use direct Anthropic.
+  //   5. MCP host sampling (works once Claude Code ships sampling/createMessage).
   //
   // Wraps with FallbackModelClient (primary -> sampling) only when explicitly enabled, so
   // a transient Ollama hiccup falls back to the host instead of failing.
@@ -98,9 +99,13 @@ async function main() {
   const backendChoice = (process.env['SIFTCODER_DRAIN_BACKEND'] ?? 'auto').toLowerCase();
   const { OllamaClient } = await import('../ollama-client.js');
   const { AnthropicClient } = await import('../anthropic-client.js');
+  const { GeminiClient } = await import('../gemini-client.js');
 
   let chosen = 'mcp-sampling';
-  if (backendChoice === 'ollama' || (backendChoice === 'auto' && await OllamaClient.available())) {
+  if (backendChoice === 'gemini' || (backendChoice === 'auto' && GeminiClient.available(process.env))) {
+    modelClient = new GeminiClient();
+    chosen = `gemini (model=${process.env['SIFTCODER_GEMINI_MODEL'] ?? 'gemini-2.0-flash'})`;
+  } else if (backendChoice === 'ollama' || (backendChoice === 'auto' && await OllamaClient.available())) {
     modelClient = new OllamaClient();
     chosen = `ollama (model=${process.env['SIFTCODER_OLLAMA_MODEL'] ?? 'llama3.2:3b'})`;
   } else if (backendChoice === 'anthropic' || (backendChoice === 'auto' && AnthropicClient.available(process.env))) {
