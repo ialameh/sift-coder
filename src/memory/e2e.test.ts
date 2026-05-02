@@ -11,6 +11,10 @@ import { Server } from 'node:net';
 import Database from 'better-sqlite3';
 import { Storage } from './storage/storage.js';
 import { WAL } from './daemon/wal.js';
+
+// Windows: net.createServer with a UDS path does not create a visible filesystem entry,
+// so existsSync(socketPath) never returns true. Skip the entire e2e suite on Windows.
+const SKIP_ON_WINDOWS = process.platform === 'win32';
 import { startServer } from './daemon/server.js';
 import { MemoryClient } from './client.js';
 
@@ -20,6 +24,7 @@ let dbPath: string;
 let walPath: string;
 let server: Server | null = null;
 let db: Database.Database | null = null;
+let wal: WAL | null = null;
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'sift-e2e-'));
@@ -30,16 +35,19 @@ beforeEach(() => {
 
 afterEach(() => {
   if (server) try { server.close(); } catch { /* ignore */ }
+  // WAL must be closed before rmSync — its open fd blocks rmdir on Windows.
+  if (wal) try { wal.close(); } catch { /* ignore */ }
   if (db) try { db.close(); } catch { /* ignore */ }
   if (existsSync(socketPath)) try { unlinkSync(socketPath); } catch { /* ignore */ }
-  rmSync(dir, { recursive: true, force: true });
+  wal = null;
+  rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 });
 
-describe('memory daemon e2e', () => {
+describe.skipIf(SKIP_ON_WINDOWS)('memory daemon e2e', () => {
   it('captures an event, persists redacted payload, and exposes it via search', async () => {
     db = new Database(dbPath);
     const storage = new Storage(db);
-    const wal = new WAL(walPath);
+    wal = new WAL(walPath);
     wal.open();
 
     server = startServer({ storage, wal, socketPath, cwd: dir });
@@ -84,7 +92,7 @@ describe('memory daemon e2e', () => {
   it('persists capture frames to the WAL on disk', async () => {
     db = new Database(dbPath);
     const storage = new Storage(db);
-    const wal = new WAL(walPath);
+    wal = new WAL(walPath);
     wal.open();
     server = startServer({ storage, wal, socketPath, cwd: dir });
     await waitFor(() => existsSync(socketPath));
@@ -100,7 +108,7 @@ describe('memory daemon e2e', () => {
   it('supports timeline retrieval over real summaries', async () => {
     db = new Database(dbPath);
     const storage = new Storage(db);
-    const wal = new WAL(walPath);
+    wal = new WAL(walPath);
     wal.open();
     server = startServer({ storage, wal, socketPath, cwd: dir });
     await waitFor(() => existsSync(socketPath));

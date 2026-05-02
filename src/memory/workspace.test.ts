@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { basename } from 'node:path';
 import { gitToplevel, workspaceKey, workspacePaths, ensureWorkspaceDirs } from './workspace.js';
 
 describe('gitToplevel', () => {
@@ -16,7 +17,8 @@ describe('gitToplevel', () => {
     mkdirSync(sub, { recursive: true });
     const top = gitToplevel(sub);
     expect(top).toBeTruthy();
-    expect(top!.endsWith(dir.split('/').pop()!)).toBe(true);
+    // basename() is cross-platform; split('/') breaks on Windows backslash paths.
+    expect(top!.endsWith(basename(dir))).toBe(true);
   });
 
   it('returns null outside a repo', () => {

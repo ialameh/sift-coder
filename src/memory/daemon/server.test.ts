@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { buildHandler } from './server.js';
 import { Storage, type DBHandle } from '../storage/storage.js';
 import { WAL } from './wal.js';
@@ -89,13 +89,17 @@ beforeEach(() => {
   wal = new WAL(join(walDir, 'wal.ndjson'));
   wal.open();
 });
+afterEach(() => {
+  // Close the WAL fd before removing the directory — open handles block rmdir on Windows.
+  try { wal.close(); } catch { /* already closed */ }
+  try { rmSync(walDir, { recursive: true, force: true }); } catch { /* ignore */ }
+});
 
 describe('buildHandler', () => {
   it('responds to ping', async () => {
     const h = buildHandler({ storage, wal, cwd: '/x' });
     const r = await h({ kind: 'ping' });
     expect(r).toEqual({ ok: true, data: { pong: true } });
-    rmSync(walDir, { recursive: true, force: true });
   });
 
   it('captures an event, redacting secrets and persisting an event id', async () => {
@@ -104,7 +108,6 @@ describe('buildHandler', () => {
     expect(r.ok).toBe(true);
     expect(db.events).toHaveLength(1);
     expect(JSON.parse(db.events[0]!['payload_json'] as string).token).toBe('[REDACTED:aws]');
-    rmSync(walDir, { recursive: true, force: true });
   });
 
   it('supplies its own ts when not provided', async () => {
@@ -112,7 +115,6 @@ describe('buildHandler', () => {
     const r = await h({ kind: 'capture', sessionId: 's', tool: 'Bash', payload: { cmd: 'ls' } });
     expect(r.ok).toBe(true);
     expect(typeof db.events[0]!['ts']).toBe('number');
-    rmSync(walDir, { recursive: true, force: true });
   });
 
   it('returns search hits when summaries match', async () => {
@@ -122,7 +124,6 @@ describe('buildHandler', () => {
     const r = await h({ kind: 'search', query: 'hello' }) as { ok: true; data: { hits: unknown[] } };
     expect(r.ok).toBe(true);
     expect((r.data.hits as unknown[]).length).toBe(1);
-    rmSync(walDir, { recursive: true, force: true });
   });
 
   it('uses default window when none provided', async () => {
@@ -131,7 +132,6 @@ describe('buildHandler', () => {
     const r = await h({ kind: 'timeline', nearId: 1 }) as { ok: true; data: { rows: unknown[] } };
     expect(r.ok).toBe(true);
     expect(r.data.rows).toHaveLength(1);
-    rmSync(walDir, { recursive: true, force: true });
   });
 
   it('uses default k when search is invoked without k', async () => {
@@ -141,7 +141,6 @@ describe('buildHandler', () => {
     const r = await h({ kind: 'search', query: 'alpha' }) as { ok: true; data: { hits: unknown[] } };
     expect(r.ok).toBe(true);
     expect(r.data.hits).toHaveLength(1);
-    rmSync(walDir, { recursive: true, force: true });
   });
 
   it('returns timeline rows around a near id', async () => {
@@ -151,7 +150,6 @@ describe('buildHandler', () => {
     const r = await h({ kind: 'timeline', nearId: 1, window: 1 }) as { ok: true; data: { rows: unknown[] } };
     expect(r.ok).toBe(true);
     expect(r.data.rows).toHaveLength(2);
-    rmSync(walDir, { recursive: true, force: true });
   });
 
   it('returns rows by id list via get', async () => {
@@ -160,7 +158,6 @@ describe('buildHandler', () => {
     const r = await h({ kind: 'get', ids: [5] }) as { ok: true; data: { rows: unknown[] } };
     expect(r.ok).toBe(true);
     expect(r.data.rows).toHaveLength(1);
-    rmSync(walDir, { recursive: true, force: true });
   });
 
   it('invokes onShutdown for shutdown requests', async () => {
@@ -169,14 +166,12 @@ describe('buildHandler', () => {
     const r = await h({ kind: 'shutdown' });
     expect(r.ok).toBe(true);
     expect(stopped).toBe(true);
-    rmSync(walDir, { recursive: true, force: true });
   });
 
   it('handles shutdown without an onShutdown handler', async () => {
     const h = buildHandler({ storage, wal, cwd: '/x' });
     const r = await h({ kind: 'shutdown' });
     expect(r.ok).toBe(true);
-    rmSync(walDir, { recursive: true, force: true });
   });
 
   it('returns ok:false when an error is thrown internally', async () => {
@@ -189,7 +184,6 @@ describe('buildHandler', () => {
     const r = await h({ kind: 'capture', sessionId: 's', tool: 'Read', payload: {} });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toBe('boom');
-    rmSync(walDir, { recursive: true, force: true });
   });
 
   it('extracts code symbols from tool payloads when path looks like code', async () => {
@@ -203,7 +197,6 @@ describe('buildHandler', () => {
     expect(r.ok).toBe(true);
     const stored = JSON.parse(db.events[0]!['payload_json'] as string) as { symbols?: string[] };
     expect(stored.symbols).toEqual(expect.arrayContaining(['function:login', 'class:Auth']));
-    rmSync(walDir, { recursive: true, force: true });
   });
 
   it('skips symbol extraction for non-code paths', async () => {
@@ -214,7 +207,6 @@ describe('buildHandler', () => {
     });
     const stored = JSON.parse(db.events[0]!['payload_json'] as string) as { symbols?: string[] };
     expect(stored.symbols).toBeUndefined();
-    rmSync(walDir, { recursive: true, force: true });
   });
 
   it('honors a null symbol extractor (extraction disabled)', async () => {
@@ -225,14 +217,12 @@ describe('buildHandler', () => {
     });
     const stored = JSON.parse(db.events[0]!['payload_json'] as string) as { symbols?: string[] };
     expect(stored.symbols).toBeUndefined();
-    rmSync(walDir, { recursive: true, force: true });
   });
 
   it('falls back gracefully when payload has no tool_input', async () => {
     const h = buildHandler({ storage, wal, cwd: '/x' });
     const r = await h({ kind: 'capture', sessionId: 's', tool: 'Bash', payload: { cmd: 'ls' } });
     expect(r.ok).toBe(true);
-    rmSync(walDir, { recursive: true, force: true });
   });
 
   it('falls back when tool_input has no recognizable code field', async () => {
@@ -242,7 +232,6 @@ describe('buildHandler', () => {
       payload: { tool_input: { file_path: '/x.ts' } },
     });
     expect(r.ok).toBe(true);
-    rmSync(walDir, { recursive: true, force: true });
   });
 
   it('falls back when extracted code yields no symbols', async () => {
@@ -254,7 +243,6 @@ describe('buildHandler', () => {
     expect(r.ok).toBe(true);
     const stored = JSON.parse(db.events[0]!['payload_json'] as string) as { symbols?: string[] };
     expect(stored.symbols).toBeUndefined();
-    rmSync(walDir, { recursive: true, force: true });
   });
 
   it('uses asyncSymbols extractor when provided, overriding the sync extractor', async () => {
@@ -273,7 +261,6 @@ describe('buildHandler', () => {
     });
     const stored = JSON.parse(db.events[0]!['payload_json'] as string) as { symbols?: string[] };
     expect(stored.symbols).toEqual(['function:fromCdg', 'class:Async']);
-    rmSync(walDir, { recursive: true, force: true });
   });
 
   it('asyncSymbols falls through when path is not code', async () => {
@@ -287,7 +274,6 @@ describe('buildHandler', () => {
       payload: { tool_input: { file_path: '/README.md', content: 'function x() {}' } },
     });
     expect(called).toBe(false);
-    rmSync(walDir, { recursive: true, force: true });
   });
 
   it('asyncSymbols returning [] leaves payload unannotated', async () => {
@@ -299,7 +285,6 @@ describe('buildHandler', () => {
     });
     const stored = JSON.parse(db.events[0]!['payload_json'] as string) as { symbols?: string[] };
     expect(stored.symbols).toBeUndefined();
-    rmSync(walDir, { recursive: true, force: true });
   });
 
   it('extracts symbols when path is provided via tool_input.path', async () => {
@@ -310,7 +295,6 @@ describe('buildHandler', () => {
     });
     const stored = JSON.parse(db.events[0]!['payload_json'] as string) as { symbols?: string[] };
     expect(stored.symbols).toEqual(expect.arrayContaining(['function:f']));
-    rmSync(walDir, { recursive: true, force: true });
   });
 
   it('extracts symbols when path is provided via tool_input.notebook_path', async () => {
@@ -321,14 +305,12 @@ describe('buildHandler', () => {
     });
     const stored = JSON.parse(db.events[0]!['payload_json'] as string) as { symbols?: string[] };
     expect(stored.symbols).toEqual(expect.arrayContaining(['function:g']));
-    rmSync(walDir, { recursive: true, force: true });
   });
 
   it('handles a non-object payload without throwing', async () => {
     const h = buildHandler({ storage, wal, cwd: '/x' });
     const r = await h({ kind: 'capture', sessionId: 's', tool: 'Bash', payload: 'plain string' });
     expect(r.ok).toBe(true);
-    rmSync(walDir, { recursive: true, force: true });
   });
 
   it('coerces non-Error throws into a string error', async () => {
@@ -341,6 +323,5 @@ describe('buildHandler', () => {
     const r = await h({ kind: 'capture', sessionId: 's', tool: 'Read', payload: {} });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toBe('plain');
-    rmSync(walDir, { recursive: true, force: true });
   });
 });

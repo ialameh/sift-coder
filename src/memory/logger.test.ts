@@ -53,6 +53,7 @@ describe('Logger', () => {
     const path = join(dir, 'log.ndjson');
     const sink = new FileSink(path);
     new Logger('mem', sink).info('written');
+    sink.close(); // close fd before afterEach rmdir — open handles block rmdir on Windows
     const content = readFileSync(path, 'utf8');
     expect(content).toContain('"message":"written"');
   });
