@@ -5,6 +5,8 @@ import { WAL } from './wal.js';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { ModelClient, ModelRequest, ModelResult } from './summarizer.js';
+import { Summarizer } from './summarizer.js';
 
 class FakeDB implements DBHandle {
   events: Array<Record<string, unknown>> = [];
@@ -74,7 +76,55 @@ class FakeDB implements DBHandle {
         get: () => undefined, all: () => [],
       };
     }
+    if (stmt.includes("WHERE status = 'raw'")) {
+      return {
+        run: () => ({ lastInsertRowid: 0 }),
+        get: () => undefined,
+        all: (limit: unknown) => this.events.filter(e => e['status'] === 'raw').slice(0, limit as number),
+      };
+    }
+    if (stmt.startsWith('UPDATE events SET status')) {
+      return {
+        run: (status: unknown, id: unknown) => {
+          const e = this.events.find(x => x['id'] === id);
+          if (e) e['status'] = status;
+          return { lastInsertRowid: 0 };
+        },
+        get: () => undefined, all: () => [],
+      };
+    }
+    if (stmt.startsWith('SELECT text, tokens_in, tokens_out FROM summary_cache')) {
+      return {
+        run: () => ({ lastInsertRowid: 0 }),
+        get: (k: unknown) => this.cache.get(k as string),
+        all: () => [],
+      };
+    }
+    if (stmt.startsWith('INSERT OR REPLACE INTO summary_cache')) {
+      return {
+        run: (k: unknown, t: unknown, ti: unknown, to: unknown) => {
+          this.cache.set(k as string, { text: t as string, tokens_in: ti as number | null, tokens_out: to as number | null });
+          return { lastInsertRowid: 0 };
+        },
+        get: () => undefined, all: () => [],
+      };
+    }
+    if (stmt.startsWith('INSERT OR REPLACE INTO summary_embeddings')) {
+      return {
+        run: () => ({ lastInsertRowid: 0 }),
+        get: () => undefined, all: () => [],
+      };
+    }
     return { run: () => ({ lastInsertRowid: 0 }), get: () => undefined, all: () => [] };
+  }
+}
+
+class FakeSummarizer implements ModelClient {
+  scripted: ModelResult[] = [];
+  shouldThrow = false;
+  async generate(_req: ModelRequest): Promise<ModelResult> {
+    if (this.shouldThrow) throw new Error('model error');
+    return this.scripted.shift() ?? { text: '{"text":"x","confidence":0.9}', tokensIn: null, tokensOut: null };
   }
 }
 
@@ -323,5 +373,68 @@ describe('buildHandler', () => {
     const r = await h({ kind: 'capture', sessionId: 's', tool: 'Read', payload: {} });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toBe('plain');
+  });
+
+  it('drain returns ok:false when no summarizer is configured', async () => {
+    const h = buildHandler({ storage, wal, cwd: '/x' });
+    const r = await h({ kind: 'drain', batch: 4 });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/no summarizer/);
+  });
+
+  it('drain processes pending events and returns counts', async () => {
+    const client = new FakeSummarizer();
+    const summarizer = new Summarizer(storage, client);
+    const h = buildHandler({ storage, wal, cwd: '/x', summarizer, drainBackend: 'test' });
+    await h({ kind: 'capture', sessionId: 's', tool: 'Read', payload: { x: 1 } });
+    const r = await h({ kind: 'drain', batch: 4 }) as { ok: true; data: { processed: number; errors: number; backend: string } };
+    expect(r.ok).toBe(true);
+    expect(r.data.processed).toBe(1);
+    expect(r.data.errors).toBe(0);
+    expect(r.data.backend).toBe('test');
+    expect(db.events[0]!['status']).toBe('summarized');
+  });
+
+  it('drain marks events skipped when summarizer throws', async () => {
+    const client = new FakeSummarizer();
+    client.shouldThrow = true;
+    const summarizer = new Summarizer(storage, client);
+    const h = buildHandler({ storage, wal, cwd: '/x', summarizer });
+    await h({ kind: 'capture', sessionId: 's', tool: 'Read', payload: {} });
+    const r = await h({ kind: 'drain', batch: 4 }) as { ok: true; data: { errors: number; firstError?: string } };
+    expect(r.ok).toBe(true);
+    expect(r.data.errors).toBe(1);
+    expect(r.data.firstError).toBe('model error');
+    expect(db.events[0]!['status']).toBe('skipped');
+  });
+
+  it('drain uses default batch when not specified', async () => {
+    const client = new FakeSummarizer();
+    const summarizer = new Summarizer(storage, client);
+    const h = buildHandler({ storage, wal, cwd: '/x', summarizer, drainBatch: 2 });
+    await h({ kind: 'drain' });
+    expect(db.events).toHaveLength(0);
+  });
+
+  it('why returns empty edges when no provenance store', async () => {
+    const h = buildHandler({ storage, wal, cwd: '/x' });
+    const r = await h({ kind: 'why', nodeKind: 'summary', nodeId: '1' }) as { ok: true; data: { edges: unknown[] } };
+    expect(r.ok).toBe(true);
+    expect(r.data.edges).toEqual([]);
+  });
+
+  it('why returns edges from the provenance store', async () => {
+    const fakeProv = {
+      trace: (node: { kind: string; id: string }, depth: number) => {
+        return depth > 0 ? [{ id: 1, from: node, to: { kind: 'b', id: '2' }, edgeType: 'causes' }] : [];
+      },
+    };
+    const h = buildHandler({
+      storage, wal, cwd: '/x',
+      provenance: fakeProv as unknown as Parameters<typeof buildHandler>[0]['provenance'],
+    });
+    const r = await h({ kind: 'why', nodeKind: 'summary', nodeId: '1', depth: 2 }) as { ok: true; data: { edges: unknown[] } };
+    expect(r.ok).toBe(true);
+    expect(r.data.edges).toHaveLength(1);
   });
 });

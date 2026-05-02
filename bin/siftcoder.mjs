@@ -136,21 +136,22 @@ function counts(storage) {
 }
 
 async function drain(batch) {
-  // Guard: drain opens the DB directly. If the daemon is running it already holds the lock.
+  // If daemon is running, route through it — it owns the model client and the DB lock.
   try {
     const ping = await rpc({ kind: 'ping' });
     if (ping.ok) {
-      throw new Error(
-        'daemon is running and holds the database lock.\n' +
-        '  Use the MCP interface instead:  /siftcoder:mem drain ' + batch + '\n' +
-        '  Or stop the daemon first:       siftcoder stop'
-      );
+      const r = await rpc({ kind: 'drain', batch });
+      if (!r.ok) throw new Error(r.error);
+      return r.data;
     }
   } catch (e) {
-    if (e.message.startsWith('daemon is running')) throw e;
-    // Socket unreachable — daemon not running, safe to open DB directly.
+    if (e.message && !e.message.includes('ENOENT') && !e.message.includes('ECONNREFUSED') && !e.message.includes('timeout')) {
+      throw e;
+    }
+    // Socket unreachable — daemon not running, fall through to local drain.
   }
 
+  // Local drain: daemon is not running, safe to open DB directly.
   const storage = await openStorage();
   const { Summarizer } = await import(path.join(ROOT, 'dist', 'memory', 'daemon', 'summarizer.js'));
   const { DeterministicEmbedder } = await import(path.join(ROOT, 'dist', 'memory', 'embedder.js'));

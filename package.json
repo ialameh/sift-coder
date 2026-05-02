@@ -1,6 +1,6 @@
 {
   "name": "siftcoder",
-  "version": "1.0.12",
+  "version": "1.0.13",
   "type": "module",
   "description": "Persistent project memory + local-LLM offload + Salesforce domain skills for Claude Code",
   "main": "dist/index.js",

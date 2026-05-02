@@ -1,12 +1,11 @@
 /**
- * Daemon entrypoint. Capture + storage + WAL + retrieval only.
- * No LLM calls here — summarization runs out-of-band through the MCP server, which prefers
- * MCP host sampling (host-billed, no key) but falls back to direct Anthropic API when the
- * user opts in via `SIFTCODER_DRAIN_FALLBACK=1` + `ANTHROPIC_API_KEY`.
+ * Daemon entrypoint. Owns all business logic: capture, storage, WAL, retrieval, and drain.
+ * Model client selection: GEMINI_API_KEY → Ollama → ANTHROPIC_API_KEY → none (events accumulate).
+ * Override with SIFTCODER_DRAIN_BACKEND=gemini|ollama|anthropic.
  *
- * Note: Claude Code CLI 2.1.x does NOT implement MCP `sampling/createMessage` (returns
- * JSON-RPC -32601). Until that lands, drain requires the fallback path. Capture + retrieval
- * work without either path — raw events are still queryable via mem_search.
+ * The MCP server is a thin proxy that routes all tool calls through the daemon socket.
+ * Upgrading the daemon (siftcoder stop && siftcoder start) picks up a new version without
+ * restarting Claude Code.
  *
  * Excluded from coverage: wires concrete I/O (fs, net, sqlite). Pure logic is unit-tested.
  */
@@ -107,6 +106,31 @@ async function main() {
   const asyncSymbols = CdgSymbolExtractor.fromEnv(process.env, regexFallback);
   if (asyncSymbols) logger.info('cdg adapter enabled', { url: process.env['SIFTCODER_CDG_URL'] });
 
+  // Model client selection for drain: Gemini → Ollama → Anthropic → none.
+  // SIFTCODER_DRAIN_BACKEND=gemini|ollama|anthropic overrides auto-detect.
+  const backendChoice = (process.env['SIFTCODER_DRAIN_BACKEND'] ?? 'auto').toLowerCase();
+  const { GeminiClient } = await import('../gemini-client.js');
+  const { OllamaClient } = await import('../ollama-client.js');
+  const { AnthropicClient } = await import('../anthropic-client.js');
+  const { Summarizer } = await import('./summarizer.js');
+  const { ProvenanceStore } = await import('../provenance.js');
+
+  let modelClient: import('./summarizer.js').ModelClient | null = null;
+  let drainBackend = 'none';
+  if (backendChoice === 'gemini' || (backendChoice === 'auto' && GeminiClient.available(process.env))) {
+    modelClient = new GeminiClient();
+    drainBackend = `gemini (model=${process.env['SIFTCODER_GEMINI_MODEL'] ?? 'gemini-2.0-flash'})`;
+  } else if (backendChoice === 'ollama' || (backendChoice === 'auto' && await OllamaClient.available())) {
+    modelClient = new OllamaClient();
+    drainBackend = `ollama (model=${process.env['SIFTCODER_OLLAMA_MODEL'] ?? 'llama3.2:3b'})`;
+  } else if (backendChoice === 'anthropic' || (backendChoice === 'auto' && AnthropicClient.available(process.env))) {
+    modelClient = new AnthropicClient();
+    drainBackend = 'anthropic-direct';
+  }
+  logger.info('drain backend selected', { name: drainBackend });
+  const summarizer = modelClient ? new Summarizer(storage, modelClient) : null;
+  const provenance = new ProvenanceStore(storage);
+
   const server = startServer({
     embedder,
     storage,
@@ -114,6 +138,10 @@ async function main() {
     socketPath: paths.socket,
     cwd,
     asyncSymbols,
+    summarizer,
+    drainBatch: 16,
+    drainBackend,
+    provenance,
     onShutdown: () => {
       stopping = true;
     },

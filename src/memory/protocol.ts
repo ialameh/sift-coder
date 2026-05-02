@@ -11,7 +11,9 @@ export type RequestKind =
   | 'ping'
   | 'status'
   | 'shutdown'
-  | 'backfill';
+  | 'backfill'
+  | 'drain'
+  | 'why';
 
 export interface CaptureRequest {
   kind: 'capture';
@@ -64,6 +66,18 @@ export interface BackfillRequest {
   workspaceOnly?: boolean;
 }
 
+export interface DrainRequest {
+  kind: 'drain';
+  batch?: number;
+}
+
+export interface WhyRequest {
+  kind: 'why';
+  nodeKind: string;
+  nodeId: string;
+  depth?: number;
+}
+
 export type Request =
   | CaptureRequest
   | SearchRequest
@@ -72,7 +86,9 @@ export type Request =
   | PingRequest
   | StatusRequest
   | ShutdownRequest
-  | BackfillRequest;
+  | BackfillRequest
+  | DrainRequest
+  | WhyRequest;
 
 export interface OkResponse<T = unknown> {
   ok: true;

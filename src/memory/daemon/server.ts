@@ -13,6 +13,8 @@ import { hybridSearch } from '../retrieval.js';
 import { RegexSymbolExtractor, looksLikeCodePath, type SymbolExtractor, type AsyncSymbolExtractor } from '../symbols.js';
 import { approximate } from '../tokens.js';
 import { listTranscripts, readTranscript, parseTranscript } from '../replay.js';
+import type { Summarizer } from './summarizer.js';
+import type { ProvenanceStore } from '../provenance.js';
 
 export interface ServerDeps {
   storage: Storage;
@@ -23,9 +25,53 @@ export interface ServerDeps {
   symbols?: SymbolExtractor | null;
   asyncSymbols?: AsyncSymbolExtractor | null;
   onShutdown?: () => void;
+  summarizer?: Summarizer | null;
+  drainBatch?: number;
+  drainBackend?: string;
+  provenance?: ProvenanceStore | null;
 }
 
 const defaultExtractor = new RegexSymbolExtractor();
+
+export interface DrainResult {
+  processed: number;
+  errors: number;
+  pending: number;
+  backend: string;
+  firstError?: string;
+}
+
+async function runDrain(
+  storage: Storage,
+  summarizer: Summarizer,
+  embedder: Embedder | null | undefined,
+  batch: number,
+  backend: string,
+): Promise<DrainResult> {
+  const events = storage.pendingEvents(batch);
+  let processed = 0;
+  let errors = 0;
+  let firstError: string | undefined;
+  for (const ev of events) {
+    try {
+      const r = await summarizer.summarize(ev.id, ev.inputHash, ev.payloadJson, Date.now());
+      if (embedder) {
+        const v = await embedder.embed(r.text);
+        storage.putEmbedding(r.id, v);
+      }
+      storage.markEventStatus(ev.id, 'summarized');
+      processed++;
+    } catch (e) {
+      storage.markEventStatus(ev.id, 'skipped');
+      errors++;
+      if (firstError === undefined) firstError = (e as Error).message;
+    }
+  }
+  const pending = storage.pendingEvents(1).length;
+  return firstError
+    ? { processed, errors, pending, backend, firstError }
+    : { processed, errors, pending, backend };
+}
 
 interface CodePayload {
   payload: Record<string, unknown>;
@@ -63,7 +109,7 @@ async function annotateSymbolsAsync(payload: unknown, extractor: AsyncSymbolExtr
 
 export type Handler = (req: Request) => Promise<Response>;
 
-export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 'embedder' | 'symbols' | 'asyncSymbols' | 'onShutdown'>): Handler {
+export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 'embedder' | 'symbols' | 'asyncSymbols' | 'onShutdown' | 'summarizer' | 'drainBatch' | 'drainBackend' | 'provenance'>): Handler {
   return async (req: Request): Promise<Response> => {
     try {
       switch (req.kind) {
@@ -123,6 +169,21 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
         case 'get': {
           const rows = deps.storage.getSummariesByIds(req.ids);
           return { ok: true, data: { rows } };
+        }
+
+        case 'drain': {
+          if (!deps.summarizer) {
+            return { ok: false, error: 'no summarizer configured — set GEMINI_API_KEY, ANTHROPIC_API_KEY, or start Ollama' };
+          }
+          const batch = req.batch ?? deps.drainBatch ?? 16;
+          const r = await runDrain(deps.storage, deps.summarizer, deps.embedder, batch, deps.drainBackend ?? 'unknown');
+          return { ok: true, data: r };
+        }
+
+        case 'why': {
+          if (!deps.provenance) return { ok: true, data: { edges: [] } };
+          const edges = deps.provenance.trace({ kind: req.nodeKind, id: req.nodeId }, req.depth ?? 4);
+          return { ok: true, data: { edges } };
         }
 
         case 'shutdown': {
