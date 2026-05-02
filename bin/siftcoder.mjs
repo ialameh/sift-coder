@@ -140,7 +140,7 @@ async function drain(batch) {
   try {
     const ping = await rpc({ kind: 'ping' });
     if (ping.ok) {
-      const r = await rpc({ kind: 'drain', batch });
+      const r = await rpc({ kind: 'drain', batch }, batch * 10_000); // 10s per event
       if (!r.ok) throw new Error(r.error);
       return r.data;
     }
