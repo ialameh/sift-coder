@@ -155,13 +155,17 @@ async function drain(batch) {
   const storage = await openStorage();
   const { Summarizer } = await import(path.join(ROOT, 'dist', 'memory', 'daemon', 'summarizer.js'));
   const { DeterministicEmbedder } = await import(path.join(ROOT, 'dist', 'memory', 'embedder.js'));
+  const { GlmClient } = await import(path.join(ROOT, 'dist', 'memory', 'glm-client.js'));
   const { GeminiClient } = await import(path.join(ROOT, 'dist', 'memory', 'gemini-client.js'));
   const { OllamaClient } = await import(path.join(ROOT, 'dist', 'memory', 'ollama-client.js'));
   const { AnthropicClient } = await import(path.join(ROOT, 'dist', 'memory', 'anthropic-client.js'));
 
   let modelClient;
   let backend;
-  if (GeminiClient.available(process.env)) {
+  if (GlmClient.available(process.env)) {
+    modelClient = new GlmClient();
+    backend = 'glm';
+  } else if (GeminiClient.available(process.env)) {
     modelClient = new GeminiClient();
     backend = 'gemini';
   } else if (await OllamaClient.available()) {
@@ -171,7 +175,7 @@ async function drain(batch) {
     modelClient = new AnthropicClient();
     backend = 'anthropic';
   } else {
-    throw new Error('no drain backend available: set GEMINI_API_KEY, start Ollama, or set ANTHROPIC_API_KEY');
+    throw new Error('no drain backend available: set GLM_API_KEY, GEMINI_API_KEY, start Ollama, or set ANTHROPIC_API_KEY');
   }
 
   const summarizer = new Summarizer(storage, modelClient);
@@ -294,12 +298,15 @@ switch (cmd) {
       try { process.kill(pid, 0); } catch { pid = null; uptimeSec = null; }
     } catch { /* no pid file or process gone */ }
 
+    let glm = false;
     let ollama = false;
     let anthropic = false;
     try {
       ensureBuilt();
+      const { GlmClient } = await import(path.join(ROOT, 'dist', 'memory', 'glm-client.js'));
       const { OllamaClient } = await import(path.join(ROOT, 'dist', 'memory', 'ollama-client.js'));
       const { AnthropicClient } = await import(path.join(ROOT, 'dist', 'memory', 'anthropic-client.js'));
+      glm = GlmClient.available(process.env);
       ollama = await OllamaClient.available().catch(() => false);
       anthropic = AnthropicClient.available(process.env);
     } catch { /* dist may be missing pre-build */ }
@@ -331,7 +338,7 @@ switch (cmd) {
       workspace: { key: key(), cwd: process.cwd(), gitToplevel: gitToplevel(process.cwd()) },
       paths: { base: p.base, socket: p.sock, db: p.db, pid: p.pid, httpPortFile: p.httpPort },
       daemon: { state: daemonState, pid, uptimeSec, data: daemonData },
-      backends: { ollama, anthropic },
+      backends: { glm, ollama, anthropic },
       ...(dbCounts ? { counts: dbCounts } : {}),
       ...(dbSizeBytes !== null ? { dbSizeBytes } : {}),
       ...(webUrl ? { webUrl } : {}),
@@ -367,7 +374,7 @@ switch (cmd) {
       lines.push(`db          ${info.paths.db}` + (info.dbSizeBytes != null ? `  (${fmtBytes(info.dbSizeBytes)})` : ''));
       if (info.webUrl) lines.push(`web         ${info.webUrl}`);
       lines.push('');
-      lines.push(`backends    ollama=${info.backends.ollama ? 'up' : 'down'}  anthropic=${info.backends.anthropic ? 'configured' : 'no key'}`);
+      lines.push(`backends    glm=${info.backends.glm ? 'configured' : 'no key'}  ollama=${info.backends.ollama ? 'up' : 'down'}  anthropic=${info.backends.anthropic ? 'configured' : 'no key'}`);
       if (info.counts) {
         const c = info.counts;
         lines.push(`counts      events=${c.events}  raw=${c.raw}  summarized=${c.summarized}  skipped=${c.skipped}  summaries=${c.summaries}  embeddings=${c.embeddings}`);

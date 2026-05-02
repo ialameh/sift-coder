@@ -106,9 +106,11 @@ async function main() {
   const asyncSymbols = CdgSymbolExtractor.fromEnv(process.env, regexFallback);
   if (asyncSymbols) logger.info('cdg adapter enabled', { url: process.env['SIFTCODER_CDG_URL'] });
 
-  // Model client selection for drain: Gemini → Ollama → Anthropic → none.
-  // SIFTCODER_DRAIN_BACKEND=gemini|ollama|anthropic overrides auto-detect.
+  // Model client selection for drain: GLM → Gemini → Ollama → Anthropic → none.
+  // GLM (glm-4-flash) is the default: free 10M tokens/month, no per-day hard cap.
+  // SIFTCODER_DRAIN_BACKEND=glm|gemini|ollama|anthropic overrides auto-detect.
   const backendChoice = (process.env['SIFTCODER_DRAIN_BACKEND'] ?? 'auto').toLowerCase();
+  const { GlmClient } = await import('../glm-client.js');
   const { GeminiClient } = await import('../gemini-client.js');
   const { OllamaClient } = await import('../ollama-client.js');
   const { AnthropicClient } = await import('../anthropic-client.js');
@@ -117,7 +119,10 @@ async function main() {
 
   let modelClient: import('./summarizer.js').ModelClient | null = null;
   let drainBackend = 'none';
-  if (backendChoice === 'gemini' || (backendChoice === 'auto' && GeminiClient.available(process.env))) {
+  if (backendChoice === 'glm' || (backendChoice === 'auto' && GlmClient.available(process.env))) {
+    modelClient = new GlmClient();
+    drainBackend = `glm (model=${process.env['SIFTCODER_GLM_MODEL'] ?? 'glm-4.5-air'})`;
+  } else if (backendChoice === 'gemini' || (backendChoice === 'auto' && GeminiClient.available(process.env))) {
     modelClient = new GeminiClient();
     drainBackend = `gemini (model=${process.env['SIFTCODER_GEMINI_MODEL'] ?? 'gemini-2.0-flash'})`;
   } else if (backendChoice === 'ollama' || (backendChoice === 'auto' && await OllamaClient.available())) {
