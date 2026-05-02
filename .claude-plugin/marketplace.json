@@ -10,7 +10,7 @@
     {
       "name": "siftcoder",
       "description": "Persistent project memory + local-LLM offload + Salesforce domain skills for Claude Code",
-      "version": "1.0.9",
+      "version": "1.0.10",
       "author": {
         "name": "Sam Alameh",
         "email": "issam@alameh.com"
