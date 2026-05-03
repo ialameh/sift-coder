@@ -48,7 +48,7 @@ async function runDrain(
   batch: number,
   backend: string,
 ): Promise<DrainResult> {
-  const events = storage.pendingEvents(batch);
+  const events = await storage.pendingEvents(batch);
   let processed = 0;
   let errors = 0;
   let firstError: string | undefined;
@@ -57,17 +57,17 @@ async function runDrain(
       const r = await summarizer.summarize(ev.id, ev.inputHash, ev.payloadJson, Date.now());
       if (embedder) {
         const v = await embedder.embed(r.text);
-        storage.putEmbedding(r.id, v);
+        await storage.putEmbedding(r.id, v);
       }
-      storage.markEventStatus(ev.id, 'summarized');
+      await storage.markEventStatus(ev.id, 'summarized');
       processed++;
     } catch (e) {
-      storage.markEventStatus(ev.id, 'skipped');
+      await storage.markEventStatus(ev.id, 'skipped');
       errors++;
       if (firstError === undefined) firstError = (e as Error).message;
     }
   }
-  const pending = storage.pendingEvents(1).length;
+  const pending = (await storage.pendingEvents(1)).length;
   return firstError
     ? { processed, errors, pending, backend, firstError }
     : { processed, errors, pending, backend };
@@ -117,7 +117,7 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
           return { ok: true, data: { pong: true } };
 
         case 'status':
-          return { ok: true, data: { cwd: deps.cwd, counts: deps.storage.counts() } };
+          return { ok: true, data: { cwd: deps.cwd, counts: await deps.storage.counts() } };
 
         case 'capture': {
           const ts = req.ts ?? Date.now();
@@ -134,7 +134,7 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
             redactedPayload && typeof redactedPayload === 'object' && !Array.isArray(redactedPayload)
               ? { ...(redactedPayload as Record<string, unknown>), _source: source }
               : { value: redactedPayload, _source: source };
-          deps.storage.ensureSession(req.sessionId, deps.cwd, ts);
+          await deps.storage.ensureSession(req.sessionId, deps.cwd, ts);
           const inputHash = hashInput(stamped);
           deps.wal.append({
             ts,
@@ -144,7 +144,7 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
             payload: stamped,
           });
           const tokensEst = approximate(JSON.stringify(stamped));
-          const id = deps.storage.recordEvent({
+          const id = await deps.storage.recordEvent({
             ts,
             sessionId: req.sessionId,
             tool: req.tool,
@@ -162,12 +162,12 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
         }
 
         case 'timeline': {
-          const rows = deps.storage.timeline(req.nearId, req.window ?? 10);
+          const rows = await deps.storage.timeline(req.nearId, req.window ?? 10);
           return { ok: true, data: { rows } };
         }
 
         case 'get': {
-          const rows = deps.storage.getSummariesByIds(req.ids);
+          const rows = await deps.storage.getSummariesByIds(req.ids);
           return { ok: true, data: { rows } };
         }
 
@@ -231,9 +231,9 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
                   redactedPayload && typeof redactedPayload === 'object' && !Array.isArray(redactedPayload)
                     ? { ...(redactedPayload as Record<string, unknown>), _source: f.source }
                     : { value: redactedPayload, _source: f.source };
-                deps.storage.ensureSession(f.sessionId, deps.cwd, f.ts);
+                await deps.storage.ensureSession(f.sessionId, deps.cwd, f.ts);
                 const inputHash = hashInput(stamped);
-                if (deps.storage.hasEvent(f.sessionId, inputHash)) {
+                if (await deps.storage.hasEvent(f.sessionId, inputHash)) {
                   skippedDuplicate++;
                   continue;
                 }
@@ -245,7 +245,7 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
                   payload: stamped,
                 });
                 const tokensEst = approximate(JSON.stringify(stamped));
-                deps.storage.recordEvent({
+                await deps.storage.recordEvent({
                   ts: f.ts,
                   sessionId: f.sessionId,
                   tool: f.tool,

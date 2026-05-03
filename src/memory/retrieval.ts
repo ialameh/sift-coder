@@ -60,7 +60,7 @@ export async function hybridSearch(
 ): Promise<HybridHit[]> {
   const cfg = { ...DEFAULTS, ...opts };
 
-  const bm25Hits = storage.searchFts(query, cfg.candidatePool);
+  const bm25Hits = await storage.searchFts(query, cfg.candidatePool);
   const bm25Rank = new Map<number, number>();
   bm25Hits.forEach((h, i) => bm25Rank.set(h.id, i + 1));
 
@@ -68,7 +68,7 @@ export async function hybridSearch(
   const vecCos = new Map<number, number>();
   if (embedder) {
     const qv = await embedder.embed(query);
-    const all = storage.allEmbeddings();
+    const all = await storage.allEmbeddings();
     const scored = all
       .map(e => ({ id: e.summaryId, ts: e.ts, sim: cosine(qv, e.vec) }))
       .sort((a, b) => b.sim - a.sim)
@@ -79,7 +79,7 @@ export async function hybridSearch(
     });
   }
 
-  const dropped = storage.supersededIds();
+  const dropped = await storage.supersededIds();
   const ids = new Set<number>([...bm25Rank.keys(), ...vecRank.keys()]);
 
   const summaries = new Map<number, SearchHit | SummaryRow>();
@@ -88,7 +88,7 @@ export async function hybridSearch(
   const missing: number[] = [];
   for (const id of ids) if (!summaries.has(id)) missing.push(id);
   if (missing.length > 0) {
-    const rows = storage.getSummariesByIds(missing);
+    const rows = await storage.getSummariesByIds(missing);
     for (const r of rows) summaries.set(r.id, r);
   }
 
@@ -120,7 +120,7 @@ export async function hybridSearch(
   }
 
   if (opts.boostFn) {
-    for (const h of hits) h.score = h.score * opts.boostFn(h);
+    for (const h of hits) h.score = h.score * await opts.boostFn(h);
   }
   hits.sort((a, b) => b.score - a.score);
   const pool = hits.slice(0, cfg.candidatePool);

@@ -111,9 +111,9 @@ export class HotspotService {
  * Returns a `boostFn` suitable for HybridOptions.boostFn. Reads the source event of each hit and
  * extracts its `tool_input.file_path` (or `path`/`notebook_path`) to look up hotspot temperature.
  */
-export function hotspotBoostFn(storage: Storage, hotspots: HotspotService): (hit: HybridHit) => number {
-  return (hit: HybridHit) => {
-    const ev = storage.getEvent(hit.eventId);
+export function hotspotBoostFn(storage: Storage, hotspots: HotspotService): (hit: HybridHit) => Promise<number> {
+  return async (hit: HybridHit) => {
+    const ev = await storage.getEvent(hit.eventId);
     if (!ev) return 1;
     let payload: unknown;
     try { payload = JSON.parse(ev.payloadJson); } catch { return 1; }

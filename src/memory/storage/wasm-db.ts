@@ -2,7 +2,7 @@
  * Pure-JS / WebAssembly SQLite backend for SiftCoder Memory.
  *
  * Wraps `node-sqlite3-wasm` and adapts its slightly-different binding semantics so the same
- * `DBHandle` interface used by the better-sqlite3 path works unchanged. The WASM backend has
+ * async `DBHandle` interface used by the better-sqlite3 path works unchanged. The WASM backend has
  * no native compile step — it ships as a single .wasm asset inside the npm package — so the
  * plugin works on any Node 18+ install regardless of platform, network access, or whether
  * better-sqlite3's prebuild-install was able to run.
@@ -59,26 +59,27 @@ export async function openWasmDatabase(path: string): Promise<DBHandle & { close
 
 export function wrap(inner: WasmDatabase): DBHandle & { close(): void } {
   return {
-    exec(sql: string): unknown {
+    async exec(sql: string): Promise<unknown> {
       return inner.exec(sql);
     },
-    prepare(sql: string) {
+    async prepare(sql: string) {
       const stmt = inner.prepare(sql);
       return {
-        run(...params: unknown[]) {
+        async run(...params: unknown[]) {
           const r = stmt.run(params.length > 0 ? params : undefined);
           return { lastInsertRowid: r.lastInsertRowid };
         },
-        get(...params: unknown[]) {
+        async get(...params: unknown[]) {
           return stmt.get(params.length > 0 ? params : undefined);
         },
-        all(...params: unknown[]) {
+        async all(...params: unknown[]) {
           return stmt.all(params.length > 0 ? params : undefined) as unknown[];
         },
       };
     },
-    close() {
+    close(): Promise<void> {
       inner.close();
+      return Promise.resolve();
     },
   };
 }

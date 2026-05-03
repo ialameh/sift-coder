@@ -18,16 +18,16 @@ export interface MineOptions {
   minSummaryTokens?: number;
 }
 
-export function mineGolden(storage: Storage, opts: MineOptions = {}): GoldenItem[] {
+export async function mineGolden(storage: Storage, opts: MineOptions = {}): Promise<GoldenItem[]> {
   const termsPerQuery = opts.termsPerQuery ?? 4;
   const maxItems = opts.maxItems ?? 200;
   const minTokens = opts.minSummaryTokens ?? 4;
 
-  const all = storage.allEmbeddings();
+  const all = await storage.allEmbeddings();
   if (all.length === 0) return [];
 
   const ids = all.map(e => e.summaryId);
-  const summaries = storage.getSummariesByIds(ids);
+  const summaries = await storage.getSummariesByIds(ids);
   const docFreq = new Map<string, number>();
   const docs = summaries.map(s => {
     const toks = tokenize(s.text);

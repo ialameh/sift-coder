@@ -70,10 +70,10 @@ export class Summarizer {
     const systemHash = Summarizer.promptHash(SYSTEM);
 
     const haikuKey = this.storage.cacheKey(this.haiku, systemHash, inputHash);
-    const cachedHaiku = this.storage.getCachedSummary(haikuKey);
+    const cachedHaiku = await this.storage.getCachedSummary(haikuKey);
     if (cachedHaiku) {
       const parsed = parseModelOutput(cachedHaiku.text);
-      const id = this.storage.recordSummary({
+      const id = await this.storage.recordSummary({
         eventId,
         ts,
         model: this.haiku,
@@ -92,11 +92,11 @@ export class Summarizer {
       user,
       maxTokens: this.maxTokens,
     });
-    this.storage.putCachedSummary(haikuKey, haiku.text, haiku.tokensIn, haiku.tokensOut, ts);
+    await this.storage.putCachedSummary(haikuKey, haiku.text, haiku.tokensIn, haiku.tokensOut, ts);
     const haikuParsed = parseModelOutput(haiku.text);
 
     if (haikuParsed.confidence >= this.threshold) {
-      const id = this.storage.recordSummary({
+      const id = await this.storage.recordSummary({
         eventId,
         ts,
         model: this.haiku,
@@ -110,7 +110,7 @@ export class Summarizer {
     }
 
     const sonnetKey = this.storage.cacheKey(this.sonnet, systemHash, inputHash);
-    const cachedSonnet = this.storage.getCachedSummary(sonnetKey);
+    const cachedSonnet = await this.storage.getCachedSummary(sonnetKey);
     let sonnetText: string;
     let sonnetTokensIn: number | null;
     let sonnetTokensOut: number | null;
@@ -128,10 +128,10 @@ export class Summarizer {
       sonnetText = sonnet.text;
       sonnetTokensIn = sonnet.tokensIn;
       sonnetTokensOut = sonnet.tokensOut;
-      this.storage.putCachedSummary(sonnetKey, sonnetText, sonnetTokensIn, sonnetTokensOut, ts);
+      await this.storage.putCachedSummary(sonnetKey, sonnetText, sonnetTokensIn, sonnetTokensOut, ts);
     }
     const sonnetParsed = parseModelOutput(sonnetText);
-    const id = this.storage.recordSummary({
+    const id = await this.storage.recordSummary({
       eventId,
       ts,
       model: this.sonnet,

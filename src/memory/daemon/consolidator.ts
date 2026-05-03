@@ -61,16 +61,16 @@ export class Consolidator {
     this.timer = setTimeout(() => { void this.tick(); }, ms);
   }
 
-  tick(): ConsolidationReport {
+  async tick(): Promise<ConsolidationReport> {
     if (this.state !== 'running') return { pairsMarked: 0, scanned: 0 };
-    const all = this.storage.allEmbeddings();
+    const all = await this.storage.allEmbeddings();
     if (all.length - this.lastTotal < this.minDelta) {
       this.scheduleTick(this.interval);
       return { pairsMarked: 0, scanned: all.length };
     }
     this.lastTotal = all.length;
 
-    const dropped = this.storage.supersededIds();
+    const dropped = await this.storage.supersededIds();
     const live = all.filter(e => !dropped.has(e.summaryId));
     live.sort((a, b) => a.ts - b.ts);
 
@@ -85,7 +85,7 @@ export class Consolidator {
         if (++comparisons > this.pairLimit) break outer;
         const sim = cosine(newer.vec, older.vec);
         if (sim >= this.threshold) {
-          this.storage.recordSupersedes(newer.summaryId, older.summaryId, sim, Date.now());
+          await this.storage.recordSupersedes(newer.summaryId, older.summaryId, sim, Date.now());
           newlySuperseded.add(older.summaryId);
           pairsMarked++;
         }

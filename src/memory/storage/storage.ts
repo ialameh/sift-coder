@@ -18,14 +18,14 @@ export function sanitizeFtsQuery(q: string): string {
 }
 
 export interface DBHandle {
-  exec(sql: string): unknown;
-  prepare(sql: string): {
-    run(...params: unknown[]): { lastInsertRowid: number | bigint };
-    get(...params: unknown[]): unknown;
-    all(...params: unknown[]): unknown[];
-  };
+  exec(sql: string): Promise<unknown>;
+  prepare(sql: string): Promise<{
+    run(...params: unknown[]): Promise<{ lastInsertRowid: number | bigint }>;
+    get(...params: unknown[]): Promise<unknown>;
+    all(...params: unknown[]): Promise<unknown[]>;
+  }>;
   loadExtension?(path: string): void;
-  close?(): void;
+  close(): Promise<void>;
 }
 
 export interface EventRow {
@@ -82,65 +82,121 @@ export function hashInput(payload: unknown): string {
   return createHash('sha256').update(json).digest('hex');
 }
 
+export interface StorageOptions {
+  vecExtensionPath?: string;
+  /** Override CORE_DDL — used by the PostgreSQL adapter to inject PG-specific DDL */
+  coreDdl?: string;
+  migrations?: ReadonlyArray<string>;
+  vecDdl?: string;
+}
+
+/**
+ * Storage — supports both sync and async DBHandle backends.
+ *
+ * For sync backends (better-sqlite3): use `new Storage(db, opts)` directly.
+ * For async backends (PostgresDB): use `Storage.create(db, opts)` which awaits DDL init.
+ *
+ * The constructor handles sync DDL inline. The factory handles async DDL.
+ */
 export class Storage {
   readonly vecEnabled: boolean;
 
-  constructor(private readonly db: DBHandle, opts: { vecExtensionPath?: string } = {}) {
-    db.exec(CORE_DDL);
-    for (const stmt of MIGRATIONS) {
+  /**
+   * Sync constructor — for use with sync DBHandle backends (better-sqlite3, WASM).
+   * DDL is executed synchronously before the constructor returns.
+   */
+  constructor(
+    private readonly db: DBHandle,
+    opts: StorageOptions = {}
+  ) {
+    const coreDdl = opts.coreDdl ?? CORE_DDL;
+    const migrations = opts.migrations ?? MIGRATIONS;
+    const vecDdl = opts.vecDdl ?? VEC_DDL;
+
+    db.exec(coreDdl);
+    for (const stmt of migrations) {
       try { db.exec(stmt); } catch { /* migration already applied */ }
     }
     let vec = false;
     if (opts.vecExtensionPath && db.loadExtension) {
       try {
         db.loadExtension(opts.vecExtensionPath);
-        db.exec(VEC_DDL);
+        db.exec(vecDdl);
         vec = true;
       } catch {
         vec = false;
       }
     }
+    if (!vec && opts.coreDdl && opts.coreDdl !== CORE_DDL) {
+      vec = true;
+    }
     this.vecEnabled = vec;
   }
 
-  ensureSession(sessionId: string, cwd: string, ts: number): void {
-    this.db
-      .prepare(
-        'INSERT OR IGNORE INTO sessions (id, started_at, cwd) VALUES (?, ?, ?)'
-      )
-      .run(sessionId, ts, cwd);
+  /**
+   * Async factory — for use with async DBHandle backends (PostgresDB).
+   * Awaits DDL initialization before returning.
+   */
+  static async create(db: DBHandle, opts: StorageOptions = {}): Promise<Storage> {
+    const coreDdl = opts.coreDdl ?? CORE_DDL;
+    const migrations = opts.migrations ?? MIGRATIONS;
+    const vecDdl = opts.vecDdl ?? VEC_DDL;
+
+    await db.exec(coreDdl);
+    for (const stmt of migrations) {
+      try { await db.exec(stmt); } catch { /* migration already applied */ }
+    }
+    let vec = false;
+    if (opts.vecExtensionPath && db.loadExtension) {
+      try {
+        db.loadExtension(opts.vecExtensionPath);
+        await db.exec(vecDdl);
+        vec = true;
+      } catch {
+        vec = false;
+      }
+    }
+    if (!vec && opts.coreDdl && opts.coreDdl !== CORE_DDL) {
+      vec = true;
+    }
+    const storage = new Storage(db, opts);
+    // Override vecEnabled since constructor ran with sync exec
+    Object.defineProperty(storage, 'vecEnabled', { value: vec, writable: true });
+    return storage;
   }
 
-  hasEvent(sessionId: string, inputHash: string): boolean {
-    const row = this.db
-      .prepare('SELECT 1 AS x FROM events WHERE session_id = ? AND input_hash = ? LIMIT 1')
-      .get(sessionId, inputHash) as Record<string, unknown> | undefined;
+  async ensureSession(sessionId: string, cwd: string, ts: number): Promise<void> {
+    await (await this.db.prepare(
+      'INSERT OR IGNORE INTO sessions (id, started_at, cwd) VALUES (?, ?, ?)'
+    )).run(sessionId, ts, cwd);
+  }
+
+  async hasEvent(sessionId: string, inputHash: string): Promise<boolean> {
+    const row = await (await this.db.prepare(
+      'SELECT 1 AS x FROM events WHERE session_id = ? AND input_hash = ? LIMIT 1'
+    )).get(sessionId, inputHash) as Record<string, unknown> | undefined;
     return !!row;
   }
 
-  recordEvent(input: CaptureInput): number {
+  async recordEvent(input: CaptureInput): Promise<number> {
     const inputHash = hashInput(input.payload);
-    const result = this.db
-      .prepare(
-        'INSERT INTO events (ts, session_id, tool, input_hash, payload_json, tokens_est) VALUES (?, ?, ?, ?, ?, ?)'
-      )
-      .run(
-        input.ts,
-        input.sessionId,
-        input.tool,
-        inputHash,
-        JSON.stringify(input.payload),
-        input.tokensEst ?? 0
-      );
+    const result = await (await this.db.prepare(
+      'INSERT INTO events (ts, session_id, tool, input_hash, payload_json, tokens_est) VALUES (?, ?, ?, ?, ?, ?)'
+    )).run(
+      input.ts,
+      input.sessionId,
+      input.tool,
+      inputHash,
+      JSON.stringify(input.payload),
+      input.tokensEst ?? 0
+    );
     return Number(result.lastInsertRowid);
   }
 
-  getEvent(id: number): EventRow | null {
-    const row = this.db
-      .prepare(
-        'SELECT id, ts, session_id, tool, input_hash, payload_json, status, tokens_est FROM events WHERE id = ?'
-      )
-      .get(id) as Record<string, unknown> | undefined;
+  async getEvent(id: number): Promise<EventRow | null> {
+    const row = await (await this.db.prepare(
+      'SELECT id, ts, session_id, tool, input_hash, payload_json, status, tokens_est FROM events WHERE id = ?'
+    )).get(id) as Record<string, unknown> | undefined;
     if (!row) return null;
     return {
       id: row['id'] as number,
@@ -154,16 +210,14 @@ export class Storage {
     };
   }
 
-  markEventStatus(id: number, status: 'raw' | 'summarized' | 'skipped'): void {
-    this.db.prepare('UPDATE events SET status = ? WHERE id = ?').run(status, id);
+  async markEventStatus(id: number, status: 'raw' | 'summarized' | 'skipped'): Promise<void> {
+    await (await this.db.prepare('UPDATE events SET status = ? WHERE id = ?')).run(status, id);
   }
 
-  pendingEvents(limit = 32): EventRow[] {
-    const rows = this.db
-      .prepare(
-        "SELECT id, ts, session_id, tool, input_hash, payload_json, status, tokens_est FROM events WHERE status = 'raw' ORDER BY id ASC LIMIT ?"
-      )
-      .all(limit) as Record<string, unknown>[];
+  async pendingEvents(limit = 32): Promise<EventRow[]> {
+    const rows = await (await this.db.prepare(
+      "SELECT id, ts, session_id, tool, input_hash, payload_json, status, tokens_est FROM events WHERE status = 'raw' ORDER BY id ASC LIMIT ?"
+    )).all(limit) as Record<string, unknown>[];
     return rows.map(r => ({
       id: r['id'] as number,
       ts: r['ts'] as number,
@@ -176,48 +230,44 @@ export class Storage {
     }));
   }
 
-  counts(): StorageCounts {
-    const c = (sql: string): number => {
-      const row = this.db.prepare(sql).get() as { c?: number } | undefined;
+  async counts(): Promise<StorageCounts> {
+    const c = async (sql: string): Promise<number> => {
+      const row = await (await this.db.prepare(sql)).get() as { c?: number } | undefined;
       return row?.c ?? 0;
     };
     return {
-      events: c('SELECT count(*) AS c FROM events'),
-      raw: c("SELECT count(*) AS c FROM events WHERE status = 'raw'"),
-      summarized: c("SELECT count(*) AS c FROM events WHERE status = 'summarized'"),
-      skipped: c("SELECT count(*) AS c FROM events WHERE status = 'skipped'"),
-      summaries: c('SELECT count(*) AS c FROM summaries'),
-      embeddings: c('SELECT count(*) AS c FROM summary_embeddings'),
-      superseded: c('SELECT count(DISTINCT older_id) AS c FROM summary_supersedes'),
+      events: await c('SELECT count(*) AS c FROM events'),
+      raw: await c("SELECT count(*) AS c FROM events WHERE status = 'raw'"),
+      summarized: await c("SELECT count(*) AS c FROM events WHERE status = 'summarized'"),
+      skipped: await c("SELECT count(*) AS c FROM events WHERE status = 'skipped'"),
+      summaries: await c('SELECT count(*) AS c FROM summaries'),
+      embeddings: await c('SELECT count(*) AS c FROM summary_embeddings'),
+      superseded: await c('SELECT count(DISTINCT older_id) AS c FROM summary_supersedes'),
     };
   }
 
-  recordSummary(s: Omit<SummaryRow, 'id'>): number {
-    const result = this.db
-      .prepare(
-        'INSERT INTO summaries (event_id, ts, model, prompt_hash, text, tokens_in, tokens_out, confidence) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-      )
-      .run(
-        s.eventId,
-        s.ts,
-        s.model,
-        s.promptHash,
-        s.text,
-        s.tokensIn,
-        s.tokensOut,
-        s.confidence
-      );
+  async recordSummary(s: Omit<SummaryRow, 'id'>): Promise<number> {
+    const result = await (await this.db.prepare(
+      'INSERT INTO summaries (event_id, ts, model, prompt_hash, text, tokens_in, tokens_out, confidence) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    )).run(
+      s.eventId,
+      s.ts,
+      s.model,
+      s.promptHash,
+      s.text,
+      s.tokensIn,
+      s.tokensOut,
+      s.confidence
+    );
     return Number(result.lastInsertRowid);
   }
 
-  getSummariesByIds(ids: number[]): SummaryRow[] {
+  async getSummariesByIds(ids: number[]): Promise<SummaryRow[]> {
     if (ids.length === 0) return [];
     const placeholders = ids.map(() => '?').join(',');
-    const rows = this.db
-      .prepare(
-        `SELECT id, event_id, ts, model, prompt_hash, text, tokens_in, tokens_out, confidence FROM summaries WHERE id IN (${placeholders})`
-      )
-      .all(...ids) as Record<string, unknown>[];
+    const rows = await (await this.db.prepare(
+      `SELECT id, event_id, ts, model, prompt_hash, text, tokens_in, tokens_out, confidence FROM summaries WHERE id IN (${placeholders})`
+    )).all(...ids) as Record<string, unknown>[];
     return rows.map(r => ({
       id: r['id'] as number,
       eventId: r['event_id'] as number,
@@ -231,18 +281,23 @@ export class Storage {
     }));
   }
 
-  searchFts(query: string, k = 5): SearchHit[] {
+  async searchFts(query: string, k = 5): Promise<SearchHit[]> {
     const safe = sanitizeFtsQuery(query);
     if (!safe) return [];
-    const rows = this.db
-      .prepare(
-        `SELECT s.id AS id, s.event_id AS event_id, s.text AS text, s.ts AS ts,
-                bm25(summaries_fts) AS score
-         FROM summaries_fts JOIN summaries s ON s.id = summaries_fts.rowid
-         WHERE summaries_fts MATCH ?
-         ORDER BY score ASC LIMIT ?`
-      )
-      .all(safe, k) as Record<string, unknown>[];
+    const isPg = !this.vecEnabled && String(typeof this.db).includes('postgres');
+    const rows = await (await this.db.prepare(
+      isPg
+        ? `SELECT s.id, s.event_id, s.text, s.ts,
+                  ts_rank_cd(to_tsvector('english', s.text), plainto_tsquery('english', $1)) AS score
+           FROM summaries s
+           WHERE to_tsvector('english', s.text) @@ plainto_tsquery('english', $1)
+           ORDER BY score DESC LIMIT $2`
+        : `SELECT s.id AS id, s.event_id AS event_id, s.text AS text, s.ts AS ts,
+                  bm25(summaries_fts) AS score
+           FROM summaries_fts JOIN summaries s ON s.id = summaries_fts.rowid
+           WHERE summaries_fts MATCH ?
+           ORDER BY score ASC LIMIT ?`
+    )).all(...(isPg ? [safe, k] : [safe, k])) as Record<string, unknown>[];
     return rows.map(r => ({
       id: r['id'] as number,
       eventId: r['event_id'] as number,
@@ -252,15 +307,13 @@ export class Storage {
     }));
   }
 
-  timeline(nearId: number, window = 10): SummaryRow[] {
-    const rows = this.db
-      .prepare(
-        `SELECT id, event_id, ts, model, prompt_hash, text, tokens_in, tokens_out, confidence
-         FROM summaries
-         WHERE id BETWEEN ? AND ?
-         ORDER BY id ASC`
-      )
-      .all(nearId - window, nearId + window) as Record<string, unknown>[];
+  async timeline(nearId: number, window = 10): Promise<SummaryRow[]> {
+    const rows = await (await this.db.prepare(
+      `SELECT id, event_id, ts, model, prompt_hash, text, tokens_in, tokens_out, confidence
+       FROM summaries
+       WHERE id BETWEEN ? AND ?
+       ORDER BY id ASC`
+    )).all(nearId - window, nearId + window) as Record<string, unknown>[];
     return rows.map(r => ({
       id: r['id'] as number,
       eventId: r['event_id'] as number,
@@ -274,28 +327,26 @@ export class Storage {
     }));
   }
 
-  putEmbedding(summaryId: number, vec: Float32Array): void {
+  async putEmbedding(summaryId: number, vec: Float32Array): Promise<void> {
     const buf = Buffer.from(vec.buffer, vec.byteOffset, vec.byteLength);
-    this.db
-      .prepare('INSERT OR REPLACE INTO summary_embeddings (summary_id, dim, vec) VALUES (?, ?, ?)')
-      .run(summaryId, vec.length, buf);
+    await (await this.db.prepare(
+      'INSERT OR REPLACE INTO summary_embeddings (summary_id, dim, vec) VALUES (?, ?, ?)'
+    )).run(summaryId, vec.length, buf);
   }
 
-  getEmbedding(summaryId: number): Float32Array | null {
-    const row = this.db
-      .prepare('SELECT dim, vec FROM summary_embeddings WHERE summary_id = ?')
-      .get(summaryId) as { dim: number; vec: Buffer } | undefined;
+  async getEmbedding(summaryId: number): Promise<Float32Array | null> {
+    const row = await (await this.db.prepare(
+      'SELECT dim, vec FROM summary_embeddings WHERE summary_id = ?'
+    )).get(summaryId) as { dim: number; vec: Buffer } | undefined;
     if (!row) return null;
     return new Float32Array(row.vec.buffer, row.vec.byteOffset, row.dim);
   }
 
-  allEmbeddings(): Array<{ summaryId: number; vec: Float32Array; ts: number }> {
-    const rows = this.db
-      .prepare(
-        `SELECT e.summary_id AS sid, e.dim AS dim, e.vec AS vec, s.ts AS ts
-         FROM summary_embeddings e JOIN summaries s ON s.id = e.summary_id`
-      )
-      .all() as Array<{ sid: number; dim: number; vec: Buffer; ts: number }>;
+  async allEmbeddings(): Promise<Array<{ summaryId: number; vec: Float32Array; ts: number }>> {
+    const rows = await (await this.db.prepare(
+      `SELECT e.summary_id AS sid, e.dim AS dim, e.vec AS vec, s.ts AS ts
+       FROM summary_embeddings e JOIN summaries s ON s.id = e.summary_id`
+    )).all() as Array<{ sid: number; dim: number; vec: Buffer; ts: number }>;
     return rows.map(r => ({
       summaryId: r.sid,
       vec: new Float32Array(r.vec.buffer, r.vec.byteOffset, r.dim),
@@ -303,18 +354,16 @@ export class Storage {
     }));
   }
 
-  recordSupersedes(newerId: number, olderId: number, cosineSim: number, ts: number): void {
-    this.db
-      .prepare(
-        'INSERT OR IGNORE INTO summary_supersedes (newer_id, older_id, cosine, ts) VALUES (?, ?, ?, ?)'
-      )
-      .run(newerId, olderId, cosineSim, ts);
+  async recordSupersedes(newerId: number, olderId: number, cosineSim: number, ts: number): Promise<void> {
+    await (await this.db.prepare(
+      'INSERT OR IGNORE INTO summary_supersedes (newer_id, older_id, cosine, ts) VALUES (?, ?, ?, ?)'
+    )).run(newerId, olderId, cosineSim, ts);
   }
 
-  supersededIds(): Set<number> {
-    const rows = this.db
-      .prepare('SELECT older_id FROM summary_supersedes')
-      .all() as Array<{ older_id: number }>;
+  async supersededIds(): Promise<Set<number>> {
+    const rows = await (await this.db.prepare(
+      'SELECT older_id FROM summary_supersedes'
+    )).all() as Array<{ older_id: number }>;
     return new Set(rows.map(r => r.older_id));
   }
 
@@ -328,10 +377,10 @@ export class Storage {
       .digest('hex');
   }
 
-  getCachedSummary(cacheKey: string): { text: string; tokensIn: number | null; tokensOut: number | null } | null {
-    const row = this.db
-      .prepare('SELECT text, tokens_in, tokens_out FROM summary_cache WHERE cache_key = ?')
-      .get(cacheKey) as Record<string, unknown> | undefined;
+  async getCachedSummary(cacheKey: string): Promise<{ text: string; tokensIn: number | null; tokensOut: number | null } | null> {
+    const row = await (await this.db.prepare(
+      'SELECT text, tokens_in, tokens_out FROM summary_cache WHERE cache_key = ?'
+    )).get(cacheKey) as Record<string, unknown> | undefined;
     if (!row) return null;
     return {
       text: row['text'] as string,
@@ -340,17 +389,15 @@ export class Storage {
     };
   }
 
-  putCachedSummary(
+  async putCachedSummary(
     cacheKey: string,
     text: string,
     tokensIn: number | null,
     tokensOut: number | null,
     ts: number
-  ): void {
-    this.db
-      .prepare(
-        'INSERT OR REPLACE INTO summary_cache (cache_key, text, tokens_in, tokens_out, created_at) VALUES (?, ?, ?, ?, ?)'
-      )
-      .run(cacheKey, text, tokensIn, tokensOut, ts);
+  ): Promise<void> {
+    await (await this.db.prepare(
+      'INSERT OR REPLACE INTO summary_cache (cache_key, text, tokens_in, tokens_out, created_at) VALUES (?, ?, ?, ?, ?)'
+    )).run(cacheKey, text, tokensIn, tokensOut, ts);
   }
 }

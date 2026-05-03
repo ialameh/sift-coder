@@ -184,7 +184,7 @@ async function runLocal(args: ParsedArgs, dbPath: string, workspaceKey: string, 
   if (args.command === 'eval') {
     const { mineGolden } = await import('./eval-mine.js');
     const { evaluate } = await import('./eval.js');
-    const golden = mineGolden(storage);
+    const golden = await mineGolden(storage);
     const k = parseIntFlag(args.flags['k'], 5);
     const useRerank = args.flags['rerank'] === 'true';
     const report = await evaluate(storage, embedder, golden, k, Date.now(), { decayTauMs: 1e15, rerank: useRerank });
@@ -212,7 +212,7 @@ async function runLocal(args: ParsedArgs, dbPath: string, workspaceKey: string, 
   }
   if (args.command === 'savings') {
     const { computeSavings, renderSavings } = await import('./metrics.js');
-    const report = computeSavings(storage);
+    const report = await computeSavings(storage);
     report.workspace.dbPath = dbPath;
     if (args.flags['json'] === 'true') {
       process.stdout.write(JSON.stringify({ ok: true, data: { workspaceKey, cwd, ...report } }) + '\n');

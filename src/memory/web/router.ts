@@ -53,7 +53,7 @@ export interface WebDeps {
   rpc?: (req: Request) => Promise<Response>;
   /** Static asset reader; receives a logical path like 'index.html' and returns body or null. */
   staticAsset?: (name: string) => { body: Buffer; type: string } | null;
-  backend: 'native' | 'wasm';
+  backend: 'native' | 'wasm' | 'postgres';
   workspaceKey: string;
 }
 
@@ -94,27 +94,27 @@ function parseBody<T>(raw: string): T | null {
 
 interface CountRow { c: number }
 
-function countRows(storage: Storage, sql: string): number {
-  const db = (storage as unknown as { ['db']: { prepare: (sql: string) => { get: () => CountRow } } })['db'];
+async function countRows(storage: Storage, sql: string): Promise<number> {
+  const row = await (await (storage as unknown as { db: { prepare(sql: string): Promise<{ get(): Promise<CountRow | undefined> }> } }).db.prepare(sql)).get();
   /* c8 ignore next -- count(*) always returns a row; ?? 0 is a defensive type guard */
-  return db.prepare(sql).get()?.c ?? 0;
+  return row?.c ?? 0;
 }
 
 interface EventTailRow { id: number; ts: number; tool: string; status: string; session_id: string }
 interface SummaryTailRow { id: number; ts: number; model: string; text: string; confidence: number | null }
 
-function eventTail(storage: Storage, limit: number): EventTailRow[] {
-  const db = (storage as unknown as { ['db']: { prepare: (sql: string) => { all: (...p: unknown[]) => unknown[] } } })['db'];
-  return db.prepare('SELECT id, ts, tool, status, session_id FROM events ORDER BY id DESC LIMIT ?').all(limit) as EventTailRow[];
+async function eventTail(storage: Storage, limit: number): Promise<EventTailRow[]> {
+  const db = (storage as unknown as { db: { prepare(sql: string): Promise<{ all(...p: unknown[]): Promise<unknown[]> }> } }).db;
+  return await (await db.prepare('SELECT id, ts, tool, status, session_id FROM events ORDER BY id DESC LIMIT ?')).all(limit) as EventTailRow[];
 }
 
-function summaryTail(storage: Storage, limit: number): SummaryTailRow[] {
-  const db = (storage as unknown as { ['db']: { prepare: (sql: string) => { all: (...p: unknown[]) => unknown[] } } })['db'];
-  return db.prepare('SELECT id, ts, model, substr(text, 1, 240) AS text, confidence FROM summaries ORDER BY id DESC LIMIT ?').all(limit) as SummaryTailRow[];
+async function summaryTail(storage: Storage, limit: number): Promise<SummaryTailRow[]> {
+  const db = (storage as unknown as { db: { prepare(sql: string): Promise<{ all(...p: unknown[]): Promise<unknown[]> }> } }).db;
+  return await (await db.prepare('SELECT id, ts, model, substr(text, 1, 240) AS text, confidence FROM summaries ORDER BY id DESC LIMIT ?')).all(limit) as SummaryTailRow[];
 }
 
 export async function route(req: WebRequest, deps: WebDeps): Promise<WebResponse> {
-  // Browsers request /favicon.ico unconditionally and without our auth token. Reply 204 so the
+  // Browsers request /favicon.ico unconditionalally and without our auth token. Reply 204 so the
   // network panel stops complaining instead of a misleading 404 / 401.
   if (req.method === 'GET' && req.path === '/favicon.ico') {
     return { status: 204, headers: {}, body: '' };
@@ -157,10 +157,10 @@ export async function route(req: WebRequest, deps: WebDeps): Promise<WebResponse
       data: {
         backend: deps.backend,
         workspace: deps.workspaceKey,
-        events: countRows(deps.storage, 'SELECT count(*) AS c FROM events'),
-        summaries: countRows(deps.storage, 'SELECT count(*) AS c FROM summaries'),
-        embeddings: countRows(deps.storage, 'SELECT count(*) AS c FROM summary_embeddings'),
-        superseded: countRows(deps.storage, 'SELECT count(DISTINCT older_id) AS c FROM summary_supersedes'),
+        events: await countRows(deps.storage, 'SELECT count(*) AS c FROM events'),
+        summaries: await countRows(deps.storage, 'SELECT count(*) AS c FROM summaries'),
+        embeddings: await countRows(deps.storage, 'SELECT count(*) AS c FROM summary_embeddings'),
+        superseded: await countRows(deps.storage, 'SELECT count(DISTINCT older_id) AS c FROM summary_supersedes'),
       },
     });
   }
@@ -171,12 +171,12 @@ export async function route(req: WebRequest, deps: WebDeps): Promise<WebResponse
 
   if (req.method === 'GET' && req.path === '/api/events') {
     const limit = parseInt(req.query['limit'] ?? '50', 10) || 50;
-    return json(200, { ok: true, data: { events: eventTail(deps.storage, limit) } });
+    return json(200, { ok: true, data: { events: await eventTail(deps.storage, limit) } });
   }
 
   if (req.method === 'GET' && req.path === '/api/summaries') {
     const limit = parseInt(req.query['limit'] ?? '50', 10) || 50;
-    return json(200, { ok: true, data: { summaries: summaryTail(deps.storage, limit) } });
+    return json(200, { ok: true, data: { summaries: await summaryTail(deps.storage, limit) } });
   }
 
   if (req.method === 'POST' && req.path === '/api/search') {
@@ -189,14 +189,14 @@ export async function route(req: WebRequest, deps: WebDeps): Promise<WebResponse
   if (req.method === 'POST' && req.path === '/api/timeline') {
     const body = parseBody<{ nearId: number; window?: number }>(req.body);
     if (!body || !Number.isFinite(body.nearId)) return badRequest('nearId required');
-    const rows = deps.storage.timeline(body.nearId, body.window ?? 10);
+    const rows = await deps.storage.timeline(body.nearId, body.window ?? 10);
     return json(200, { ok: true, data: { rows } });
   }
 
   if (req.method === 'POST' && req.path === '/api/get') {
     const body = parseBody<{ ids: number[] }>(req.body);
     if (!body || !Array.isArray(body.ids)) return badRequest('ids[] required');
-    const rows = deps.storage.getSummariesByIds(body.ids);
+    const rows = await deps.storage.getSummariesByIds(body.ids);
     return json(200, { ok: true, data: { rows } });
   }
 
@@ -207,7 +207,7 @@ export async function route(req: WebRequest, deps: WebDeps): Promise<WebResponse
     }
     if (!deps.provenance) return json(200, { ok: true, data: { edges: [] } });
     const node: NodeRef = { kind: body.kind, id: body.id };
-    return json(200, { ok: true, data: { edges: deps.provenance.trace(node, body.depth ?? 4) } });
+    return json(200, { ok: true, data: { edges: await deps.provenance.trace(node, body.depth ?? 4) } });
   }
 
   if (req.method === 'POST' && req.path === '/api/ab') {

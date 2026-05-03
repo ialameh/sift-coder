@@ -24,8 +24,8 @@ export interface ClaudeRerankerOptions {
 }
 
 export interface RerankCache {
-  get(key: string): number | undefined;
-  set(key: string, value: number): void;
+  get(key: string): Promise<number | undefined>;
+  set(key: string, value: number): Promise<void>;
 }
 
 const SYSTEM = `You are a relevance scorer.
@@ -56,10 +56,10 @@ export class ClaudeReranker {
     if (hits.length === 0) return [];
     const tasks = hits.map(h => async (): Promise<HybridHit> => {
       const ck = ClaudeReranker.cacheKey(query, h.id, this.model);
-      const cached = this.cache?.get(ck);
+      const cached = this.cache ? await this.cache.get(ck) : undefined;
       if (cached !== undefined) return { ...h, score: cached };
       const score = await this.scoreOne(query, h.text);
-      this.cache?.set(ck, score);
+      if (this.cache) await this.cache.set(ck, score);
       return { ...h, score };
     });
     const scored = await runWithConcurrency(tasks, this.concurrency);
@@ -113,14 +113,14 @@ async function runWithConcurrency<T>(tasks: Array<() => Promise<T>>, n: number):
 export class StorageRerankCache implements RerankCache {
   constructor(private readonly storage: Storage) {}
 
-  get(key: string): number | undefined {
-    const row = this.storage.getCachedSummary(key);
+  async get(key: string): Promise<number | undefined> {
+    const row = await this.storage.getCachedSummary(key);
     if (!row) return undefined;
     const n = parseInt(row.text, 10);
     return Number.isFinite(n) ? n : undefined;
   }
 
-  set(key: string, value: number): void {
-    this.storage.putCachedSummary(key, String(value), null, null, Date.now());
+  async set(key: string, value: number): Promise<void> {
+    await this.storage.putCachedSummary(key, String(value), null, null, Date.now());
   }
 }

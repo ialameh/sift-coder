@@ -49,27 +49,24 @@ async function main() {
   writeFileSync(paths.pid, String(process.pid));
 
   let db: DBHandle & { close(): void };
-  let backend: 'native' | 'wasm';
+  let backend: 'postgres';
   try {
-    const mod = (await import('better-sqlite3' as string)) as { default: new (path: string) => DBHandle & { close(): void } };
-    db = new mod.default(paths.db);
-    backend = 'native';
-  } catch (nativeErr) {
-    try {
-      const wasm = await import('../storage/wasm-db.js');
-      db = await wasm.openWasmDatabase(paths.db);
-      backend = 'wasm';
-    } catch (wasmErr) {
-      process.stderr.write(
-        'siftcoder-mem: neither better-sqlite3 nor node-sqlite3-wasm could be loaded; daemon exiting\n' +
-        `  native: ${(nativeErr as Error).message}\n` +
-        `  wasm:   ${(wasmErr as Error).message}\n`
-      );
-      process.exit(0);
-      return;
-    }
+    const { PostgresDB } = await import('../storage/pg-db.js');
+    db = await PostgresDB.connect({ database: paths.key });
+    backend = 'postgres';
+  } catch (pgErr) {
+    process.stderr.write(
+      'siftcoder-mem: PostgreSQL backend failed; daemon exiting\n' +
+      `  error: ${(pgErr as Error).message}\n` +
+      '  Ensure POSTGRES_HOST, POSTGRES_USER, POSTGRES_PASSWORD are set.\n'
+    );
+    process.exit(0);
+    return;
   }
-  const storage = new Storage(db);
+  const storage = await Storage.create(db, {
+    coreDdl: (await import('../storage/pg-db.js')).PG_CORE_DDL,
+    vecDdl: (await import('../storage/pg-db.js')).PG_VEC_DDL,
+  });
 
   const wal = new WAL(paths.wal);
   wal.open();

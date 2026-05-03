@@ -56,11 +56,11 @@ export interface AddEdgeInput {
 }
 
 interface DBHandleProvenance {
-  prepare(sql: string): {
-    run(...p: unknown[]): { lastInsertRowid: number | bigint };
-    get(...p: unknown[]): unknown;
-    all(...p: unknown[]): unknown[];
-  };
+  prepare(sql: string): Promise<{
+    run(...p: unknown[]): Promise<{ lastInsertRowid: number | bigint }>;
+    get(...p: unknown[]): Promise<unknown>;
+    all(...p: unknown[]): Promise<unknown[]>;
+  }>;
 }
 
 export class ProvenanceStore {
@@ -70,35 +70,35 @@ export class ProvenanceStore {
     return (this.storage as unknown as { ['db']: DBHandleProvenance })['db'];
   }
 
-  addEdge(input: AddEdgeInput): number {
+  async addEdge(input: AddEdgeInput): Promise<number> {
     const ts = input.ts ?? Date.now();
     const conf = input.confidence ?? 1.0;
     const source = input.source ?? 'siftcoder';
     const meta = input.meta ? JSON.stringify(input.meta) : null;
-    const result = this.db.prepare(
+    const result = await (await this.db.prepare(
       `INSERT INTO provenance_edges (ts, from_kind, from_id, to_kind, to_id, edge_type, confidence, source, meta_json)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(ts, input.from.kind, input.from.id, input.to.kind, input.to.id, input.edgeType, conf, source, meta);
+    )).run(ts, input.from.kind, input.from.id, input.to.kind, input.to.id, input.edgeType, conf, source, meta);
     return Number(result.lastInsertRowid);
   }
 
-  outgoing(node: NodeRef, edgeType?: EdgeType): Edge[] {
+  async outgoing(node: NodeRef, edgeType?: EdgeType): Promise<Edge[]> {
     const sql = edgeType
       ? `SELECT * FROM provenance_edges WHERE from_kind = ? AND from_id = ? AND edge_type = ? ORDER BY ts DESC`
       : `SELECT * FROM provenance_edges WHERE from_kind = ? AND from_id = ? ORDER BY ts DESC`;
     const rows = edgeType
-      ? this.db.prepare(sql).all(node.kind, node.id, edgeType) as Array<Record<string, unknown>>
-      : this.db.prepare(sql).all(node.kind, node.id) as Array<Record<string, unknown>>;
+      ? await (await this.db.prepare(sql)).all(node.kind, node.id, edgeType) as Array<Record<string, unknown>>
+      : await (await this.db.prepare(sql)).all(node.kind, node.id) as Array<Record<string, unknown>>;
     return rows.map(rowToEdge);
   }
 
-  incoming(node: NodeRef, edgeType?: EdgeType): Edge[] {
+  async incoming(node: NodeRef, edgeType?: EdgeType): Promise<Edge[]> {
     const sql = edgeType
       ? `SELECT * FROM provenance_edges WHERE to_kind = ? AND to_id = ? AND edge_type = ? ORDER BY ts DESC`
       : `SELECT * FROM provenance_edges WHERE to_kind = ? AND to_id = ? ORDER BY ts DESC`;
     const rows = edgeType
-      ? this.db.prepare(sql).all(node.kind, node.id, edgeType) as Array<Record<string, unknown>>
-      : this.db.prepare(sql).all(node.kind, node.id) as Array<Record<string, unknown>>;
+      ? await (await this.db.prepare(sql)).all(node.kind, node.id, edgeType) as Array<Record<string, unknown>>
+      : await (await this.db.prepare(sql)).all(node.kind, node.id) as Array<Record<string, unknown>>;
     return rows.map(rowToEdge);
   }
 
@@ -106,14 +106,14 @@ export class ProvenanceStore {
    * BFS from `node` following outgoing edges up to `maxDepth`. Returns a flat list of edges in
    * traversal order so the caller can render a causal chain.
    */
-  trace(node: NodeRef, maxDepth = 4): Edge[] {
+  async trace(node: NodeRef, maxDepth = 4): Promise<Edge[]> {
     const seen = new Set<string>([nodeKey(node)]);
     const out: Edge[] = [];
     let frontier: NodeRef[] = [node];
     for (let depth = 0; depth < maxDepth && frontier.length > 0; depth++) {
       const next: NodeRef[] = [];
       for (const n of frontier) {
-        for (const e of this.outgoing(n)) {
+        for (const e of await this.outgoing(n)) {
           out.push(e);
           const key = nodeKey(e.to);
           if (!seen.has(key)) {
@@ -176,7 +176,7 @@ export async function ingestFromCdg(prov: ProvenanceStore, opts: CdgSyncOptions)
         const r = raw as { from_path?: unknown; to_path?: unknown; edge_type?: unknown; confidence?: unknown };
         if (typeof r.from_path !== 'string' || typeof r.to_path !== 'string') continue;
         const edgeType = mapEdgeType(typeof r.edge_type === 'string' ? r.edge_type : 'imports');
-        prov.addEdge({
+        await prov.addEdge({
           from: { kind: 'file', id: r.from_path },
           to: { kind: 'file', id: r.to_path },
           edgeType,
@@ -192,7 +192,7 @@ export async function ingestFromCdg(prov: ProvenanceStore, opts: CdgSyncOptions)
         const r = raw as { from_symbol?: unknown; to_symbol?: unknown; ref_type?: unknown; confidence?: unknown };
         if (typeof r.from_symbol !== 'string' || typeof r.to_symbol !== 'string') continue;
         const edgeType = mapEdgeType(typeof r.ref_type === 'string' ? r.ref_type : 'references');
-        prov.addEdge({
+        await prov.addEdge({
           from: { kind: 'symbol', id: r.from_symbol },
           to: { kind: 'symbol', id: r.to_symbol },
           edgeType,

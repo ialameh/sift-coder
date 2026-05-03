@@ -64,7 +64,7 @@ export class AbHarness {
     const queryTerms = opts.queryTerms ?? 4;
     const now = opts.now ?? Date.now();
 
-    const events = readRecentEvents(this.storage, turnsLimit);
+    const events = await readRecentEvents(this.storage, turnsLimit);
     let cumulativeA = 0;
     let cumulativeB = 0;
     const transcript: number[] = [];
@@ -103,7 +103,7 @@ export class AbHarness {
 }
 
 interface DBQuery {
-  prepare(sql: string): { all(...p: unknown[]): unknown[] };
+  prepare(sql: string): Promise<{ all(...p: unknown[]): Promise<unknown[]> }>;
 }
 
 interface RecentEventRow {
@@ -117,12 +117,12 @@ interface RecentEventRow {
   tokens_est: number;
 }
 
-function readRecentEvents(storage: Storage, limit: number): EventRow[] {
+async function readRecentEvents(storage: Storage, limit: number): Promise<EventRow[]> {
   const db = (storage as unknown as { ['db']: DBQuery })['db'];
-  const rows = db.prepare(
+  const rows = await (await db.prepare(
     `SELECT id, ts, session_id, tool, input_hash, payload_json, status, tokens_est
      FROM events ORDER BY id DESC LIMIT ?`
-  ).all(limit) as RecentEventRow[];
+  )).all(limit) as RecentEventRow[];
   return rows
     .map(r => ({
       id: r.id,

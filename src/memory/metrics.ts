@@ -15,7 +15,10 @@
 import type { Storage } from './storage/storage.js';
 
 interface DBQuery {
-  prepare(sql: string): { get(...p: unknown[]): unknown; all(...p: unknown[]): unknown[] };
+  prepare(sql: string): Promise<{
+    get(...p: unknown[]): Promise<unknown>;
+    all(...p: unknown[]): Promise<unknown[]>;
+  }>;
 }
 
 export interface SavingsReport {
@@ -59,34 +62,34 @@ function getDb(storage: Storage): DBQuery {
   return (storage as unknown as { ['db']: DBQuery })['db'];
 }
 
-export function computeSavings(storage: Storage): SavingsReport {
+export async function computeSavings(storage: Storage): Promise<SavingsReport> {
   const db = getDb(storage);
   /* c8 ignore next -- count(*) always returns a row; ?? 0 is a defensive type guard */
-  const c = (sql: string): number => (db.prepare(sql).get() as CountRow | undefined)?.c ?? 0;
+  const c = async (sql: string): Promise<number> => { const row = await (await db.prepare(sql)).get() as CountRow | undefined; return row?.c ?? 0; };
   /* c8 ignore next -- sum(...) always returns a row; ?? 0 is a defensive type guard */
-  const n = (sql: string): number => (db.prepare(sql).get() as NumRow | undefined)?.n ?? 0;
+  const n = async (sql: string): Promise<number> => { const row = await (await db.prepare(sql)).get() as NumRow | undefined; return row?.n ?? 0; };
 
-  const events = c('SELECT count(*) AS c FROM events');
-  const tokensCaptured = n('SELECT sum(tokens_est) AS n FROM events');
-  const redactedEvents = c("SELECT count(*) AS c FROM events WHERE payload_json LIKE '%REDACTED:%'");
-  const summarized = c("SELECT count(*) AS c FROM events WHERE status = 'summarized'");
-  const skipped    = c("SELECT count(*) AS c FROM events WHERE status = 'skipped'");
-  const raw        = c("SELECT count(*) AS c FROM events WHERE status = 'raw'");
+  const events = await c('SELECT count(*) AS c FROM events');
+  const tokensCaptured = await n('SELECT sum(tokens_est) AS n FROM events');
+  const redactedEvents = await c("SELECT count(*) AS c FROM events WHERE payload_json LIKE '%REDACTED:%'");
+  const summarized = await c("SELECT count(*) AS c FROM events WHERE status = 'summarized'");
+  const skipped    = await c("SELECT count(*) AS c FROM events WHERE status = 'skipped'");
+  const raw        = await c("SELECT count(*) AS c FROM events WHERE status = 'raw'");
 
-  const perToolRows = db.prepare('SELECT tool, count(*) AS c FROM events GROUP BY tool ORDER BY c DESC').all() as Array<{ tool: string; c: number }>;
+  const perToolRows = await (await db.prepare('SELECT tool, count(*) AS c FROM events GROUP BY tool ORDER BY c DESC')).all() as Array<{ tool: string; c: number }>;
   const perTool: Record<string, number> = {};
   for (const r of perToolRows) perTool[r.tool] = r.c;
 
-  const summaries = c('SELECT count(*) AS c FROM summaries');
-  const tokensIn  = n('SELECT sum(tokens_in)  AS n FROM summaries');
-  const tokensOut = n('SELECT sum(tokens_out) AS n FROM summaries');
-  const cacheRows = c('SELECT count(*) AS c FROM summary_cache');
+  const summaries = await c('SELECT count(*) AS c FROM summaries');
+  const tokensIn  = await n('SELECT sum(tokens_in)  AS n FROM summaries');
+  const tokensOut = await n('SELECT sum(tokens_out) AS n FROM summaries');
+  const cacheRows = await c('SELECT count(*) AS c FROM summary_cache');
   const cacheHits = Math.max(0, summaries - cacheRows);
   const cacheHitRate = summaries === 0 ? 0 : cacheHits / summaries;
-  const summaryTokensStored = n('SELECT sum(length(text) / 4) AS n FROM summaries');
+  const summaryTokensStored = await n('SELECT sum(length(text) / 4) AS n FROM summaries');
 
-  const embeddings = c('SELECT count(*) AS c FROM summary_embeddings');
-  const superseded = c('SELECT count(DISTINCT older_id) AS c FROM summary_supersedes');
+  const embeddings = await c('SELECT count(*) AS c FROM summary_embeddings');
+  const superseded = await c('SELECT count(DISTINCT older_id) AS c FROM summary_supersedes');
   const dedupRatio = summaries === 0 ? 0 : superseded / summaries;
 
   const compressionRatio = tokensCaptured === 0 ? 0 : summaryTokensStored / tokensCaptured;
