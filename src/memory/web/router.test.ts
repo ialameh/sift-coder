@@ -104,8 +104,8 @@ describe('GET /api/savings', () => {
 
 describe('GET /api/events', () => {
   it('returns recent events with default limit', async () => {
-    storage.recordEvent({ ts: 1, sessionId: 's', tool: 'Read', payload: {} });
-    storage.recordEvent({ ts: 2, sessionId: 's', tool: 'Edit', payload: {} });
+    await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'Read', payload: {} });
+    await storage.recordEvent({ ts: 2, sessionId: 's', tool: 'Edit', payload: {} });
     const r = await route(req({ path: '/api/events' }), deps());
     expect(r.status).toBe(200);
     const body = JSON.parse(String(r.body));
@@ -113,14 +113,14 @@ describe('GET /api/events', () => {
   });
 
   it('honors the limit query param', async () => {
-    for (let i = 0; i < 5; i++) storage.recordEvent({ ts: i, sessionId: 's', tool: 'R', payload: {} });
+    for (let i = 0; i < 5; i++) await storage.recordEvent({ ts: i, sessionId: 's', tool: 'R', payload: {} });
     const r = await route(req({ path: '/api/events', query: { limit: '2' } }), deps());
     const body = JSON.parse(String(r.body));
     expect(body.data.events).toHaveLength(2);
   });
 
   it('falls back to default limit when limit is non-numeric', async () => {
-    storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: {} });
+    await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: {} });
     const r = await route(req({ path: '/api/events', query: { limit: 'oops' } }), deps());
     expect(r.status).toBe(200);
   });
@@ -128,17 +128,17 @@ describe('GET /api/events', () => {
 
 describe('GET /api/summaries', () => {
   it('returns recent summaries truncated to 240 chars', async () => {
-    const eid = storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: {} });
-    storage.recordSummary({ eventId: eid, ts: 0, model: 'm', promptHash: 'p', text: 'x'.repeat(500), tokensIn: 1, tokensOut: 1, confidence: 0.9 });
+    const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: {} });
+    await storage.recordSummary({ eventId: eid, ts: 0, model: 'm', promptHash: 'p', text: 'x'.repeat(500), tokensIn: 1, tokensOut: 1, confidence: 0.9 });
     const r = await route(req({ path: '/api/summaries' }), deps());
     const body = JSON.parse(String(r.body));
     expect(body.data.summaries[0].text.length).toBeLessThanOrEqual(240);
   });
 
   it('honors the limit query param', async () => {
-    const eid = storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: {} });
+    const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: {} });
     for (let i = 0; i < 3; i++) {
-      storage.recordSummary({ eventId: eid, ts: i, model: 'm', promptHash: 'p', text: 't', tokensIn: 1, tokensOut: 1, confidence: 0.9 });
+      await storage.recordSummary({ eventId: eid, ts: i, model: 'm', promptHash: 'p', text: 't', tokensIn: 1, tokensOut: 1, confidence: 0.9 });
     }
     const r = await route(req({ path: '/api/summaries', query: { limit: '1' } }), deps());
     const body = JSON.parse(String(r.body));
@@ -153,8 +153,8 @@ describe('GET /api/summaries', () => {
 
 describe('POST /api/search', () => {
   it('runs hybrid search and returns hits', async () => {
-    const eid = storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: {} });
-    storage.recordSummary({ eventId: eid, ts: 0, model: 'm', promptHash: 'p', text: 'auth login session', tokensIn: 1, tokensOut: 1, confidence: 0.9 });
+    const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: {} });
+    await storage.recordSummary({ eventId: eid, ts: 0, model: 'm', promptHash: 'p', text: 'auth login session', tokensIn: 1, tokensOut: 1, confidence: 0.9 });
     const r = await route(req({ method: 'POST', path: '/api/search', body: JSON.stringify({ query: 'auth' }) }), deps());
     expect(r.status).toBe(200);
     const body = JSON.parse(String(r.body));
@@ -174,9 +174,9 @@ describe('POST /api/search', () => {
 
 describe('POST /api/timeline', () => {
   it('returns chronological neighbors', async () => {
-    const eid = storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: {} });
+    const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: {} });
     for (let i = 0; i < 3; i++) {
-      storage.recordSummary({ eventId: eid, ts: i, model: 'm', promptHash: 'p', text: `s${i}`, tokensIn: 1, tokensOut: 1, confidence: 0.9 });
+      await storage.recordSummary({ eventId: eid, ts: i, model: 'm', promptHash: 'p', text: `s${i}`, tokensIn: 1, tokensOut: 1, confidence: 0.9 });
     }
     const r = await route(req({ method: 'POST', path: '/api/timeline', body: JSON.stringify({ nearId: 2, window: 1 }) }), deps());
     expect(r.status).toBe(200);
@@ -192,8 +192,8 @@ describe('POST /api/timeline', () => {
 
 describe('POST /api/get', () => {
   it('returns rows for the requested ids', async () => {
-    const eid = storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: {} });
-    const sid = storage.recordSummary({ eventId: eid, ts: 0, model: 'm', promptHash: 'p', text: 't', tokensIn: 1, tokensOut: 1, confidence: 0.9 });
+    const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: {} });
+    const sid = await storage.recordSummary({ eventId: eid, ts: 0, model: 'm', promptHash: 'p', text: 't', tokensIn: 1, tokensOut: 1, confidence: 0.9 });
     const r = await route(req({ method: 'POST', path: '/api/get', body: JSON.stringify({ ids: [sid] }) }), deps());
     const body = JSON.parse(String(r.body));
     expect(body.data.rows).toHaveLength(1);
@@ -234,7 +234,7 @@ describe('POST /api/ab', () => {
   });
 
   it('honors body turns/k overrides', async () => {
-    storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: { x: 1 }, tokensEst: 50 });
+    await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: { x: 1 }, tokensEst: 50 });
     const r = await route(req({ method: 'POST', path: '/api/ab', body: JSON.stringify({ turns: 1, k: 2 }) }), deps());
     const body = JSON.parse(String(r.body));
     expect(body.data.k).toBe(2);
@@ -324,8 +324,8 @@ describe('legacy POST / RPC', () => {
 
 describe('default body shapes', () => {
   it('POST /api/timeline uses default window when none provided', async () => {
-    const eid = storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: {} });
-    storage.recordSummary({ eventId: eid, ts: 0, model: 'm', promptHash: 'p', text: 't', tokensIn: 1, tokensOut: 1, confidence: 0.9 });
+    const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: {} });
+    await storage.recordSummary({ eventId: eid, ts: 0, model: 'm', promptHash: 'p', text: 't', tokensIn: 1, tokensOut: 1, confidence: 0.9 });
     const r = await route(req({ method: 'POST', path: '/api/timeline', body: JSON.stringify({ nearId: 1 }) }), deps());
     expect(r.status).toBe(200);
   });

@@ -13,13 +13,13 @@ let storage: Storage;
 const e = new DeterministicEmbedder(256);
 
 async function seed(text: string, id?: number): Promise<number> {
-  const eid = storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: {} });
-  const sid = storage.recordSummary({
+  const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: {} });
+  const sid = await storage.recordSummary({
     eventId: eid, ts: id ?? Date.now(), model: 'm', promptHash: 'p',
     text, tokensIn: null, tokensOut: null, confidence: null,
   });
   const v = await e.embed(text);
-  storage.putEmbedding(sid, v);
+  await storage.putEmbedding(sid, v);
   return sid;
 }
 

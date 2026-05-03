@@ -28,7 +28,7 @@ import { initialPort, nextCandidate, MAX_RETRIES } from '../web/port.js';
 export interface HttpBridgeDeps {
   workspaceRoot: string;
   workspaceKey: string;
-  backend: 'native' | 'wasm' | 'postgres';
+  backend: 'native' | 'wasm' | 'postgres' | 'sqlite-native' | 'sqlite-wasm';
   handler: (req: Request) => Promise<Response>;
   storage: WebDeps['storage'];
   embedder: WebDeps['embedder'];

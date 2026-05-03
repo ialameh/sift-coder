@@ -59,24 +59,24 @@ describe('Consolidator', () => {
     await addSummary(2, 200, 'auth login session');
     const c = new Consolidator(storage, { cosineThreshold: 0.99, minNewSinceLastRun: 0 });
     c.start();
-    const r = c.tick();
+    const r = await c.tick();
     c.stop();
     expect(r.pairsMarked).toBe(1);
     expect(db.supersedes[0]!.newer_id).toBe(2);
     expect(db.supersedes[0]!.older_id).toBe(1);
   });
 
-  it('does nothing when fewer than minNewSinceLastRun summaries exist', () => {
+  it('does nothing when fewer than minNewSinceLastRun summaries exist', async () => {
     const c = new Consolidator(storage, { minNewSinceLastRun: 100 });
     c.start();
-    const r = c.tick();
+    const r = await c.tick();
     c.stop();
     expect(r.pairsMarked).toBe(0);
   });
 
-  it('returns no work when not running', () => {
+  it('returns no work when not running', async () => {
     const c = new Consolidator(storage);
-    expect(c.tick()).toEqual({ pairsMarked: 0, scanned: 0 });
+    expect(await c.tick()).toEqual({ pairsMarked: 0, scanned: 0 });
   });
 
   it('start() is idempotent', () => {
@@ -97,9 +97,9 @@ describe('Consolidator', () => {
     await addSummary(2, 200, 'auth login');
     const c = new Consolidator(storage, { cosineThreshold: 0.99, minNewSinceLastRun: 0 });
     c.start();
-    c.tick();
+    await c.tick();
     await addSummary(3, 300, 'completely unrelated database migration');
-    const r2 = c.tick();
+    const r2 = await c.tick();
     c.stop();
     expect(r2.pairsMarked).toBe(0);
   });
@@ -108,7 +108,7 @@ describe('Consolidator', () => {
     for (let i = 1; i <= 20; i++) await addSummary(i, i, `text variant ${i}`);
     const c = new Consolidator(storage, { pairLimit: 5, minNewSinceLastRun: 0, cosineThreshold: 1.1 });
     c.start();
-    const r = c.tick();
+    const r = await c.tick();
     c.stop();
     expect(r.scanned).toBe(20);
     expect(r.pairsMarked).toBe(0);
@@ -119,7 +119,7 @@ describe('Consolidator', () => {
     await addSummary(2, 200, 'database migration schema column');
     const c = new Consolidator(storage, { cosineThreshold: 0.95, minNewSinceLastRun: 0 });
     c.start();
-    const r = c.tick();
+    const r = await c.tick();
     c.stop();
     expect(r.pairsMarked).toBe(0);
   });
@@ -130,7 +130,7 @@ describe('Consolidator', () => {
     await addSummary(3, 300, 'auth login session');
     const c = new Consolidator(storage, { cosineThreshold: 0.99, minNewSinceLastRun: 0 });
     c.start();
-    const r = c.tick();
+    const r = await c.tick();
     c.stop();
     expect(r.pairsMarked).toBeGreaterThanOrEqual(1);
     expect(db.supersedes.length).toBeGreaterThanOrEqual(1);

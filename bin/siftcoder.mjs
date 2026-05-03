@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// SiftCoder CLI: setup | start | stop | status | drain | backfill | web | version
+// SiftCoder CLI: setup | start | stop | status | drain | backfill | web | version | check | list
 import { execFileSync, spawn } from 'node:child_process';
 import path from 'node:path';
 import url from 'node:url';
@@ -104,99 +104,34 @@ function ensureBuilt() {
   process.exit(1);
 }
 
+/**
+ * Open storage using the backend resolver.
+ * Returns { storage, backend, dbPath } where storage is an async Storage instance.
+ */
 async function openStorage() {
   ensureBuilt();
   const p = paths();
-  const { Storage } = await import(path.join(ROOT, 'dist', 'memory', 'storage', 'storage.js'));
   fs.mkdirSync(path.dirname(p.db), { recursive: true });
+  const { openStorage: resolve } = await import(path.join(ROOT, 'dist', 'memory', 'storage', 'open.js'));
+  const { Storage } = await import(path.join(ROOT, 'dist', 'memory', 'storage', 'storage.js'));
+  const { db, backend, dbPath } = await resolve({ dbPath: p.db });
+  const storage = await Storage.create(db);
+  return { storage, backend, dbPath };
+}
+
+async function getCountsFromDaemon() {
   try {
-    const mod = await import('better-sqlite3');
-    return new Storage(new mod.default(p.db));
+    const r = await rpc({ kind: 'status' });
+    if (r.ok) return { daemon: 'running', counts: r.data.counts };
+    return { daemon: 'error', counts: null };
   } catch {
-    const wasm = await import(path.join(ROOT, 'dist', 'memory', 'storage', 'wasm-db.js'));
-    return new Storage(await wasm.openWasmDatabase(p.db));
+    return { daemon: 'unreachable', counts: null };
   }
 }
 
-function dbHandle(storage) {
-  return storage.db;
-}
-
-function counts(storage) {
-  const db = dbHandle(storage);
-  const c = (sql) => db.prepare(sql).get().c ?? 0;
-  return {
-    events: c('SELECT count(*) AS c FROM events'),
-    raw: c("SELECT count(*) AS c FROM events WHERE status = 'raw'"),
-    summarized: c("SELECT count(*) AS c FROM events WHERE status = 'summarized'"),
-    skipped: c("SELECT count(*) AS c FROM events WHERE status = 'skipped'"),
-    summaries: c('SELECT count(*) AS c FROM summaries'),
-    embeddings: c('SELECT count(*) AS c FROM summary_embeddings'),
-  };
-}
-
-async function drain(batch) {
-  // If daemon is running, route through it — it owns the model client and the DB lock.
-  try {
-    const ping = await rpc({ kind: 'ping' });
-    if (ping.ok) {
-      const r = await rpc({ kind: 'drain', batch }, batch * 10_000); // 10s per event
-      if (!r.ok) throw new Error(r.error);
-      return r.data;
-    }
-  } catch (e) {
-    if (e.message && !e.message.includes('ENOENT') && !e.message.includes('ECONNREFUSED') && !e.message.includes('timeout')) {
-      throw e;
-    }
-    // Socket unreachable — daemon not running, fall through to local drain.
-  }
-
-  // Local drain: daemon is not running, safe to open DB directly.
-  const storage = await openStorage();
-  const { Summarizer } = await import(path.join(ROOT, 'dist', 'memory', 'daemon', 'summarizer.js'));
-  const { DeterministicEmbedder } = await import(path.join(ROOT, 'dist', 'memory', 'embedder.js'));
-  const { GlmClient } = await import(path.join(ROOT, 'dist', 'memory', 'glm-client.js'));
-  const { GeminiClient } = await import(path.join(ROOT, 'dist', 'memory', 'gemini-client.js'));
-  const { OllamaClient } = await import(path.join(ROOT, 'dist', 'memory', 'ollama-client.js'));
-  const { AnthropicClient } = await import(path.join(ROOT, 'dist', 'memory', 'anthropic-client.js'));
-
-  let modelClient;
-  let backend;
-  if (GlmClient.available(process.env)) {
-    modelClient = new GlmClient();
-    backend = 'glm';
-  } else if (GeminiClient.available(process.env)) {
-    modelClient = new GeminiClient();
-    backend = 'gemini';
-  } else if (await OllamaClient.available()) {
-    modelClient = new OllamaClient();
-    backend = 'ollama';
-  } else if (AnthropicClient.available(process.env)) {
-    modelClient = new AnthropicClient();
-    backend = 'anthropic';
-  } else {
-    throw new Error('no drain backend available: set GLM_API_KEY, GEMINI_API_KEY, start Ollama, or set ANTHROPIC_API_KEY');
-  }
-
-  const summarizer = new Summarizer(storage, modelClient);
-  const embedder = new DeterministicEmbedder(384);
-  const events = storage.pendingEvents(batch);
-  let processed = 0;
-  let errors = 0;
-  let firstError;
-  for (const ev of events) {
-    try {
-      const r = await summarizer.summarize(ev.id, ev.inputHash, ev.payloadJson, Date.now());
-      storage.putEmbedding(r.id, await embedder.embed(r.text));
-      storage.markEventStatus(ev.id, 'summarized');
-      processed++;
-    } catch (e) {
-      storage.markEventStatus(ev.id, 'skipped');
-      errors++;
-      firstError ??= e.message;
-    }
-  }
-  return { backend, processed, errors, pending: storage.pendingEvents(1).length, ...(firstError ? { firstError } : {}) };
+async function getCountsFromStorage(storage) {
+  const c = await storage.counts();
+  return c;
 }
 
 const cmd = process.argv[2];
@@ -231,29 +166,75 @@ switch (cmd) {
     break;
   }
   case 'status': {
-    let daemon = 'unreachable';
-    let countsData = null;
-    try {
-      const r = await rpc({ kind: 'status' });
-      daemon = r.ok ? 'running' : 'error';
-      countsData = r.ok ? r.data.counts : null;
-    } catch {
-      daemon = 'unreachable';
-    }
-    // Only open DB directly when daemon isn't holding the lock.
+    const { daemon, counts: countsData } = await getCountsFromDaemon();
     if (!countsData) {
       try {
-        const storage = await openStorage();
-        countsData = counts(storage);
-      } catch { /* db not yet initialized */ }
+        const { storage, backend } = await openStorage();
+        const c = await getCountsFromStorage(storage);
+        await storage.db.close();
+        console.log(JSON.stringify({ daemon, namespace: NS, workspace: key(), socket: paths().sock, backend, counts: c }, null, 2));
+        break;
+      } catch { /* db not initialized */ }
     }
     console.log(JSON.stringify({ daemon, namespace: NS, workspace: key(), socket: paths().sock, counts: countsData }, null, 2));
     break;
   }
   case 'drain': {
     const batch = parseInt(args[0] || '32', 10);
-    const r = await drain(batch);
-    console.log(JSON.stringify(r, null, 2));
+    // If daemon is running, route through it
+    try {
+      const ping = await rpc({ kind: 'ping' }, 2000);
+      if (ping.ok) {
+        const r = await rpc({ kind: 'drain', batch }, batch * 10_000);
+        if (!r.ok) throw new Error(r.error);
+        console.log(JSON.stringify(r.data, null, 2));
+        break;
+      }
+    } catch (e) {
+      if (e.message && !e.message.includes('ENOENT') && !e.message.includes('ECONNREFUSED') && !e.message.includes('timeout')) {
+        throw e;
+      }
+      // Fall through to local drain
+    }
+    // Local drain
+    const { storage } = await openStorage();
+    const { Summarizer } = await import(path.join(ROOT, 'dist', 'memory', 'daemon', 'summarizer.js'));
+    const { DeterministicEmbedder } = await import(path.join(ROOT, 'dist', 'memory', 'embedder.js'));
+    const { GlmClient } = await import(path.join(ROOT, 'dist', 'memory', 'glm-client.js'));
+    const { GeminiClient } = await import(path.join(ROOT, 'dist', 'memory', 'gemini-client.js'));
+    const { OllamaClient } = await import(path.join(ROOT, 'dist', 'memory', 'ollama-client.js'));
+    const { AnthropicClient } = await import(path.join(ROOT, 'dist', 'memory', 'anthropic-client.js'));
+    let modelClient = null;
+    let drainBackend = 'none';
+    if (GlmClient.available(process.env)) {
+      modelClient = new GlmClient(); drainBackend = 'glm';
+    } else if (GeminiClient.available(process.env)) {
+      modelClient = new GeminiClient(); drainBackend = 'gemini';
+    } else if (await OllamaClient.available()) {
+      modelClient = new OllamaClient(); drainBackend = 'ollama';
+    } else if (AnthropicClient.available(process.env)) {
+      modelClient = new AnthropicClient(); drainBackend = 'anthropic';
+    }
+    if (!modelClient) throw new Error('no drain backend: set GLM_API_KEY, GEMINI_API_KEY, start Ollama, or set ANTHROPIC_API_KEY');
+    const summarizer = new Summarizer(storage, modelClient);
+    const embedder = new DeterministicEmbedder(384);
+    const events = await storage.pendingEvents(batch);
+    let processed = 0, errors = 0, firstError;
+    for (const ev of events) {
+      try {
+        const r = await summarizer.summarize(ev.id, ev.inputHash, ev.payloadJson, Date.now());
+        await storage.putEmbedding(r.id, await embedder.embed(r.text));
+        await storage.markEventStatus(ev.id, 'summarized');
+        processed++;
+      } catch (e) {
+        await storage.markEventStatus(ev.id, 'skipped');
+        errors++;
+        firstError ??= e.message;
+      }
+    }
+    const pending = (await storage.pendingEvents(1)).length;
+    await storage.db.close();
+    console.log(JSON.stringify({ backend: drainBackend, processed, errors, pending, ...(firstError ? { firstError } : {}) }, null, 2));
     break;
   }
   case 'backfill': {
@@ -278,29 +259,16 @@ switch (cmd) {
     let pluginManifestVersion = null;
     try { pluginManifestVersion = JSON.parse(fs.readFileSync(pluginManifestPath, 'utf8')).version ?? null; } catch { /* ignore */ }
 
-    let daemonState = 'unreachable';
-    let daemonData = null;
-    try {
-      const r = await rpc({ kind: 'status' });
-      daemonState = r.ok ? 'running' : 'error';
-      daemonData = r.ok ? r.data : { error: r.error };
-    } catch (e) {
-      daemonState = 'unreachable';
-      daemonData = { error: e.message };
-    }
-
-    let pid = null;
-    let uptimeSec = null;
+    const { daemon: daemonState, counts: daemonCounts } = await getCountsFromDaemon();
+    let pid = null, uptimeSec = null;
     try {
       pid = parseInt(fs.readFileSync(p.pid, 'utf8').trim(), 10);
       const stat = fs.statSync(p.pid);
       uptimeSec = Math.max(0, Math.round((Date.now() - stat.mtimeMs) / 1000));
       try { process.kill(pid, 0); } catch { pid = null; uptimeSec = null; }
-    } catch { /* no pid file or process gone */ }
+    } catch { /* no pid file */ }
 
-    let glm = false;
-    let ollama = false;
-    let anthropic = false;
+    let glm = false, ollama = false, anthropic = false;
     try {
       ensureBuilt();
       const { GlmClient } = await import(path.join(ROOT, 'dist', 'memory', 'glm-client.js'));
@@ -309,20 +277,20 @@ switch (cmd) {
       glm = GlmClient.available(process.env);
       ollama = await OllamaClient.available().catch(() => false);
       anthropic = AnthropicClient.available(process.env);
-    } catch { /* dist may be missing pre-build */ }
+    } catch { /* dist may be missing */ }
 
-    let dbCounts = null;
-    let dbSizeBytes = null;
-    // Prefer counts from the running daemon (avoids opening DB while it holds the lock).
-    if (daemonState === 'running' && daemonData?.counts) {
-      dbCounts = daemonData.counts;
+    let dbCounts = null, dbSizeBytes = null, storageBackend = null;
+    if (daemonState === 'running' && daemonCounts) {
+      dbCounts = daemonCounts;
       try { dbSizeBytes = fs.statSync(p.db).size; } catch { /* ignore */ }
     } else {
       try {
-        const storage = await openStorage();
-        dbCounts = counts(storage);
+        const { storage, backend } = await openStorage();
+        dbCounts = await getCountsFromStorage(storage);
+        storageBackend = backend;
         try { dbSizeBytes = fs.statSync(p.db).size; } catch { /* ignore */ }
-      } catch { /* db not initialized yet */ }
+        await storage.db.close();
+      } catch { /* db not initialized */ }
     }
 
     let webUrl = null;
@@ -337,7 +305,8 @@ switch (cmd) {
       namespace: NS,
       workspace: { key: key(), cwd: process.cwd(), gitToplevel: gitToplevel(process.cwd()) },
       paths: { base: p.base, socket: p.sock, db: p.db, pid: p.pid, httpPortFile: p.httpPort },
-      daemon: { state: daemonState, pid, uptimeSec, data: daemonData },
+      daemon: { state: daemonState, pid, uptimeSec },
+      storageBackend,
       backends: { glm, ollama, anthropic },
       ...(dbCounts ? { counts: dbCounts } : {}),
       ...(dbSizeBytes !== null ? { dbSizeBytes } : {}),
@@ -347,21 +316,10 @@ switch (cmd) {
     if (wantJson) {
       console.log(JSON.stringify(info, null, 2));
     } else {
-      const fmtUptime = (s) => {
-        if (s == null) return 'n/a';
-        if (s < 60) return `${s}s`;
-        if (s < 3600) return `${Math.floor(s / 60)}m ${s % 60}s`;
-        return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
-      };
-      const fmtBytes = (b) => {
-        if (b == null) return 'n/a';
-        if (b < 1024) return `${b} B`;
-        if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KiB`;
-        if (b < 1024 * 1024 * 1024) return `${(b / 1024 / 1024).toFixed(1)} MiB`;
-        return `${(b / 1024 / 1024 / 1024).toFixed(2)} GiB`;
-      };
+      const fmtUptime = (s) => { if (s == null) return 'n/a'; if (s < 60) return `${s}s`; if (s < 3600) return `${Math.floor(s/60)}m ${s%60}s`; return `${Math.floor(s/3600)}h ${Math.floor((s%3600)/60)}m`; };
+      const fmtBytes = (b) => { if (b == null) return 'n/a'; if (b < 1024) return `${b} B`; if (b < 1024*1024) return `${(b/1024).toFixed(1)} KiB`; if (b < 1024*1024*1024) return `${(b/1024/1024).toFixed(1)} MiB`; return `${(b/1024/1024/1024).toFixed(2)} GiB`; };
       const lines = [];
-      lines.push(`siftcoder v${info.siftcoder.version}` + (info.siftcoder.pluginManifestVersion && info.siftcoder.pluginManifestVersion !== info.siftcoder.version ? ` (plugin manifest: v${info.siftcoder.pluginManifestVersion})` : ''));
+      lines.push(`siftcoder v${info.siftcoder.version}${info.siftcoder.pluginManifestVersion && info.siftcoder.pluginManifestVersion !== info.siftcoder.version ? ` (plugin manifest: v${info.siftcoder.pluginManifestVersion})` : ''}`);
       lines.push('');
       lines.push(`runtime     node ${info.runtime.node} ${info.runtime.platform}/${info.runtime.arch}`);
       lines.push(`install     ${info.install.root}`);
@@ -369,9 +327,10 @@ switch (cmd) {
       lines.push(`workspace   ${info.workspace.key}  cwd=${info.workspace.cwd}`);
       if (info.workspace.gitToplevel) lines.push(`            git=${info.workspace.gitToplevel}`);
       lines.push('');
-      lines.push(`daemon      ${info.daemon.state}` + (info.daemon.pid ? `  pid=${info.daemon.pid}  uptime=${fmtUptime(info.daemon.uptimeSec)}` : ''));
+      lines.push(`daemon      ${info.daemon.state}${info.daemon.pid ? `  pid=${info.daemon.pid}  uptime=${fmtUptime(info.daemon.uptimeSec)}` : ''}`);
       lines.push(`socket      ${info.paths.socket}`);
-      lines.push(`db          ${info.paths.db}` + (info.dbSizeBytes != null ? `  (${fmtBytes(info.dbSizeBytes)})` : ''));
+      lines.push(`db          ${info.paths.db}${info.dbSizeBytes != null ? `  (${fmtBytes(info.dbSizeBytes)})` : ''}`);
+      if (info.storageBackend) lines.push(`storage     ${info.storageBackend}`);
       if (info.webUrl) lines.push(`web         ${info.webUrl}`);
       lines.push('');
       lines.push(`backends    glm=${info.backends.glm ? 'configured' : 'no key'}  ollama=${info.backends.ollama ? 'up' : 'down'}  anthropic=${info.backends.anthropic ? 'configured' : 'no key'}`);
@@ -380,6 +339,47 @@ switch (cmd) {
         lines.push(`counts      events=${c.events}  raw=${c.raw}  summarized=${c.summarized}  skipped=${c.skipped}  summaries=${c.summaries}  embeddings=${c.embeddings}`);
       }
       console.log(lines.join('\n'));
+    }
+    break;
+  }
+  case 'check': {
+    try {
+      const r = await rpc({ kind: 'ping' }, 2000);
+      if (r.ok) { console.log(JSON.stringify({ ok: true, daemon: 'running' }, null, 2)); break; }
+    } catch { /* daemon not reachable */ }
+    // Auto-start daemon
+    const p = paths();
+    fs.mkdirSync(p.run, { recursive: true });
+    fs.mkdirSync(p.workspace, { recursive: true });
+    const child = spawn(process.execPath, [path.join(ROOT, 'dist', 'memory', 'daemon', 'index.js')], { detached: true, stdio: 'ignore', env: { ...process.env, SIFTCODER_NS: NS, SIFTCODER_WORKSPACE_CWD: process.cwd() } });
+    child.unref();
+    fs.writeFileSync(p.pid, String(child.pid));
+    // Wait for socket
+    const deadline = Date.now() + 3000;
+    while (Date.now() < deadline) {
+      if (fs.existsSync(p.sock)) { console.log(JSON.stringify({ ok: true, daemon: 'started', pid: child.pid, socket: p.sock }, null, 2)); break; }
+      await new Promise(r => setTimeout(r, 100));
+    }
+    console.log(JSON.stringify({ ok: false, daemon: 'spawned', pid: child.pid, socket: p.sock, error: 'socket did not appear within 3s' }, null, 2));
+    break;
+  }
+  case 'list': {
+    const limit = parseInt(args[0] || '20', 10);
+    try {
+      const r = await rpc({ kind: 'timeline', nearId: 999999999, window: limit });
+      if (r.ok && r.data?.rows) {
+        const summaries = r.data.rows.map(row => ({
+          id: row.id,
+          ts: new Date(row.ts).toISOString(),
+          model: row.model,
+          text: row.text.slice(0, 120) + (row.text.length > 120 ? '...' : ''),
+        }));
+        console.log(JSON.stringify({ ok: true, summaries }, null, 2));
+      } else {
+        console.log(JSON.stringify({ ok: false, error: r.error ?? 'no data' }, null, 2));
+      }
+    } catch (e) {
+      console.log(JSON.stringify({ ok: false, error: e.message }, null, 2));
     }
     break;
   }
@@ -393,6 +393,8 @@ switch (cmd) {
 Usage:
   siftcoder version             print version only
   siftcoder info [--json]       full runtime details (version, daemon, paths, backends, counts)
+  siftcoder check               verify daemon reachable; auto-start if not
+  siftcoder list [N]            list recent summaries (default 20)
   siftcoder setup               one-time interactive setup
   siftcoder start               spawn daemon (detached)
   siftcoder stop                stop daemon

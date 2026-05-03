@@ -34,10 +34,10 @@ describe('renderWatchSnapshot', () => {
     expect(plain).toContain('no summaries yet');
   });
 
-  it('renders counts and event tail', () => {
-    storage.recordEvent({ ts: 1000, sessionId: 's', tool: 'Read', payload: {} });
-    storage.recordEvent({ ts: 2000, sessionId: 's', tool: 'Edit', payload: {} });
-    storage.markEventStatus(1, 'summarized');
+  it('renders counts and event tail', async () => {
+    await storage.recordEvent({ ts: 1000, sessionId: 's', tool: 'Read', payload: {} });
+    await storage.recordEvent({ ts: 2000, sessionId: 's', tool: 'Edit', payload: {} });
+    await storage.markEventStatus(1, 'summarized');
     const out = renderWatchSnapshot(storage, { limit: 5 });
     const plain = strip(out);
     expect(plain).toContain('events 2');
@@ -46,10 +46,10 @@ describe('renderWatchSnapshot', () => {
     expect(plain).toContain('Edit');
   });
 
-  it('renders summary tail and counts skipped events', () => {
-    const eid = storage.recordEvent({ ts: 1000, sessionId: 's', tool: 'R', payload: {} });
-    storage.markEventStatus(eid, 'skipped');
-    storage.recordSummary({
+  it('renders summary tail and counts skipped events', async () => {
+    const eid = await storage.recordEvent({ ts: 1000, sessionId: 's', tool: 'R', payload: {} });
+    await storage.markEventStatus(eid, 'skipped');
+    await storage.recordSummary({
       eventId: eid, ts: 2000, model: 'haiku', promptHash: 'p',
       text: 'this is a relevant fact', tokensIn: 1, tokensOut: 1, confidence: 0.85,
     });
@@ -60,9 +60,9 @@ describe('renderWatchSnapshot', () => {
     expect(plain).toContain('0.85');
   });
 
-  it('truncates long summary text within the configured width', () => {
-    const eid = storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: {} });
-    storage.recordSummary({
+  it('truncates long summary text within the configured width', async () => {
+    const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: {} });
+    await storage.recordSummary({
       eventId: eid, ts: 0, model: 'm', promptHash: 'p',
       text: 'x'.repeat(500), tokensIn: null, tokensOut: null, confidence: 0,
     });
@@ -74,11 +74,11 @@ describe('renderWatchSnapshot', () => {
     }
   });
 
-  it('renders a non-zero superseded count when supersedes rows exist', () => {
-    const eid = storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: {} });
-    const a = storage.recordSummary({ eventId: eid, ts: 0, model: 'm', promptHash: 'p', text: 'a', tokensIn: null, tokensOut: null, confidence: null });
-    const b = storage.recordSummary({ eventId: eid, ts: 1, model: 'm', promptHash: 'p', text: 'b', tokensIn: null, tokensOut: null, confidence: null });
-    storage.recordSupersedes(b, a, 0.99, 100);
+  it('renders a non-zero superseded count when supersedes rows exist', async () => {
+    const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: {} });
+    const a = await storage.recordSummary({ eventId: eid, ts: 0, model: 'm', promptHash: 'p', text: 'a', tokensIn: null, tokensOut: null, confidence: null });
+    const b = await storage.recordSummary({ eventId: eid, ts: 1, model: 'm', promptHash: 'p', text: 'b', tokensIn: null, tokensOut: null, confidence: null });
+    await storage.recordSupersedes(b, a, 0.99, 100);
     const out = renderWatchSnapshot(storage);
     expect(strip(out)).toContain('superseded 1');
   });

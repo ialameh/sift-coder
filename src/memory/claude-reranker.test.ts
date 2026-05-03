@@ -131,47 +131,48 @@ describe('ClaudeReranker.rerank', () => {
 describe('StorageRerankCache', () => {
   class FakeDB implements DBHandle {
     cache = new Map<string, { text: string; tokens_in: number | null; tokens_out: number | null }>();
-    exec(): void {}
+    exec(): Promise<void> { return Promise.resolve(); }
     loadExtension(): void { throw new Error('no'); }
     prepare(sql: string) {
       const stmt = sql.trim();
       if (stmt.startsWith('SELECT text, tokens_in, tokens_out FROM summary_cache')) {
-        return {
+        return Promise.resolve({
           run: () => ({ lastInsertRowid: 0 }),
-          get: (k: unknown) => this.cache.get(k as string),
-          all: () => [],
-        };
+          get: (k: unknown) => Promise.resolve(this.cache.get(k as string)),
+          all: () => Promise.resolve([]),
+        });
       }
       if (stmt.startsWith('INSERT OR REPLACE INTO summary_cache')) {
-        return {
+        return Promise.resolve({
           run: (k: unknown, t: unknown) => {
             this.cache.set(k as string, { text: t as string, tokens_in: null, tokens_out: null });
             return { lastInsertRowid: 0 };
           },
-          get: () => undefined,
-          all: () => [],
-        };
+          get: () => Promise.resolve(undefined),
+          all: () => Promise.resolve([]),
+        });
       }
-      return { run: () => ({ lastInsertRowid: 0 }), get: () => undefined, all: () => [] };
+      return Promise.resolve({ run: () => ({ lastInsertRowid: 0 }), get: () => Promise.resolve(undefined), all: () => Promise.resolve([]) });
     }
+    close(): Promise<void> { return Promise.resolve(); }
   }
 
   let storage: Storage;
   beforeEach(() => { storage = new Storage(new FakeDB()); });
 
-  it('returns undefined on cache miss', () => {
-    expect(new StorageRerankCache(storage).get('missing')).toBeUndefined();
+  it('returns undefined on cache miss', async () => {
+    expect(await new StorageRerankCache(storage).get('missing')).toBeUndefined();
   });
 
-  it('round-trips an integer score through the storage cache', () => {
+  it('round-trips an integer score through the storage cache', async () => {
     const cache = new StorageRerankCache(storage);
-    cache.set('k1', 7);
-    expect(cache.get('k1')).toBe(7);
+    await cache.set('k1', 7);
+    expect(await cache.get('k1')).toBe(7);
   });
 
-  it('returns undefined when the cached text is not a number', () => {
+  it('returns undefined when the cached text is not a number', async () => {
     const cache = new StorageRerankCache(storage);
-    storage.putCachedSummary('k2', 'not-a-number', null, null, 0);
-    expect(cache.get('k2')).toBeUndefined();
+    await storage.putCachedSummary('k2', 'not-a-number', null, null, 0);
+    expect(await cache.get('k2')).toBeUndefined();
   });
 });

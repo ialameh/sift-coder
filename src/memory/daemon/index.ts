@@ -13,7 +13,8 @@
 /* c8 ignore start */
 import { writeFileSync, unlinkSync, existsSync } from 'node:fs';
 import { workspacePaths, ensureWorkspaceDirs } from '../workspace.js';
-import { Storage, type DBHandle } from '../storage/storage.js';
+import { Storage } from '../storage/storage.js';
+import { openStorage } from '../storage/open.js';
 import { WAL } from './wal.js';
 import { startServer } from './server.js';
 import { Consolidator } from './consolidator.js';
@@ -48,25 +49,9 @@ async function main() {
   }
   writeFileSync(paths.pid, String(process.pid));
 
-  let db: DBHandle & { close(): void };
-  let backend: 'postgres';
-  try {
-    const { PostgresDB } = await import('../storage/pg-db.js');
-    db = await PostgresDB.connect({ database: paths.key });
-    backend = 'postgres';
-  } catch (pgErr) {
-    process.stderr.write(
-      'siftcoder-mem: PostgreSQL backend failed; daemon exiting\n' +
-      `  error: ${(pgErr as Error).message}\n` +
-      '  Ensure POSTGRES_HOST, POSTGRES_USER, POSTGRES_PASSWORD are set.\n'
-    );
-    process.exit(0);
-    return;
-  }
-  const storage = await Storage.create(db, {
-    coreDdl: (await import('../storage/pg-db.js')).PG_CORE_DDL,
-    vecDdl: (await import('../storage/pg-db.js')).PG_VEC_DDL,
-  });
+  // Open storage backend: SQLite by default, PostgreSQL opt-in only
+  const { db, backend } = await openStorage({ dbPath: paths.db });
+  const storage = await Storage.create(db);
 
   const wal = new WAL(paths.wal);
   wal.open();

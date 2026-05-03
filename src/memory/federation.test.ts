@@ -8,14 +8,14 @@ import { listConsentedWorkspaces, federatedSearch } from './federation.js';
 
 let home: string;
 
-function mkWs(key: string, withConsent: boolean): string {
+async function mkWs(key: string, withConsent: boolean): Promise<string> {
   const wsRoot = join(home, '.siftcoder', 'workspaces', key);
   mkdirSync(wsRoot, { recursive: true });
   const dbPath = join(wsRoot, 'db.sqlite');
   const db = new Database(dbPath);
   const storage = new Storage(db);
-  const eid = storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: {} });
-  storage.recordSummary({
+  const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: {} });
+  await storage.recordSummary({
     eventId: eid, ts: 0, model: 'm', promptHash: 'p',
     text: `summary in workspace ${key}`,
     tokensIn: null, tokensOut: null, confidence: null,
@@ -31,9 +31,9 @@ beforeEach(() => { home = mkdtempSync(join(tmpdir(), 'fed-')); });
 afterEach(() => { rmSync(home, { recursive: true, force: true }); });
 
 describe('listConsentedWorkspaces', () => {
-  it('returns workspaces with a federate.consent flag', () => {
-    mkWs('aaa1', true);
-    mkWs('bbb2', false);
+  it('returns workspaces with a federate.consent flag', async () => {
+    await mkWs('aaa1', true);
+    await mkWs('bbb2', false);
     const out = listConsentedWorkspaces(home);
     expect(out.map(w => w.key)).toEqual(['aaa1']);
   });
@@ -57,37 +57,37 @@ describe('listConsentedWorkspaces', () => {
 
 describe('federatedSearch', () => {
   it('searches across all consented workspaces and merges results', async () => {
-    mkWs('aaa1', true);
-    mkWs('bbb2', true);
+    await mkWs('aaa1', true);
+    await mkWs('bbb2', true);
     const hits = await federatedSearch('summary', null, factory, { home, decayTauMs: 1e15, k: 5 });
     expect(hits.length).toBe(2);
     expect(new Set(hits.map(h => h.workspace))).toEqual(new Set(['aaa1', 'bbb2']));
   });
 
   it('omits non-consented workspaces from results', async () => {
-    mkWs('opt-in', true);
-    mkWs('opt-out', false);
+    await mkWs('opt-in', true);
+    await mkWs('opt-out', false);
     const hits = await federatedSearch('summary', null, factory, { home, decayTauMs: 1e15 });
     expect(hits.every(h => h.workspace === 'opt-in')).toBe(true);
   });
 
   it('respects workspacePrefix filtering', async () => {
-    mkWs('aaa1', true);
-    mkWs('bbb2', true);
+    await mkWs('aaa1', true);
+    await mkWs('bbb2', true);
     const hits = await federatedSearch('summary', null, factory, { home, workspacePrefix: 'aaa', decayTauMs: 1e15 });
     expect(hits.every(h => h.workspace.startsWith('aaa'))).toBe(true);
   });
 
   it('respects maxWorkspaces', async () => {
-    mkWs('w1', true);
-    mkWs('w2', true);
-    mkWs('w3', true);
+    await mkWs('w1', true);
+    await mkWs('w2', true);
+    await mkWs('w3', true);
     const hits = await federatedSearch('summary', null, factory, { home, maxWorkspaces: 1, decayTauMs: 1e15 });
     expect(new Set(hits.map(h => h.workspace)).size).toBe(1);
   });
 
   it('skips workspaces whose DB cannot be opened', async () => {
-    mkWs('ok', true);
+    await mkWs('ok', true);
     const wsRoot = join(home, '.siftcoder', 'workspaces', 'broken');
     mkdirSync(wsRoot, { recursive: true });
     writeFileSync(join(wsRoot, 'db.sqlite'), 'not a real database');
@@ -97,13 +97,13 @@ describe('federatedSearch', () => {
   });
 
   it('honors the global k limit after merging', async () => {
-    for (let i = 0; i < 4; i++) mkWs(`w${i}`, true);
+    for (let i = 0; i < 4; i++) await mkWs(`w${i}`, true);
     const hits = await federatedSearch('summary', null, factory, { home, k: 2, decayTauMs: 1e15 });
     expect(hits).toHaveLength(2);
   });
 
   it('returns empty array when no workspaces are consented', async () => {
-    mkWs('not-yet', false);
+    await mkWs('not-yet', false);
     const hits = await federatedSearch('summary', null, factory, { home });
     expect(hits).toEqual([]);
   });

@@ -45,45 +45,45 @@ describe('wasm-db wrap()', () => {
     expect(inner.closed).toBe(true);
   });
 
-  it('passes spread args as an array to underlying statement.run', () => {
+  it('passes spread args as an array to underlying statement.run', async () => {
     const inner = new FakeWasmDB();
-    const stmt = wrap(inner).prepare('INSERT INTO t (a, b) VALUES (?, ?)');
-    const r = stmt.run(1, 'two');
+    const stmt = await wrap(inner).prepare('INSERT INTO t (a, b) VALUES (?, ?)');
+    const r = await stmt.run(1, 'two');
     expect(inner.recordedRun[0]?.args).toEqual([1, 'two']);
     expect(r.lastInsertRowid).toBe(7);
   });
 
-  it('passes empty args as undefined when run is called with none', () => {
+  it('passes empty args as undefined when run is called with none', async () => {
     const inner = new FakeWasmDB();
-    wrap(inner).prepare('UPDATE t SET a = a + 1').run();
+    await (await wrap(inner).prepare('UPDATE t SET a = a + 1')).run();
     expect(inner.recordedRun[0]?.args).toBeUndefined();
   });
 
-  it('passes spread args as an array to underlying statement.get', () => {
+  it('passes spread args as an array to underlying statement.get', async () => {
     const inner = new FakeWasmDB();
-    const stmt = wrap(inner).prepare('SELECT * FROM t WHERE a = ?');
-    const row = stmt.get(42);
+    const stmt = await wrap(inner).prepare('SELECT * FROM t WHERE a = ?');
+    const row = await stmt.get(42);
     expect(inner.recordedGet[0]?.args).toEqual([42]);
     expect(row).toMatchObject({ ok: true });
   });
 
-  it('passes empty args as undefined when get is called with none', () => {
+  it('passes empty args as undefined when get is called with none', async () => {
     const inner = new FakeWasmDB();
-    wrap(inner).prepare('SELECT count(*) FROM t').get();
+    await (await wrap(inner).prepare('SELECT count(*) FROM t')).get();
     expect(inner.recordedGet[0]?.args).toBeUndefined();
   });
 
-  it('passes spread args as an array to underlying statement.all', () => {
+  it('passes spread args as an array to underlying statement.all', async () => {
     const inner = new FakeWasmDB();
-    const stmt = wrap(inner).prepare('SELECT * FROM t WHERE a = ?');
-    const rows = stmt.all(99);
+    const stmt = await wrap(inner).prepare('SELECT * FROM t WHERE a = ?');
+    const rows = await stmt.all(99);
     expect(inner.recordedAll[0]?.args).toEqual([99]);
     expect(rows).toEqual([{ ok: true }]);
   });
 
-  it('passes empty args as undefined when all is called with none', () => {
+  it('passes empty args as undefined when all is called with none', async () => {
     const inner = new FakeWasmDB();
-    wrap(inner).prepare('SELECT * FROM t').all();
+    await (await wrap(inner).prepare('SELECT * FROM t')).all();
     expect(inner.recordedAll[0]?.args).toBeUndefined();
   });
 });
@@ -96,15 +96,15 @@ describe('wasm-db live integration', () => {
     const db = await openWasmDatabase(':memory:');
     const storage = new Storage(db);
     expect(storage.vecEnabled).toBe(false);
-    storage.ensureSession('s', '/cwd', 1);
-    const eid = storage.recordEvent({ ts: 1, sessionId: 's', tool: 'Read', payload: { x: 1 } });
+    await storage.ensureSession('s', '/cwd', 1);
+    const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'Read', payload: { x: 1 } });
     expect(eid).toBeGreaterThan(0);
-    const sid = storage.recordSummary({
+    const sid = await storage.recordSummary({
       eventId: eid, ts: 2, model: 'm', promptHash: 'p',
       text: 'hello world', tokensIn: 1, tokensOut: 1, confidence: 0.9,
     });
     expect(sid).toBeGreaterThan(0);
-    const hits = storage.searchFts('hello', 5);
+    const hits = await storage.searchFts('hello', 5);
     expect(hits.length).toBeGreaterThan(0);
     db.close();
   });

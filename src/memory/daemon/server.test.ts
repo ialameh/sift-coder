@@ -17,106 +17,107 @@ class FakeDB implements DBHandle {
   private nextEventId = 1;
   private nextSummaryId = 1;
 
-  exec(): void { /* noop */ }
+  exec(): Promise<void> { return Promise.resolve(); }
   loadExtension(): void { throw new Error('no'); }
   prepare(sql: string) {
     const stmt = sql.trim();
     if (stmt.startsWith('INSERT OR IGNORE INTO sessions')) {
-      return {
+      return Promise.resolve({
         run: (id: unknown, ts: unknown, cwd: unknown) => {
           if (!this.sessions.find(s => s['id'] === id)) this.sessions.push({ id, started_at: ts, cwd });
           return { lastInsertRowid: 0 };
         },
-        get: () => undefined, all: () => [],
-      };
+        get: () => Promise.resolve(undefined), all: () => Promise.resolve([]),
+      });
     }
     if (stmt.startsWith('INSERT INTO events')) {
-      return {
+      return Promise.resolve({
         run: (ts: unknown, sid: unknown, tool: unknown, hash: unknown, payload: unknown) => {
           const id = this.nextEventId++;
           this.events.push({ id, ts, session_id: sid, tool, input_hash: hash, payload_json: payload, status: 'raw' });
           return { lastInsertRowid: id };
         },
-        get: () => undefined, all: () => [],
-      };
+        get: () => Promise.resolve(undefined), all: () => Promise.resolve([]),
+      });
     }
     if (stmt.includes('summaries_fts MATCH')) {
-      return {
+      return Promise.resolve({
         run: () => ({ lastInsertRowid: 0 }),
-        get: () => undefined,
-        all: (q: unknown, k: unknown) => this.ftsRows
+        get: () => Promise.resolve(undefined),
+        all: (q: unknown, k: unknown) => Promise.resolve(this.ftsRows
           .filter(r => r.text.toLowerCase().includes(String(q).toLowerCase()))
           .slice(0, k as number)
-          .map(r => ({ id: r.id, event_id: r.event_id, text: r.text, ts: r.ts, score: -1 })),
-      };
+          .map(r => ({ id: r.id, event_id: r.event_id, text: r.text, ts: r.ts, score: -1 }))),
+      });
     }
-    if (stmt.includes('FROM summaries\n         WHERE id BETWEEN')) {
-      return {
+    if (stmt.includes('FROM summaries') && stmt.includes('WHERE id BETWEEN')) {
+      return Promise.resolve({
         run: () => ({ lastInsertRowid: 0 }),
-        get: () => undefined,
-        all: (lo: unknown, hi: unknown) => this.summaries.filter(s =>
-          (s['id'] as number) >= (lo as number) && (s['id'] as number) <= (hi as number)),
-      };
+        get: () => Promise.resolve(undefined),
+        all: (lo: unknown, hi: unknown) => Promise.resolve(this.summaries.filter(s =>
+          (s['id'] as number) >= (lo as number) && (s['id'] as number) <= (hi as number))),
+      });
     }
     if (stmt.includes('FROM summaries WHERE id IN')) {
-      return {
+      return Promise.resolve({
         run: () => ({ lastInsertRowid: 0 }),
-        get: () => undefined,
-        all: (...ids: unknown[]) => this.summaries.filter(s => ids.includes(s['id'])),
-      };
+        get: () => Promise.resolve(undefined),
+        all: (...ids: unknown[]) => Promise.resolve(this.summaries.filter(s => ids.includes(s['id']))),
+      });
     }
     if (stmt.startsWith('INSERT INTO summaries')) {
-      return {
+      return Promise.resolve({
         run: (eid: unknown, ts: unknown, model: unknown, ph: unknown, text: unknown) => {
           const id = this.nextSummaryId++;
           this.summaries.push({ id, event_id: eid, ts, model, prompt_hash: ph, text });
           this.ftsRows.push({ id, text: text as string, ts: ts as number, event_id: eid as number });
           return { lastInsertRowid: id };
         },
-        get: () => undefined, all: () => [],
-      };
+        get: () => Promise.resolve(undefined), all: () => Promise.resolve([]),
+      });
     }
     if (stmt.includes("WHERE status = 'raw'")) {
-      return {
+      return Promise.resolve({
         run: () => ({ lastInsertRowid: 0 }),
-        get: () => undefined,
-        all: (limit: unknown) => this.events.filter(e => e['status'] === 'raw').slice(0, limit as number),
-      };
+        get: () => Promise.resolve(undefined),
+        all: (limit: unknown) => Promise.resolve(this.events.filter(e => e['status'] === 'raw').slice(0, limit as number)),
+      });
     }
     if (stmt.startsWith('UPDATE events SET status')) {
-      return {
+      return Promise.resolve({
         run: (status: unknown, id: unknown) => {
           const e = this.events.find(x => x['id'] === id);
           if (e) e['status'] = status;
           return { lastInsertRowid: 0 };
         },
-        get: () => undefined, all: () => [],
-      };
+        get: () => Promise.resolve(undefined), all: () => Promise.resolve([]),
+      });
     }
     if (stmt.startsWith('SELECT text, tokens_in, tokens_out FROM summary_cache')) {
-      return {
+      return Promise.resolve({
         run: () => ({ lastInsertRowid: 0 }),
-        get: (k: unknown) => this.cache.get(k as string),
-        all: () => [],
-      };
+        get: (k: unknown) => Promise.resolve(this.cache.get(k as string)),
+        all: () => Promise.resolve([]),
+      });
     }
     if (stmt.startsWith('INSERT OR REPLACE INTO summary_cache')) {
-      return {
+      return Promise.resolve({
         run: (k: unknown, t: unknown, ti: unknown, to: unknown) => {
           this.cache.set(k as string, { text: t as string, tokens_in: ti as number | null, tokens_out: to as number | null });
           return { lastInsertRowid: 0 };
         },
-        get: () => undefined, all: () => [],
-      };
+        get: () => Promise.resolve(undefined), all: () => Promise.resolve([]),
+      });
     }
     if (stmt.startsWith('INSERT OR REPLACE INTO summary_embeddings')) {
-      return {
+      return Promise.resolve({
         run: () => ({ lastInsertRowid: 0 }),
-        get: () => undefined, all: () => [],
-      };
+        get: () => Promise.resolve(undefined), all: () => Promise.resolve([]),
+      });
     }
-    return { run: () => ({ lastInsertRowid: 0 }), get: () => undefined, all: () => [] };
+    return Promise.resolve({ run: () => ({ lastInsertRowid: 0 }), get: () => Promise.resolve(undefined), all: () => Promise.resolve([]) });
   }
+  close(): Promise<void> { return Promise.resolve(); }
 }
 
 class FakeSummarizer implements ModelClient {

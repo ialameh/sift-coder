@@ -180,58 +180,58 @@ describe('hotspotBoostFn', () => {
   }
 
   it('returns boost based on the source event file_path', async () => {
-    const eid = storage.recordEvent({ ts: 1, sessionId: 's', tool: 'Edit', payload: { tool_input: { file_path: '/hot.ts' } } });
+    const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'Edit', payload: { tool_input: { file_path: '/hot.ts' } } });
     const svc = new HotspotService({
       baseUrl: 'http://x',
       fetchImpl: fetchOk({ hotspots: [{ path: '/hot.ts', temperature: 100 }] }),
     });
     await svc.refresh();
     const fn = hotspotBoostFn(storage, svc);
-    expect(fn(hit(eid))).toBeGreaterThan(1);
+    expect(await fn(hit(eid))).toBeGreaterThan(1);
   });
 
-  it('returns 1 when the event is missing', () => {
+  it('returns 1 when the event is missing', async () => {
     const svc = new HotspotService({ baseUrl: 'http://x', fetchImpl: fetchOk({ hotspots: [] }) });
-    expect(hotspotBoostFn(storage, svc)(hit(999))).toBe(1);
+    expect(await hotspotBoostFn(storage, svc)(hit(999))).toBe(1);
   });
 
-  it('returns 1 when the event payload is invalid JSON', () => {
-    const eid = storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: { tool_input: { file_path: '/x' } } });
+  it('returns 1 when the event payload is invalid JSON', async () => {
+    const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: { tool_input: { file_path: '/x' } } });
     db.prepare('UPDATE events SET payload_json = ? WHERE id = ?').run('not-json', eid);
     const svc = new HotspotService({ baseUrl: 'http://x', fetchImpl: fetchOk({ hotspots: [] }) });
-    expect(hotspotBoostFn(storage, svc)(hit(eid))).toBe(1);
+    expect(await hotspotBoostFn(storage, svc)(hit(eid))).toBe(1);
   });
 
-  it('returns 1 when payload is not an object', () => {
-    const eid = storage.recordEvent({ ts: 1, sessionId: 's', tool: 'Bash', payload: 'plain' });
+  it('returns 1 when payload is not an object', async () => {
+    const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'Bash', payload: 'plain' });
     const svc = new HotspotService({ baseUrl: 'http://x', fetchImpl: fetchOk({ hotspots: [] }) });
-    expect(hotspotBoostFn(storage, svc)(hit(eid))).toBe(1);
+    expect(await hotspotBoostFn(storage, svc)(hit(eid))).toBe(1);
   });
 
-  it('returns 1 when tool_input is missing or not an object', () => {
-    const eid1 = storage.recordEvent({ ts: 1, sessionId: 's', tool: 'Bash', payload: { foo: 'bar' } });
-    const eid2 = storage.recordEvent({ ts: 1, sessionId: 's', tool: 'Bash', payload: { tool_input: 'string' } });
+  it('returns 1 when tool_input is missing or not an object', async () => {
+    const eid1 = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'Bash', payload: { foo: 'bar' } });
+    const eid2 = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'Bash', payload: { tool_input: 'string' } });
     const svc = new HotspotService({ baseUrl: 'http://x', fetchImpl: fetchOk({ hotspots: [] }) });
-    expect(hotspotBoostFn(storage, svc)(hit(eid1))).toBe(1);
-    expect(hotspotBoostFn(storage, svc)(hit(eid2))).toBe(1);
+    expect(await hotspotBoostFn(storage, svc)(hit(eid1))).toBe(1);
+    expect(await hotspotBoostFn(storage, svc)(hit(eid2))).toBe(1);
   });
 
   it('reads file_path from path or notebook_path fallbacks', async () => {
-    const eid1 = storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: { tool_input: { path: '/hot.ts' } } });
-    const eid2 = storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: { tool_input: { notebook_path: '/hot.ts' } } });
+    const eid1 = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: { tool_input: { path: '/hot.ts' } } });
+    const eid2 = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: { tool_input: { notebook_path: '/hot.ts' } } });
     const svc = new HotspotService({
       baseUrl: 'http://x',
       fetchImpl: fetchOk({ hotspots: [{ path: '/hot.ts', temperature: 100 }] }),
     });
     await svc.refresh();
     const fn = hotspotBoostFn(storage, svc);
-    expect(fn(hit(eid1))).toBeGreaterThan(1);
-    expect(fn(hit(eid2))).toBeGreaterThan(1);
+    expect(await fn(hit(eid1))).toBeGreaterThan(1);
+    expect(await fn(hit(eid2))).toBeGreaterThan(1);
   });
 
-  it('returns 1 when no path field is present in tool_input', () => {
-    const eid = storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: { tool_input: { command: 'ls' } } });
+  it('returns 1 when no path field is present in tool_input', async () => {
+    const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: { tool_input: { command: 'ls' } } });
     const svc = new HotspotService({ baseUrl: 'http://x', fetchImpl: fetchOk({ hotspots: [] }) });
-    expect(hotspotBoostFn(storage, svc)(hit(eid))).toBe(1);
+    expect(await hotspotBoostFn(storage, svc)(hit(eid))).toBe(1);
   });
 });

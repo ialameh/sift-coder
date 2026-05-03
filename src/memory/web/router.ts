@@ -53,7 +53,7 @@ export interface WebDeps {
   rpc?: (req: Request) => Promise<Response>;
   /** Static asset reader; receives a logical path like 'index.html' and returns body or null. */
   staticAsset?: (name: string) => { body: Buffer; type: string } | null;
-  backend: 'native' | 'wasm' | 'postgres';
+  backend: 'native' | 'wasm' | 'postgres' | 'sqlite-native' | 'sqlite-wasm';
   workspaceKey: string;
 }
 
@@ -166,7 +166,7 @@ export async function route(req: WebRequest, deps: WebDeps): Promise<WebResponse
   }
 
   if (req.method === 'GET' && req.path === '/api/savings') {
-    return json(200, { ok: true, data: computeSavings(deps.storage) });
+    return json(200, { ok: true, data: await computeSavings(deps.storage) });
   }
 
   if (req.method === 'GET' && req.path === '/api/events') {
