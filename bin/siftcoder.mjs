@@ -368,7 +368,7 @@ switch (cmd) {
     while (Date.now() < deadline) {
       if (fs.existsSync(p.sock)) {
         console.log(JSON.stringify({ ok: true, daemon: 'started', pid: child.pid, socket: p.sock }, null, 2));
-        return;
+        break;
       }
       await new Promise(r => setTimeout(r, 100));
     }
