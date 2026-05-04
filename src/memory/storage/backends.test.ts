@@ -47,7 +47,7 @@ describe.each(BACKENDS)('storage backend parity ($name)', backend => {
     // Without this, the wasm backend leaves a -journal fd open on Windows after
     // db.close(), which blocks rmdir (ENOTEMPTY).
     db.exec('PRAGMA journal_mode=memory');
-    storage = new Storage(db);
+    storage = await Storage.init(db);
   });
 
   afterEach(() => {
@@ -138,7 +138,7 @@ describe.each(BACKENDS)('storage backend parity ($name)', backend => {
       eventId: eid, ts: 1, model: 'm', promptHash: 'p', text: 'a',
       tokensIn: null, tokensOut: null, confidence: null,
     });
-    new Storage(db);
+    await Storage.init(db);
     const after = await storage.getSummariesByIds([sid]);
     expect(after).toHaveLength(1);
   });

@@ -15,7 +15,8 @@ import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { hybridSearch, type HybridHit, type HybridOptions } from './retrieval.js';
-import { Storage, type DBHandle } from './storage/storage.js';
+import { Storage } from './storage/storage.js';
+import { openStorage } from './storage/open.js';
 import type { Embedder } from './embedder.js';
 
 export interface FederatedHit extends HybridHit {
@@ -51,14 +52,9 @@ export function listConsentedWorkspaces(home: string = homedir()): WorkspaceEntr
   return out;
 }
 
-export interface DatabaseFactory {
-  (path: string): DBHandle & { close?(): void };
-}
-
 export async function federatedSearch(
   query: string,
   embedder: Embedder | null,
-  factory: DatabaseFactory,
   opts: FederationOptions = {}
 ): Promise<FederatedHit[]> {
   /* c8 ignore next -- homedir() default exercised in real runs; tests always pass an explicit home */
@@ -75,16 +71,16 @@ export async function federatedSearch(
   const k = opts.k ?? 5;
   const results: FederatedHit[] = [];
   for (const ws of workspaces) {
-    let db: ReturnType<DatabaseFactory> | null = null;
+    let storage: Storage | null = null;
     try {
-      db = factory(ws.db);
-      const storage = new Storage(db);
+      const { db } = await openStorage({ dbPath: ws.db });
+      storage = await Storage.init(db);
       const hits = await hybridSearch(storage, embedder, query, Date.now(), { ...opts, k: k * 2 });
       for (const h of hits) results.push({ ...h, workspace: ws.key });
     } catch {
       /* skip unreadable workspace */
     } finally {
-      try { db?.close?.(); } catch { /* ignore */ }
+      try { await storage?.close(); } catch { /* ignore */ }
     }
   }
 

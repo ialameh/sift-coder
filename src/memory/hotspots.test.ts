@@ -15,10 +15,10 @@ function fetchOk(body: unknown): FetchLike {
 let dir: string;
 let db: Database.Database;
 let storage: Storage;
-beforeEach(() => {
+beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'hot-'));
   db = new Database(join(dir, 'd.sqlite'));
-  storage = new Storage(db);
+  storage = await Storage.init(db);
 });
 afterEach(() => {
   db.close();

@@ -22,10 +22,10 @@ async function seed(text: string): Promise<number> {
   return sid;
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'mine-'));
   db = new Database(join(dir, 'd.sqlite'));
-  storage = new Storage(db);
+  storage = await Storage.init(db);
 });
 
 afterEach(() => {

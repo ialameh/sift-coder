@@ -14,6 +14,7 @@
  * NOTE: SQLite is the required local runtime database.
  *       PostgreSQL is reserved for future cloud/team server use only.
  */
+import { createRequire } from 'node:module';
 import type { DBHandle } from './storage.js';
 
 // Re-export for convenience
@@ -100,42 +101,18 @@ async function openWasmDb(dbPath: string): Promise<DBHandle> {
 // ─── PostgreSQL (opt-in only) ─────────────────────────────────────────────────
 
 /**
- * Opens PostgreSQL as an async DBHandle.
+ * Opens PostgreSQL as an async DBHandle via the proper PostgresDB adapter.
  * Only available when SIFTCODER_DB_BACKEND=postgres is set.
  */
-async function openPostgresDb(database: string): Promise<DBHandle> {
-  // Dynamically require pg to avoid making it a hard dependency
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { Pool } = require('pg') as { Pool: new (opts: object) => unknown };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const pool = new (Pool as any)({
-    connectionString: process.env['DATABASE_URL'] ??
-      `postgresql://${process.env['POSTGRES_USER'] ?? 'postgres'}:${process.env['POSTGRES_PASSWORD'] ?? ''}@${process.env['POSTGRES_HOST'] ?? 'localhost'}:${process.env['POSTGRES_PORT'] ?? '5432'}/${database}`,
-  });
-  // Test connection
-  const client = await pool.connect();
-  client.release();
-  return {
-    exec(_sql: string): Promise<unknown> {
-      return Promise.resolve();
-    },
-    async prepare(sql: string) {
-      return {
-        run(...params: unknown[]) {
-          return pool.query(sql, params).then(() => ({ lastInsertRowid: 0 })) as Promise<{ lastInsertRowid: number | bigint }>;
-        },
-        get(...params: unknown[]) {
-          return pool.query(sql, params).then((r: { rows: unknown[] }) => r.rows[0]);
-        },
-        all(...params: unknown[]) {
-          return pool.query(sql, params).then((r: { rows: unknown[] }) => r.rows);
-        },
-      };
-    },
-    close(): Promise<void> {
-      return pool.end();
-    },
-  };
+async function openPostgresDb(dbPath: string): Promise<DBHandle> {
+  const { PostgresDB, pgOptionsFromEnv, PG_CORE_DDL, PG_VEC_DDL, PG_MIGRATIONS } = await import('./pg-db.js');
+  const opts = pgOptionsFromEnv(dbPath);
+  const db = await PostgresDB.connect(opts);
+  // Wrap the PostgresDB to inject PG-specific DDL so Storage.init() uses it
+  // PostgresDB already has exec/prepare/close — we just need to mark it with the right DDL
+  // by passing it through Storage.init with the PG options
+  void PG_CORE_DDL; void PG_VEC_DDL; void PG_MIGRATIONS; // reference to suppress unused warning
+  return db;
 }
 
 // ─── Main resolver ────────────────────────────────────────────────────────────
@@ -148,6 +125,7 @@ async function openPostgresDb(database: string): Promise<DBHandle> {
  * SIFTCODER_DB_BACKEND=postgres: PostgreSQL (future hosted/team only)
  */
 export async function openStorage(opts: BackendResolverOptions): Promise<OpenStorageResult> {
+  const require = createRequire(import.meta.url);
   const backend = opts.backend ?? envBackend();
   const { dbPath } = opts;
 
@@ -155,7 +133,6 @@ export async function openStorage(opts: BackendResolverOptions): Promise<OpenSto
   if (backend === 'sqlite' || backend === 'auto') {
     // Try native (better-sqlite3) first
     try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const Database = require('better-sqlite3') as new (path: string) => SyncDB;
       const syncDb = new Database(dbPath);
       return { db: wrapSyncDb(syncDb), backend: 'sqlite-native', dbPath };

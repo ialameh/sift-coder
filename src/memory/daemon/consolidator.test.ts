@@ -48,9 +48,9 @@ async function addSummary(id: number, ts: number, text: string) {
   db.embeddings.set(id, { dim: v.length, vec: Buffer.from(v.buffer, v.byteOffset, v.byteLength), ts });
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   db = new FakeDB();
-  storage = new Storage(db);
+  storage = await Storage.init(db);
 });
 
 describe('Consolidator', () => {

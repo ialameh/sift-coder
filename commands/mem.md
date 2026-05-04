@@ -23,7 +23,6 @@ Single entry point for memory daemon operations.
 | `backfill [source]` | Backfill from past Claude Code transcripts |
 | `web` | Print web UI URL for browser inspection |
 | `list` | List recent summaries |
-| `prune --confirm` | Run memory-curator agent and prune flagged rows |
 
 ## Examples
 
@@ -43,5 +42,3 @@ Run the bundled CLI:
 ```bash
 node ${CLAUDE_PLUGIN_ROOT}/bin/siftcoder.mjs $ARGUMENTS
 ```
-
-For `prune`, dispatch to the `memory-curator` agent first, surface its report, and execute only on `--confirm`.

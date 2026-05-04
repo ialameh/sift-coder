@@ -204,9 +204,9 @@ class FakeDB implements DBHandle {
 
 let db: FakeDB;
 let storage: Storage;
-beforeEach(() => {
+beforeEach(async () => {
   db = new FakeDB();
-  storage = new Storage(db);
+  storage = await Storage.init(db);
 });
 
 describe('Storage construction', () => {
@@ -215,17 +215,17 @@ describe('Storage construction', () => {
     expect(storage.vecEnabled).toBe(false);
   });
 
-  it('loads vec extension when path provided and load succeeds', () => {
+  it('loads vec extension when path provided and load succeeds', async () => {
     const fresh = new FakeDB();
-    const s = new Storage(fresh, { vecExtensionPath: '/some/path.so' });
+    const s = await Storage.init(fresh, { vecExtensionPath: '/some/path.so' });
     expect(s.vecEnabled).toBe(true);
     expect(fresh.extensionLoaded).toBe(true);
   });
 
-  it('disables vec when load throws', () => {
+  it('disables vec when load throws', async () => {
     const fresh = new FakeDB();
     fresh.failExtension = true;
-    const s = new Storage(fresh, { vecExtensionPath: '/missing.so' });
+    const s = await Storage.init(fresh, { vecExtensionPath: '/missing.so' });
     expect(s.vecEnabled).toBe(false);
   });
 });

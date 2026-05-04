@@ -51,7 +51,7 @@ async function main() {
 
   // Open storage backend: SQLite by default, PostgreSQL opt-in only
   const { db, backend } = await openStorage({ dbPath: paths.db });
-  const storage = await Storage.create(db);
+  const storage = await Storage.init(db);
 
   const wal = new WAL(paths.wal);
   wal.open();

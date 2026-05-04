@@ -158,7 +158,7 @@ describe('StorageRerankCache', () => {
   }
 
   let storage: Storage;
-  beforeEach(() => { storage = new Storage(new FakeDB()); });
+  beforeEach(async () => { storage = await Storage.init(new FakeDB()); });
 
   it('returns undefined on cache miss', async () => {
     expect(await new StorageRerankCache(storage).get('missing')).toBeUndefined();

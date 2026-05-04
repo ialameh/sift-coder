@@ -106,7 +106,7 @@ function ensureBuilt() {
 
 /**
  * Open storage using the backend resolver.
- * Returns { storage, backend, dbPath } where storage is an async Storage instance.
+ * Returns { storage, backend, dbPath } where storage is an ready Storage instance.
  */
 async function openStorage() {
   ensureBuilt();
@@ -115,7 +115,7 @@ async function openStorage() {
   const { openStorage: resolve } = await import(path.join(ROOT, 'dist', 'memory', 'storage', 'open.js'));
   const { Storage } = await import(path.join(ROOT, 'dist', 'memory', 'storage', 'storage.js'));
   const { db, backend, dbPath } = await resolve({ dbPath: p.db });
-  const storage = await Storage.create(db);
+  const storage = await Storage.init(db);
   return { storage, backend, dbPath };
 }
 
@@ -171,7 +171,7 @@ switch (cmd) {
       try {
         const { storage, backend } = await openStorage();
         const c = await getCountsFromStorage(storage);
-        await storage.db.close();
+        await storage.close();
         console.log(JSON.stringify({ daemon, namespace: NS, workspace: key(), socket: paths().sock, backend, counts: c }, null, 2));
         break;
       } catch { /* db not initialized */ }
@@ -233,7 +233,7 @@ switch (cmd) {
       }
     }
     const pending = (await storage.pendingEvents(1)).length;
-    await storage.db.close();
+    await storage.close();
     console.log(JSON.stringify({ backend: drainBackend, processed, errors, pending, ...(firstError ? { firstError } : {}) }, null, 2));
     break;
   }
@@ -260,13 +260,21 @@ switch (cmd) {
     try { pluginManifestVersion = JSON.parse(fs.readFileSync(pluginManifestPath, 'utf8')).version ?? null; } catch { /* ignore */ }
 
     const { daemon: daemonState, counts: daemonCounts } = await getCountsFromDaemon();
-    let pid = null, uptimeSec = null;
+    let pid = null, uptimeSec = null, daemonBackend = null;
     try {
       pid = parseInt(fs.readFileSync(p.pid, 'utf8').trim(), 10);
       const stat = fs.statSync(p.pid);
       uptimeSec = Math.max(0, Math.round((Date.now() - stat.mtimeMs) / 1000));
       try { process.kill(pid, 0); } catch { pid = null; uptimeSec = null; }
     } catch { /* no pid file */ }
+
+    // Query daemon for backend when running
+    if (daemonState === 'running') {
+      try {
+        const r = await rpc({ kind: 'status' }, 2000);
+        if (r.ok && r.data?.backend) daemonBackend = r.data.backend;
+      } catch { /* ignore */ }
+    }
 
     let glm = false, ollama = false, anthropic = false;
     try {
@@ -282,6 +290,7 @@ switch (cmd) {
     let dbCounts = null, dbSizeBytes = null, storageBackend = null;
     if (daemonState === 'running' && daemonCounts) {
       dbCounts = daemonCounts;
+      storageBackend = daemonBackend;
       try { dbSizeBytes = fs.statSync(p.db).size; } catch { /* ignore */ }
     } else {
       try {
@@ -289,7 +298,7 @@ switch (cmd) {
         dbCounts = await getCountsFromStorage(storage);
         storageBackend = backend;
         try { dbSizeBytes = fs.statSync(p.db).size; } catch { /* ignore */ }
-        await storage.db.close();
+        await storage.close();
       } catch { /* db not initialized */ }
     }
 
@@ -357,7 +366,10 @@ switch (cmd) {
     // Wait for socket
     const deadline = Date.now() + 3000;
     while (Date.now() < deadline) {
-      if (fs.existsSync(p.sock)) { console.log(JSON.stringify({ ok: true, daemon: 'started', pid: child.pid, socket: p.sock }, null, 2)); break; }
+      if (fs.existsSync(p.sock)) {
+        console.log(JSON.stringify({ ok: true, daemon: 'started', pid: child.pid, socket: p.sock }, null, 2));
+        return;
+      }
       await new Promise(r => setTimeout(r, 100));
     }
     console.log(JSON.stringify({ ok: false, daemon: 'spawned', pid: child.pid, socket: p.sock, error: 'socket did not appear within 3s' }, null, 2));
@@ -365,19 +377,27 @@ switch (cmd) {
   }
   case 'list': {
     const limit = parseInt(args[0] || '20', 10);
+    // Try daemon first; if unreachable, fall back to local direct query
     try {
-      const r = await rpc({ kind: 'timeline', nearId: 999999999, window: limit });
-      if (r.ok && r.data?.rows) {
-        const summaries = r.data.rows.map(row => ({
-          id: row.id,
-          ts: new Date(row.ts).toISOString(),
-          model: row.model,
-          text: row.text.slice(0, 120) + (row.text.length > 120 ? '...' : ''),
-        }));
-        console.log(JSON.stringify({ ok: true, summaries }, null, 2));
-      } else {
-        console.log(JSON.stringify({ ok: false, error: r.error ?? 'no data' }, null, 2));
+      const r = await rpc({ kind: 'summaries', limit }, 5000);
+      if (r.ok && r.data?.summaries) {
+        console.log(JSON.stringify({ ok: true, summaries: r.data.summaries }, null, 2));
+        break;
       }
+    } catch { /* fall through to local */ }
+    // Local fallback: open SQLite and query recent summaries directly
+    try {
+      const p = paths();
+      const { storage } = await openStorage();
+      const rows = await storage.timeline(999999999, limit);
+      await storage.close();
+      const summaries = rows.map(row => ({
+        id: row.id,
+        ts: new Date(row.ts).toISOString(),
+        model: row.model,
+        text: row.text.slice(0, 120) + (row.text.length > 120 ? '...' : ''),
+      }));
+      console.log(JSON.stringify({ ok: true, summaries }, null, 2));
     } catch (e) {
       console.log(JSON.stringify({ ok: false, error: e.message }, null, 2));
     }

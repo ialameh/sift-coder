@@ -75,9 +75,9 @@ async function addEmbedding(s: SummaryRow): Promise<void> {
   db.embeddings.push({ sid: s.id, dim: v.length, vec: buf, ts: s.ts });
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   db = new FakeDB();
-  storage = new Storage(db);
+  storage = await Storage.init(db);
 });
 
 describe('hybridSearch', () => {

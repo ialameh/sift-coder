@@ -10,10 +10,10 @@ let dir: string;
 let db: Database.Database;
 let storage: Storage;
 
-beforeEach(() => {
+beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'tui-'));
   db = new Database(join(dir, 'd.sqlite'));
-  storage = new Storage(db);
+  storage = await Storage.init(db);
 });
 
 afterEach(() => {

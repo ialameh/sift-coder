@@ -12,10 +12,10 @@ let db: Database.Database;
 let storage: Storage;
 let prov: ProvenanceStore;
 
-beforeEach(() => {
+beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'prov-'));
   db = new Database(join(dir, 'd.sqlite'));
-  storage = new Storage(db);
+  storage = await Storage.init(db);
   prov = new ProvenanceStore(storage);
 });
 afterEach(() => {

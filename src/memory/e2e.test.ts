@@ -25,12 +25,15 @@ let walPath: string;
 let server: Server | null = null;
 let db: Database.Database | null = null;
 let wal: WAL | null = null;
+let storage: Storage;
 
-beforeEach(() => {
+beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'sift-e2e-'));
   socketPath = join(dir, 'mem.sock');
   dbPath = join(dir, 'db.sqlite');
   walPath = join(dir, 'wal.ndjson');
+  db = new Database(dbPath);
+  storage = await Storage.init(db);
 });
 
 afterEach(() => {
@@ -46,7 +49,7 @@ afterEach(() => {
 describe.skipIf(SKIP_ON_WINDOWS)('memory daemon e2e', () => {
   it('captures an event, persists redacted payload, and exposes it via search', async () => {
     db = new Database(dbPath);
-    const storage = new Storage(db);
+    const storage = await Storage.init(db);
     wal = new WAL(walPath);
     wal.open();
 
@@ -91,7 +94,7 @@ describe.skipIf(SKIP_ON_WINDOWS)('memory daemon e2e', () => {
 
   it('persists capture frames to the WAL on disk', async () => {
     db = new Database(dbPath);
-    const storage = new Storage(db);
+    const storage = await Storage.init(db);
     wal = new WAL(walPath);
     wal.open();
     server = startServer({ storage, wal, socketPath, cwd: dir });
@@ -107,7 +110,7 @@ describe.skipIf(SKIP_ON_WINDOWS)('memory daemon e2e', () => {
 
   it('supports timeline retrieval over real summaries', async () => {
     db = new Database(dbPath);
-    const storage = new Storage(db);
+    const storage = await Storage.init(db);
     wal = new WAL(walPath);
     wal.open();
     server = startServer({ storage, wal, socketPath, cwd: dir });

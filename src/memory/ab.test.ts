@@ -12,10 +12,10 @@ let db: Database.Database;
 let storage: Storage;
 const e = new DeterministicEmbedder(128);
 
-beforeEach(() => {
+beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'ab-'));
   db = new Database(join(dir, 'd.sqlite'));
-  storage = new Storage(db);
+  storage = await Storage.init(db);
 });
 afterEach(() => {
   db.close();

@@ -42,10 +42,10 @@ function req(opts: Partial<WebRequest>): WebRequest {
   };
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'web-'));
   db = new Database(join(dir, 'd.sqlite'));
-  storage = new Storage(db);
+  storage = await Storage.init(db);
   provenance = new ProvenanceStore(storage);
 });
 afterEach(() => {

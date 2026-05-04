@@ -145,6 +145,7 @@ async function main() {
 
 async function runLocal(args: ParsedArgs, dbPath: string, workspaceKey: string, cwd: string): Promise<void> {
   const { Storage } = await import('./storage/storage.js');
+  const { openStorage } = await import('./storage/open.js');
   const { DeterministicEmbedder } = await import('./embedder.js');
   const { existsSync } = await import('node:fs');
   if (!existsSync(dbPath)) {
@@ -163,15 +164,8 @@ async function runLocal(args: ParsedArgs, dbPath: string, workspaceKey: string, 
     else process.stderr.write(`siftcoder-mem cli: no DB for workspace ${workspaceKey} (${cwd}).\n  Hint: ${msg.data.hint}\n`);
     process.exit(json ? 0 : 4);
   }
-  let db: ConstructorParameters<typeof Storage>[0];
-  try {
-    const Database = (await import('better-sqlite3' as string)).default as new (path: string) => unknown;
-    db = new Database(dbPath) as ConstructorParameters<typeof Storage>[0];
-  } catch {
-    const { openWasmDatabase } = await import('./storage/wasm-db.js');
-    db = await openWasmDatabase(dbPath) as ConstructorParameters<typeof Storage>[0];
-  }
-  const storage = new Storage(db);
+  const { db } = await openStorage({ dbPath });
+  const storage = await Storage.init(db);
   const embedder = new DeterministicEmbedder(384);
   const banner = `workspace: ${workspaceKey}  (${cwd})\n`;
 

@@ -61,9 +61,9 @@ let db: FakeDB;
 let storage: Storage;
 let client: FakeClient;
 let sum: Summarizer;
-beforeEach(() => {
+beforeEach(async () => {
   db = new FakeDB();
-  storage = new Storage(db);
+  storage = await Storage.init(db);
   client = new FakeClient();
   sum = new Summarizer(storage, client, { confidenceThreshold: 0.6 });
 });

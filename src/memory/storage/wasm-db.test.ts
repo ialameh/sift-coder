@@ -94,7 +94,7 @@ import { Storage } from './storage.js';
 describe('wasm-db live integration', () => {
   it('Storage runs end-to-end on a real WASM SQLite backend', async () => {
     const db = await openWasmDatabase(':memory:');
-    const storage = new Storage(db);
+    const storage = await Storage.init(db);
     expect(storage.vecEnabled).toBe(false);
     await storage.ensureSession('s', '/cwd', 1);
     const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'Read', payload: { x: 1 } });

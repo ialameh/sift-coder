@@ -91,53 +91,27 @@ export interface StorageOptions {
 }
 
 /**
- * Storage — supports both sync and async DBHandle backends.
+ * Storage — async factory for all backends (SQLite + PostgreSQL).
  *
- * For sync backends (better-sqlite3): use `new Storage(db, opts)` directly.
- * For async backends (PostgresDB): use `Storage.create(db, opts)` which awaits DDL init.
- *
- * The constructor handles sync DDL inline. The factory handles async DDL.
+ * Construction is private. Use `Storage.init(db, opts)` to create a ready Storage instance.
+ * This ensures DDL runs exactly once per Storage lifetime, through the async init path.
  */
 export class Storage {
+  /** @internal */
   readonly vecEnabled: boolean;
-
-  /**
-   * Sync constructor — for use with sync DBHandle backends (better-sqlite3, WASM).
-   * DDL is executed synchronously before the constructor returns.
-   */
-  constructor(
+  /** @internal */
+  private constructor(
     private readonly db: DBHandle,
-    opts: StorageOptions = {}
+    vecEnabled: boolean
   ) {
-    const coreDdl = opts.coreDdl ?? CORE_DDL;
-    const migrations = opts.migrations ?? MIGRATIONS;
-    const vecDdl = opts.vecDdl ?? VEC_DDL;
-
-    db.exec(coreDdl);
-    for (const stmt of migrations) {
-      try { db.exec(stmt); } catch { /* migration already applied */ }
-    }
-    let vec = false;
-    if (opts.vecExtensionPath && db.loadExtension) {
-      try {
-        db.loadExtension(opts.vecExtensionPath);
-        db.exec(vecDdl);
-        vec = true;
-      } catch {
-        vec = false;
-      }
-    }
-    if (!vec && opts.coreDdl && opts.coreDdl !== CORE_DDL) {
-      vec = true;
-    }
-    this.vecEnabled = vec;
+    this.vecEnabled = vecEnabled;
   }
 
   /**
-   * Async factory — for use with async DBHandle backends (PostgresDB).
-   * Awaits DDL initialization before returning.
+   * Async factory — initializes DDL, runs migrations, loads vec extension if available.
+   * Returns a ready-to-use Storage instance.
    */
-  static async create(db: DBHandle, opts: StorageOptions = {}): Promise<Storage> {
+  static async init(db: DBHandle, opts: StorageOptions = {}): Promise<Storage> {
     const coreDdl = opts.coreDdl ?? CORE_DDL;
     const migrations = opts.migrations ?? MIGRATIONS;
     const vecDdl = opts.vecDdl ?? VEC_DDL;
@@ -159,10 +133,14 @@ export class Storage {
     if (!vec && opts.coreDdl && opts.coreDdl !== CORE_DDL) {
       vec = true;
     }
-    const storage = new Storage(db, opts);
-    // Override vecEnabled since constructor ran with sync exec
-    Object.defineProperty(storage, 'vecEnabled', { value: vec, writable: true });
-    return storage;
+    return new Storage(db, vec);
+  }
+
+  /**
+   * Closes the underlying DB handle. After close(), the Storage instance is unusable.
+   */
+  close(): Promise<void> {
+    return this.db.close();
   }
 
   async ensureSession(sessionId: string, cwd: string, ts: number): Promise<void> {
@@ -284,20 +262,13 @@ export class Storage {
   async searchFts(query: string, k = 5): Promise<SearchHit[]> {
     const safe = sanitizeFtsQuery(query);
     if (!safe) return [];
-    const isPg = !this.vecEnabled && String(typeof this.db).includes('postgres');
     const rows = await (await this.db.prepare(
-      isPg
-        ? `SELECT s.id, s.event_id, s.text, s.ts,
-                  ts_rank_cd(to_tsvector('english', s.text), plainto_tsquery('english', $1)) AS score
-           FROM summaries s
-           WHERE to_tsvector('english', s.text) @@ plainto_tsquery('english', $1)
-           ORDER BY score DESC LIMIT $2`
-        : `SELECT s.id AS id, s.event_id AS event_id, s.text AS text, s.ts AS ts,
-                  bm25(summaries_fts) AS score
-           FROM summaries_fts JOIN summaries s ON s.id = summaries_fts.rowid
-           WHERE summaries_fts MATCH ?
-           ORDER BY score ASC LIMIT ?`
-    )).all(...(isPg ? [safe, k] : [safe, k])) as Record<string, unknown>[];
+      `SELECT s.id AS id, s.event_id AS event_id, s.text AS text, s.ts AS ts,
+              bm25(summaries_fts) AS score
+       FROM summaries_fts JOIN summaries s ON s.id = summaries_fts.rowid
+       WHERE summaries_fts MATCH ?
+       ORDER BY score ASC LIMIT ?`
+    )).all(safe, k) as Record<string, unknown>[];
     return rows.map(r => ({
       id: r['id'] as number,
       eventId: r['event_id'] as number,

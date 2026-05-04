@@ -133,9 +133,9 @@ let db: FakeDB;
 let storage: Storage;
 let wal: WAL;
 let walDir: string;
-beforeEach(() => {
+beforeEach(async () => {
   db = new FakeDB();
-  storage = new Storage(db);
+  storage = await Storage.init(db);
   walDir = mkdtempSync(join(tmpdir(), 'srv-wal-'));
   wal = new WAL(join(walDir, 'wal.ndjson'));
   wal.open();
