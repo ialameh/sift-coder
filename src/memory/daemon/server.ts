@@ -397,6 +397,11 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
           return { ok: true, data: r };
         }
 
+        case 'as_of': {
+          const r = await deps.storage.asOf(req.ts, req.limit ?? 20);
+          return { ok: true, data: r };
+        }
+
         case 'context_budget': {
           const k = req.candidatePool ?? 50;
           const hits = await hybridSearch(deps.storage, deps.embedder ?? null, req.query, Date.now(), { k, candidatePool: k });

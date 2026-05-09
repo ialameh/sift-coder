@@ -547,6 +547,77 @@ switch (cmd) {
     console.log(JSON.stringify({ ok: true, data: { patterns: r } }, null, 2));
     break;
   }
+  case 'capture': {
+    // Used by `siftcoder hooks install` PostToolUse hook — receives JSON payload via stdin
+    // and forwards to the daemon as a capture RPC. Falls back to direct Storage write when
+    // the daemon is unreachable so a transient daemon-down doesn't lose the event.
+    let session, tool, ttlMs;
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--session') session = args[++i];
+      else if (args[i] === '--tool') tool = args[++i];
+      else if (args[i] === '--ttl-ms') ttlMs = parseInt(args[++i] ?? '0', 10);
+    }
+    const usePayloadStdin = args.includes('--payload-stdin');
+    let payload = {};
+    if (usePayloadStdin) {
+      try {
+        const raw = fs.readFileSync(0, 'utf8');
+        payload = raw ? JSON.parse(raw) : {};
+      } catch { /* ignore malformed stdin */ }
+    } else {
+      const pIdx = args.indexOf('--payload');
+      if (pIdx >= 0) {
+        try { payload = JSON.parse(args[pIdx + 1] ?? '{}'); } catch { /* ignore */ }
+      }
+    }
+    const req = {
+      kind: 'capture',
+      sessionId: session ?? 'cli',
+      tool: tool ?? 'CliCapture',
+      payload,
+      source: 'cli',
+      ...(ttlMs && ttlMs > 0 ? { ttlMs } : {}),
+    };
+    try {
+      const r = await rpc(req, 5000);
+      console.log(JSON.stringify(r, null, 2));
+      break;
+    } catch (e) {
+      if (e.message && !e.message.includes('ENOENT') && !e.message.includes('ECONNREFUSED')) throw e;
+    }
+    const { storage } = await openStorage();
+    const id = await storage.recordEvent({
+      ts: Date.now(),
+      sessionId: req.sessionId,
+      tool: req.tool,
+      payload: req.payload,
+      ...(ttlMs && ttlMs > 0 ? { ttlMs } : {}),
+    });
+    await storage.close();
+    console.log(JSON.stringify({ ok: true, data: { id, fallback: 'local' } }, null, 2));
+    break;
+  }
+  case 'maintenance': case 'gc': {
+    // One-shot nightly: sweep_expired + compact + auto_pin_patterns. Cheap; safe to cron.
+    const out = {};
+    try {
+      const sweep = await rpc({ kind: 'sweep_expired' }, 30000);
+      out.swept = sweep.ok ? sweep.data.removed : 'err';
+      const compact = await rpc({ kind: 'compact' }, 120000);
+      out.compact = compact.ok ? compact.data : 'err';
+      const min = args.includes('--auto-pin') ? 3 : null;
+      if (min !== null) {
+        const pin = await rpc({ kind: 'auto_pin_patterns', minRepeats: min }, 60000);
+        out.autoPin = pin.ok ? pin.data : 'err';
+      }
+      console.log(JSON.stringify({ ok: true, data: out }, null, 2));
+      break;
+    } catch (e) {
+      if (e.message && !e.message.includes('ENOENT') && !e.message.includes('ECONNREFUSED')) throw e;
+    }
+    console.error('maintenance requires the daemon');
+    process.exit(1);
+  }
   case 'session-digest': case 'digest': {
     const sessionId = args.find(a => !a.startsWith('--'));
     if (!sessionId) { console.error('usage: siftcoder session-digest <session-id> [--limit N]'); process.exit(1); }
@@ -906,6 +977,8 @@ Usage:
   siftcoder session-digest <id> [--limit N]  concat session summaries into one text digest
   siftcoder auto-pin-patterns [--min N]  pin every summary belonging to a recurring pattern
   siftcoder hooks <install|show>  manage PostToolUse capture hook in .claude/settings.local.json
+  siftcoder capture --session ID --tool T (--payload-stdin | --payload JSON)  push a capture into the daemon
+  siftcoder maintenance [--auto-pin]  nightly: sweep_expired + compact (+ optional auto-pin patterns)
   siftcoder auth-token [--rotate]  print (or rotate) the web UI bearer token
   siftcoder web                 print web UI URL
 `);

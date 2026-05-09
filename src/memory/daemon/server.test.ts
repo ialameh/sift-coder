@@ -644,6 +644,18 @@ describe('buildHandler with real Storage (cross-platform)', () => {
     expect(r.data.firstTs).toMatch(/T/);
   });
 
+  it('as_of RPC returns counts + summaries filtered by ts cutoff', async () => {
+    const t0 = 2_000_000;
+    const eid = await realStorage.recordEvent({ ts: t0, sessionId: 's', tool: 'R', payload: { i: 1 } });
+    await realStorage.recordSummary({ eventId: eid, ts: t0, model: 'm', promptHash: 'p', text: 'before', tokensIn: null, tokensOut: null, confidence: 0.9 });
+    const eid2 = await realStorage.recordEvent({ ts: t0 + 5000, sessionId: 's', tool: 'R', payload: { i: 2 } });
+    await realStorage.recordSummary({ eventId: eid2, ts: t0 + 5000, model: 'm', promptHash: 'p', text: 'after', tokensIn: null, tokensOut: null, confidence: 0.9 });
+    const h = buildHandler({ storage: realStorage, wal: realWal, cwd: '/x' });
+    const r = await h({ kind: 'as_of', ts: t0 + 1000 }) as { ok: true; data: { counts: { summaries: number }; summaries: Array<{ text: string }> } };
+    expect(r.data.counts.summaries).toBe(1);
+    expect(r.data.summaries[0]!.text).toBe('before');
+  });
+
   it('auto_pin_patterns RPC reports pinned + patternsConsidered counts', async () => {
     for (let i = 0; i < 3; i++) {
       const eid = await realStorage.recordEvent({ ts: i, sessionId: `s${i}`, tool: 'Bash', payload: { cmd: 'ls' } });

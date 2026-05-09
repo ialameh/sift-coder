@@ -429,6 +429,37 @@ export class Storage {
   }
 
   /**
+   * Point-in-time view: counts + recent summaries as they existed at `ts` (epoch ms).
+   * Filters every table on `ts <= cutoff` so the result reflects the store state at that
+   * instant, ignoring any rows added later.
+   */
+  async asOf(ts: number, limit = 20): Promise<{
+    ts: string;
+    counts: { events: number; summaries: number };
+    summaries: Array<{ id: number; ts: string; model: string; text: string; confidence: number | null }>;
+  }> {
+    const events = await this.scalar<number>(
+      'SELECT count(*) AS c FROM events WHERE ts <= ?', ts,
+    );
+    const summaries = await this.scalar<number>(
+      'SELECT count(*) AS c FROM summaries WHERE ts <= ?', ts,
+    );
+    const rows = await (await this.db.prepare(
+      `SELECT id, ts, model, substr(text, 1, 240) AS text, confidence
+         FROM summaries WHERE ts <= ?
+        ORDER BY id DESC LIMIT ?`
+    )).all(ts, limit) as Array<{ id: number; ts: number; model: string; text: string; confidence: number | null }>;
+    return {
+      ts: new Date(ts).toISOString(),
+      counts: { events, summaries },
+      summaries: rows.map(r => ({
+        id: r.id, ts: new Date(r.ts).toISOString(),
+        model: r.model, text: r.text, confidence: r.confidence,
+      })),
+    };
+  }
+
+  /**
    * Replay a session's chronology: events in `id` order with their summaries (if any) joined
    * in. Used by `mem_replay` to reconstruct prior conversation context for an agent or human.
    */

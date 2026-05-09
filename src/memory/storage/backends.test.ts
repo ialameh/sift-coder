@@ -582,6 +582,28 @@ describe.each(BACKENDS)('storage backend parity ($name)', backend => {
     expect(r.patternsConsidered).toBe(0);
   });
 
+  it('asOf filters by ts cutoff and returns counts + recent summaries', async () => {
+    const t0 = 1_000_000;
+    const e1 = await storage.recordEvent({ ts: t0, sessionId: 's', tool: 'R', payload: { i: 1 } });
+    const e2 = await storage.recordEvent({ ts: t0 + 1000, sessionId: 's', tool: 'R', payload: { i: 2 } });
+    const e3 = await storage.recordEvent({ ts: t0 + 5000, sessionId: 's', tool: 'R', payload: { i: 3 } });
+    await storage.recordSummary({ eventId: e1, ts: t0, model: 'm', promptHash: 'p', text: 'a', tokensIn: null, tokensOut: null, confidence: 0.9 });
+    await storage.recordSummary({ eventId: e2, ts: t0 + 1000, model: 'm', promptHash: 'p', text: 'b', tokensIn: null, tokensOut: null, confidence: 0.9 });
+    await storage.recordSummary({ eventId: e3, ts: t0 + 5000, model: 'm', promptHash: 'p', text: 'c', tokensIn: null, tokensOut: null, confidence: 0.9 });
+    // Cutoff before the third summary lands.
+    const r = await storage.asOf(t0 + 2000);
+    expect(r.counts.events).toBe(2);
+    expect(r.counts.summaries).toBe(2);
+    expect(r.summaries.map(s => s.text)).toEqual(['b', 'a']);
+  });
+
+  it('asOf returns empty + zero counts when ts predates first event', async () => {
+    await storage.recordEvent({ ts: 5_000_000, sessionId: 's', tool: 'R', payload: { i: 1 } });
+    const r = await storage.asOf(1_000_000);
+    expect(r.counts.events).toBe(0);
+    expect(r.summaries).toHaveLength(0);
+  });
+
   it('autoPinPatterns is idempotent (re-running does not double-pin)', async () => {
     for (let i = 0; i < 3; i++) {
       const eid = await storage.recordEvent({ ts: i, sessionId: `s${i}`, tool: 'Bash', payload: { cmd: 'ls' } });
