@@ -675,6 +675,22 @@ describe('buildHandler with real Storage (cross-platform)', () => {
     }
   });
 
+  it('backfill RPC returns scanned/captured counts even with no transcripts', async () => {
+    const h = buildHandler({ storage: realStorage, wal: realWal, cwd: '/nonexistent-cwd-' + Date.now() });
+    const r = await h({ kind: 'backfill', source: 'transcripts', workspaceOnly: true }) as { ok: true; data: { source: string; scanned: number; captured: number; errors: number } };
+    expect(r.ok).toBe(true);
+    expect(r.data.source).toBe('transcripts');
+    expect(r.data.scanned).toBe(0);
+    expect(r.data.captured).toBe(0);
+  });
+
+  it('backfill RPC rejects unsupported sources', async () => {
+    const h = buildHandler({ storage: realStorage, wal: realWal, cwd: '/x' });
+    const r = await h({ kind: 'backfill', source: 'sftp' as 'transcripts' }) as { ok: false; error: string };
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain('unsupported backfill source');
+  });
+
   it('capture honors ttlMs by storing expires_at = ts + ttlMs', async () => {
     const ts = 1_000_000;
     const ttl = 60_000;
