@@ -32,7 +32,8 @@ export type RequestKind =
   | 'thread'
   | 'federate_search'
   | 'symbol_search'
-  | 'stats';
+  | 'stats'
+  | 'replay';
 
 export interface CaptureRequest {
   kind: 'capture';
@@ -254,6 +255,18 @@ export interface StatsRequest {
   windowMs?: number;
 }
 
+/**
+ * Replay-debug: reconstruct a session's chronology — events in order, paired with their
+ * summaries when present. Lets an agent ask "what did I see in session X" or a human review
+ * a prior conversation flow without trawling raw transcript files.
+ */
+export interface ReplayRequest {
+  kind: 'replay';
+  sessionId: string;
+  /** Optional cap on returned events. */
+  limit?: number;
+}
+
 export type Request =
   | CaptureRequest
   | SearchRequest
@@ -283,7 +296,8 @@ export type Request =
   | ThreadRequest
   | FederateSearchRequest
   | SymbolSearchRequest
-  | StatsRequest;
+  | StatsRequest
+  | ReplayRequest;
 
 export interface OkResponse<T = unknown> {
   ok: true;

@@ -252,6 +252,46 @@ export class Storage {
   }
 
   /**
+   * Replay a session's chronology: events in `id` order with their summaries (if any) joined
+   * in. Used by `mem_replay` to reconstruct prior conversation context for an agent or human.
+   */
+  async replaySession(sessionId: string, limit = 200): Promise<Array<{
+    eventId: number; ts: number; tool: string; status: string;
+    payloadJson: string; symbols: string[];
+    summary: { id: number; text: string; confidence: number | null } | null;
+  }>> {
+    const rows = await (await this.db.prepare(
+      `SELECT e.id AS event_id, e.ts AS ts, e.tool AS tool, e.status AS status,
+              e.payload_json AS payload_json, e.symbols_json AS sj,
+              s.id AS summary_id, s.text AS s_text, s.confidence AS s_conf
+         FROM events e
+         LEFT JOIN summaries s ON s.event_id = e.id
+        WHERE e.session_id = ?
+        ORDER BY e.id ASC
+        LIMIT ?`
+    )).all(sessionId, limit) as Array<{
+      event_id: number; ts: number; tool: string; status: string;
+      payload_json: string; sj: string | null;
+      summary_id: number | null; s_text: string | null; s_conf: number | null;
+    }>;
+    return rows.map(r => {
+      let symbols: string[] = [];
+      if (r.sj) {
+        try { const p = JSON.parse(r.sj) as unknown; if (Array.isArray(p)) symbols = p.map(String); } catch { /* skip */ }
+      }
+      return {
+        eventId: r.event_id,
+        ts: r.ts,
+        tool: r.tool,
+        status: r.status,
+        payloadJson: r.payload_json,
+        symbols,
+        summary: r.summary_id ? { id: r.summary_id, text: r.s_text ?? '', confidence: r.s_conf } : null,
+      };
+    });
+  }
+
+  /**
    * Symbol-based retrieval. Matches events whose `symbols_json` contains the query. Two
    * patterns supported:
    *   - `"kind:name"` (e.g. `"function:login"`) — exact match against an entry in the array.

@@ -491,6 +491,25 @@ describe.each(BACKENDS)('storage backend parity ($name)', backend => {
     expect(related[0]!.sessionId).toBe('s2');
   });
 
+  it('replaySession returns events in id order with summaries when present', async () => {
+    const e1 = await storage.recordEvent({ ts: 1, sessionId: 'rep', tool: 'Edit', payload: { i: 1 } });
+    const e2 = await storage.recordEvent({ ts: 2, sessionId: 'rep', tool: 'Bash', payload: { i: 2 } });
+    await storage.recordSummary({ eventId: e1, ts: 1, model: 'm', promptHash: 'p', text: 'first', tokensIn: null, tokensOut: null, confidence: 0.9 });
+    void e2;
+    const r = await storage.replaySession('rep');
+    expect(r).toHaveLength(2);
+    expect(r[0]!.tool).toBe('Edit');
+    expect(r[0]!.summary?.text).toBe('first');
+    expect(r[1]!.tool).toBe('Bash');
+    expect(r[1]!.summary).toBeNull();
+  });
+
+  it('replaySession honors the limit', async () => {
+    for (let i = 0; i < 4; i++) await storage.recordEvent({ ts: i, sessionId: 'rep', tool: 'R', payload: { i } });
+    const r = await storage.replaySession('rep', 2);
+    expect(r).toHaveLength(2);
+  });
+
   it('symbolSearch finds events by exact kind:name', async () => {
     const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'Edit', payload: { tool_input: { file_path: '/x.ts', content: 'fn login() {}' } } });
     await storage.setEventSymbols(eid, ['function:login', 'class:Auth']);

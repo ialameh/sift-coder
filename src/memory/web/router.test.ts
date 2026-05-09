@@ -108,6 +108,73 @@ describe('GET /api/savings', () => {
   });
 });
 
+describe('new web endpoints (stats, doctor, pinned, symbol-search, thread, replay, pin/unpin)', () => {
+  it('GET /api/stats returns counts + throughput', async () => {
+    await storage.recordEvent({ ts: Date.now(), sessionId: 's', tool: 'Edit', payload: { i: 1 } });
+    const r = await route(req({ path: '/api/stats' }), deps());
+    expect(r.status).toBe(200);
+    const body = JSON.parse(String(r.body));
+    expect(body.data.counts.events).toBe(1);
+    expect(body.data.throughput.eventsPerMin).toBeGreaterThan(0);
+  });
+
+  it('GET /api/doctor returns the health report', async () => {
+    const r = await route(req({ path: '/api/doctor' }), deps());
+    const body = JSON.parse(String(r.body));
+    expect(body.data.integrity).toBe('ok');
+  });
+
+  it('GET /api/pinned lists pinned summaries', async () => {
+    const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: { i: 1 } });
+    const sid = await storage.recordSummary({ eventId: eid, ts: 1, model: 'm', promptHash: 'p', text: 't', tokensIn: null, tokensOut: null, confidence: null });
+    await storage.pin(sid);
+    const r = await route(req({ path: '/api/pinned' }), deps());
+    const body = JSON.parse(String(r.body));
+    expect(body.data.pinned).toHaveLength(1);
+  });
+
+  it('POST /api/symbol-search returns events by symbol', async () => {
+    const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'Edit', payload: { i: 1 } });
+    await storage.setEventSymbols(eid, ['function:login']);
+    const r = await route(req({ method: 'POST', path: '/api/symbol-search', body: JSON.stringify({ query: 'function:login' }) }), deps());
+    const body = JSON.parse(String(r.body));
+    expect(body.data.hits).toHaveLength(1);
+  });
+
+  it('POST /api/thread returns related sessions', async () => {
+    await storage.recordEvent({ ts: 1, sessionId: 's1', tool: 'R', payload: { same: true } });
+    await storage.recordEvent({ ts: 2, sessionId: 's2', tool: 'R', payload: { same: true } });
+    const r = await route(req({ method: 'POST', path: '/api/thread', body: JSON.stringify({ sessionId: 's1' }) }), deps());
+    const body = JSON.parse(String(r.body));
+    expect(body.data.sessions).toHaveLength(1);
+  });
+
+  it('POST /api/replay returns events in order', async () => {
+    await storage.recordEvent({ ts: 1, sessionId: 'r', tool: 'Edit', payload: { i: 1 } });
+    await storage.recordEvent({ ts: 2, sessionId: 'r', tool: 'Bash', payload: { i: 2 } });
+    const r = await route(req({ method: 'POST', path: '/api/replay', body: JSON.stringify({ sessionId: 'r' }) }), deps());
+    const body = JSON.parse(String(r.body));
+    expect(body.data.events).toHaveLength(2);
+  });
+
+  it('POST /api/pin and /api/unpin round-trip', async () => {
+    const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: { i: 1 } });
+    const sid = await storage.recordSummary({ eventId: eid, ts: 1, model: 'm', promptHash: 'p', text: 't', tokensIn: null, tokensOut: null, confidence: null });
+    const pinR = await route(req({ method: 'POST', path: '/api/pin', body: JSON.stringify({ summaryId: sid }) }), deps());
+    expect(JSON.parse(String(pinR.body)).data.pinned).toBe(true);
+    const unpinR = await route(req({ method: 'POST', path: '/api/unpin', body: JSON.stringify({ summaryId: sid }) }), deps());
+    expect(JSON.parse(String(unpinR.body)).data.pinned).toBe(false);
+  });
+
+  it('rejects malformed bodies on each new endpoint', async () => {
+    expect((await route(req({ method: 'POST', path: '/api/symbol-search', body: '{}' }), deps())).status).toBe(400);
+    expect((await route(req({ method: 'POST', path: '/api/thread', body: '{}' }), deps())).status).toBe(400);
+    expect((await route(req({ method: 'POST', path: '/api/replay', body: '{}' }), deps())).status).toBe(400);
+    expect((await route(req({ method: 'POST', path: '/api/pin', body: '{}' }), deps())).status).toBe(400);
+    expect((await route(req({ method: 'POST', path: '/api/unpin', body: '{}' }), deps())).status).toBe(400);
+  });
+});
+
 describe('GET /api/events', () => {
   it('returns recent events with default limit', async () => {
     await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'Read', payload: { i: 1 } });

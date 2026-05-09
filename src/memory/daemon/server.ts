@@ -358,6 +358,28 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
           return { ok: true, data: r };
         }
 
+        case 'replay': {
+          const rows = await deps.storage.replaySession(req.sessionId, req.limit ?? 200);
+          return {
+            ok: true,
+            data: {
+              sessionId: req.sessionId,
+              events: rows.map(r => ({
+                eventId: r.eventId,
+                ts: new Date(r.ts).toISOString(),
+                tool: r.tool,
+                status: r.status,
+                symbols: r.symbols,
+                summary: r.summary,
+                // Truncate payload to keep responses bounded; raw data is one mem_get away.
+                payloadPreview: r.payloadJson.length > 480
+                  ? r.payloadJson.slice(0, 480) + '...'
+                  : r.payloadJson,
+              })),
+            },
+          };
+        }
+
         case 'summaries': {
           const limit = req.limit ?? 20;
           const rows = await deps.storage.recentSummaries(limit);

@@ -410,6 +410,31 @@ describe('ops MCP tools', () => {
     expect(call.k).toBe(7);
   });
 
+  it('mem_replay forwards a replay RPC with the session id', async () => {
+    mem.scripted.push({ ok: true, data: { events: [] } });
+    await dispatch(
+      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'mem_replay', arguments: { session_id: 'rep-1', limit: 50 } } },
+      { client: mem as unknown as MemoryClient },
+    );
+    const call = mem.calls.find(c => c.kind === 'replay') as { sessionId: string; limit: number };
+    expect(call.sessionId).toBe('rep-1');
+    expect(call.limit).toBe(50);
+  });
+
+  it('mem_capture forwards a capture RPC with source=agent', async () => {
+    mem.scripted.push({ ok: true, data: { id: 42 } });
+    await dispatch(
+      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'mem_capture', arguments: { session_id: 's', payload: { fact: 'x' }, ttl_ms: 60000 } } },
+      { client: mem as unknown as MemoryClient },
+    );
+    const call = mem.calls.find(c => c.kind === 'capture') as { sessionId: string; tool: string; payload: { fact: string }; ttlMs: number; source: string };
+    expect(call.sessionId).toBe('s');
+    expect(call.tool).toBe('agent_capture');
+    expect(call.payload.fact).toBe('x');
+    expect(call.ttlMs).toBe(60000);
+    expect(call.source).toBe('agent');
+  });
+
   it('mem_stats forwards a stats RPC with windowMs', async () => {
     mem.scripted.push({ ok: true, data: { counts: { events: 0 } } });
     await dispatch(
