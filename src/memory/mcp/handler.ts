@@ -391,9 +391,20 @@ export async function drainViaSampling(
   let processed = 0;
   let errors = 0;
   let firstError: string | undefined;
+  // Query the real backlog via status; MCP-side drain has no direct Storage access. Failure
+  // here is non-fatal — fall through with `pending: 0` so the drain still reports its work.
+  async function pendingCount(): Promise<number> {
+    try {
+      const r = await client.send<{ counts?: { raw?: number } }>({ kind: 'status' });
+      if (r.ok && r.data?.counts && typeof r.data.counts.raw === 'number') {
+        return r.data.counts.raw;
+      }
+      return 0;
+    } catch { return 0; }
+  }
   const claim = await client.send<{ events: ClaimedEvent[] }>({ kind: 'claim_for_summary', batch });
   if (!claim.ok || claim.data.events.length === 0) {
-    return { processed, errors, pending: 0, backend: 'mcp-sampling' };
+    return { processed, errors, pending: await pendingCount(), backend: 'mcp-sampling' };
   }
   for (const ev of claim.data.events) {
     const cacheKey = createHash('sha256')
@@ -453,9 +464,10 @@ export async function drainViaSampling(
       errors++;
     }
   }
+  const pending = await pendingCount();
   return firstError
-    ? { processed, errors, pending: 0, backend: 'mcp-sampling', firstError }
-    : { processed, errors, pending: 0, backend: 'mcp-sampling' };
+    ? { processed, errors, pending, backend: 'mcp-sampling', firstError }
+    : { processed, errors, pending, backend: 'mcp-sampling' };
 }
 
 export async function dispatch(req: JsonRpcRequest, deps: HandlerDeps): Promise<JsonRpcResponse> {

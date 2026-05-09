@@ -94,7 +94,10 @@ async function runDrain(
       if (firstError === undefined) firstError = msg;
     }
   }
-  const pending = (await storage.pendingEvents(1)).length;
+  // Real pending count, not a bounded probe. The previous `pendingEvents(1).length` capped
+  // the metric at 1, so a 1000-event backlog reported `pending: 1` — uselessly misleading
+  // for any caller (mem_drain CLI, eager-drain ramp logic, dashboard).
+  const pending = await storage.countByStatus('raw');
   return firstError
     ? { processed, errors, pending, backend, firstError }
     : { processed, errors, pending, backend };

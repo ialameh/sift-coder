@@ -479,6 +479,24 @@ describe('buildHandler with real Storage (cross-platform)', () => {
     expect(counts.summarized).toBe(1);
   });
 
+  it('drain pending count reflects the real backlog, not a 0/1 probe', async () => {
+    // Seed five raw events; drain a batch of one; expect `pending: 4` (was always 1 with the
+    // pre-fix `pendingEvents(1).length` capped probe).
+    for (let i = 0; i < 5; i++) {
+      await realStorage.recordEvent({ ts: i, sessionId: 's', tool: 'R', payload: { i } });
+    }
+    const okClient: ModelClient = {
+      async generate(): Promise<ModelResult> {
+        return { text: '{"text":"x","confidence":0.9}', tokensIn: 1, tokensOut: 1 };
+      },
+    };
+    const summarizer = new Summarizer(realStorage, okClient);
+    const h = buildHandler({ storage: realStorage, wal: realWal, cwd: '/x', summarizer });
+    const r = await h({ kind: 'drain', batch: 1 }) as { ok: true; data: { processed: number; pending: number } };
+    expect(r.data.processed).toBe(1);
+    expect(r.data.pending).toBe(4);
+  });
+
   it('claim_for_summary returns claimed events and flips status to claimed', async () => {
     for (let i = 0; i < 3; i++) {
       await realStorage.recordEvent({ ts: i, sessionId: 's', tool: 'R', payload: { i } });

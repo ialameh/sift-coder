@@ -317,6 +317,21 @@ describe('drainViaSampling', () => {
     expect(release.terminal).toBe(false);
   });
 
+  it('reports a real `pending` count from a status RPC after draining', async () => {
+    // Two events claimed + recorded, then status returns counts.raw=42.
+    mem.scripted.push({ ok: true, data: { events: [
+      { id: 1, ts: 1, sessionId: 's', tool: 'R', inputHash: 'h1', payloadJson: '{}', tokensEst: 10 },
+    ] }});
+    mem.scripted.push({ ok: true, data: { cached: { text: '{"text":"x","confidence":0.9}', tokensIn: 1, tokensOut: 1 } } });
+    mem.scripted.push({ ok: true, data: { id: 1 } }); // record_summary
+    mem.scripted.push({ ok: true, data: { counts: { raw: 42 } } }); // status
+    const transport = new FakeSamplingTransport();
+    const r = await drainViaSampling(mem as unknown as MemoryClient, transport, 1);
+    expect(r.processed).toBe(1);
+    expect(r.pending).toBe(42);
+    expect(mem.calls.find(c => c.kind === 'status')).toBeTruthy();
+  });
+
   it('returns zero processed when no events are available', async () => {
     mem.scripted.push({ ok: true, data: { events: [] } });
     const transport = new FakeSamplingTransport();
