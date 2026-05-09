@@ -616,6 +616,25 @@ describe('buildHandler with real Storage (cross-platform)', () => {
     expect(r.data.captured).toBe(0);
   });
 
+  it('compact RPC reports cache prune + vacuum results', async () => {
+    await realStorage.putCachedSummary('x', 't', 1, 1, Date.now() - 60 * 24 * 60 * 60 * 1000);
+    const h = buildHandler({ storage: realStorage, wal: realWal, cwd: '/x' });
+    const r = await h({ kind: 'compact', cacheMaxAgeMs: 30 * 24 * 60 * 60 * 1000 }) as { ok: true; data: { cachePruned: number; ftsRebuilt: boolean } };
+    expect(r.data.cachePruned).toBe(1);
+    expect(r.data.ftsRebuilt).toBe(true);
+  });
+
+  it('patterns RPC surfaces recurring buckets with isoformat timestamps', async () => {
+    for (let i = 0; i < 3; i++) {
+      await realStorage.recordEvent({ ts: i, sessionId: `s${i}`, tool: 'Bash', payload: { cmd: 'ls' } });
+    }
+    const h = buildHandler({ storage: realStorage, wal: realWal, cwd: '/x' });
+    const r = await h({ kind: 'patterns', minRepeats: 3 }) as { ok: true; data: { patterns: Array<{ occurrences: number; firstTs: string }> } };
+    expect(r.data.patterns).toHaveLength(1);
+    expect(r.data.patterns[0]!.occurrences).toBe(3);
+    expect(r.data.patterns[0]!.firstTs).toMatch(/T/); // ISO format includes 'T'
+  });
+
   it('context_budget RPC fills under the token cap and stops past it', async () => {
     for (let i = 0; i < 5; i++) {
       const eid = await realStorage.recordEvent({ ts: i, sessionId: 's', tool: 'Edit', payload: { i } });

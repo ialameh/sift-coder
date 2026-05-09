@@ -257,6 +257,27 @@ export const TOOLS = [
       required: ['query', 'max_tokens'],
     },
   },
+  {
+    name: 'mem_compact',
+    description: 'Storage hygiene: drop stale summary_cache rows, drop dim-mismatched embeddings, rebuild FTS index, VACUUM. Cheap to run weekly; reclaims disk lost to row deletions.',
+    inputSchema: {
+      type: 'object',
+      properties: { cache_max_age_ms: { type: 'number', default: 2592000000 } },
+      required: [],
+    },
+  },
+  {
+    name: 'mem_patterns',
+    description: 'Detect recurring patterns: inputs whose hash repeats across many sessions. Useful for surfacing habitual behaviour, auto-pin candidates, or workflow suggestions.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        min_repeats: { type: 'number', default: 3 },
+        limit: { type: 'number', default: 50 },
+      },
+      required: [],
+    },
+  },
 ];
 
 export interface DrainResult {
@@ -579,6 +600,21 @@ export async function dispatch(req: JsonRpcRequest, deps: HandlerDeps): Promise<
             query: String(args['query'] ?? ''),
             maxTokens: Number(args['max_tokens'] ?? 4000),
             candidatePool: args['candidate_pool'] !== undefined ? Number(args['candidate_pool']) : undefined,
+          });
+          return ok(req.id, res);
+        }
+        case 'mem_compact': {
+          const res = await deps.client.send({
+            kind: 'compact',
+            cacheMaxAgeMs: args['cache_max_age_ms'] !== undefined ? Number(args['cache_max_age_ms']) : undefined,
+          });
+          return ok(req.id, res);
+        }
+        case 'mem_patterns': {
+          const res = await deps.client.send({
+            kind: 'patterns',
+            minRepeats: args['min_repeats'] !== undefined ? Number(args['min_repeats']) : undefined,
+            limit: args['limit'] !== undefined ? Number(args['limit']) : undefined,
           });
           return ok(req.id, res);
         }

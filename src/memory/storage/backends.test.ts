@@ -491,6 +491,50 @@ describe.each(BACKENDS)('storage backend parity ($name)', backend => {
     expect(related[0]!.sessionId).toBe('s2');
   });
 
+  it('compact prunes old cache rows and reports counts', async () => {
+    const old = Date.now() - 60 * 24 * 60 * 60 * 1000; // 60 days ago
+    const fresh = Date.now() - 1 * 24 * 60 * 60 * 1000; // 1 day ago
+    await storage.putCachedSummary('old1', 't', 1, 1, old);
+    await storage.putCachedSummary('old2', 't', 1, 1, old);
+    await storage.putCachedSummary('keep', 't', 1, 1, fresh);
+    const r = await storage.compact({ cacheMaxAgeMs: 30 * 24 * 60 * 60 * 1000 });
+    expect(r.cachePruned).toBe(2);
+    expect(await storage.countAll('summary_cache')).toBe(1);
+    // VACUUM may report 0 byte change on a tiny in-memory db; just verify the flag.
+    expect(typeof r.vacuumed).toBe('boolean');
+    expect(typeof r.ftsRebuilt).toBe('boolean');
+  });
+
+  it('compact drops embeddings whose dim != expectedDim', async () => {
+    const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: { i: 1 } });
+    const sid = await storage.recordSummary({ eventId: eid, ts: 1, model: 'm', promptHash: 'p', text: 't', tokensIn: null, tokensOut: null, confidence: null });
+    await storage.putEmbedding(sid, new Float32Array(384));
+    const r = await storage.compact({ expectedDim: 768 });
+    expect(r.embeddingsDropped).toBe(1);
+    expect(await storage.getEmbedding(sid)).toBeNull();
+  });
+
+  it('patterns surfaces recurring input_hash buckets', async () => {
+    // Two distinct payloads — one repeated 4×, one once.
+    for (let i = 0; i < 4; i++) {
+      await storage.recordEvent({ ts: i, sessionId: `s${i}`, tool: 'Bash', payload: { cmd: 'ls' } });
+    }
+    await storage.recordEvent({ ts: 99, sessionId: 'unique', tool: 'Edit', payload: { file: 'x' } });
+    const r = await storage.patterns(3);
+    expect(r).toHaveLength(1);
+    expect(r[0]!.occurrences).toBe(4);
+    expect(r[0]!.distinctSessions).toBe(4);
+    expect(r[0]!.tools).toContain('Bash');
+  });
+
+  it('patterns honors minRepeats threshold', async () => {
+    for (let i = 0; i < 2; i++) {
+      await storage.recordEvent({ ts: i, sessionId: `s${i}`, tool: 'R', payload: { same: true } });
+    }
+    expect(await storage.patterns(3)).toHaveLength(0);
+    expect(await storage.patterns(2)).toHaveLength(1);
+  });
+
   it('replaySession returns events in id order with summaries when present', async () => {
     const e1 = await storage.recordEvent({ ts: 1, sessionId: 'rep', tool: 'Edit', payload: { i: 1 } });
     const e2 = await storage.recordEvent({ ts: 2, sessionId: 'rep', tool: 'Bash', payload: { i: 2 } });
