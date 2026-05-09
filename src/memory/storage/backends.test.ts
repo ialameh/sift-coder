@@ -211,4 +211,144 @@ describe.each(BACKENDS)('storage backend parity ($name)', backend => {
     expect(rows[1]!.id).toBeGreaterThan(rows[2]!.id);
     expect(rows[0]!.text).toBe('s4');
   });
+
+  it('recentEvents / eventTail / summaryTail return rows in id-desc order', async () => {
+    for (let i = 0; i < 4; i++) {
+      const eid = await storage.recordEvent({ ts: i, sessionId: 'sess', tool: i % 2 ? 'Edit' : 'Read', payload: { i } });
+      await storage.recordSummary({
+        eventId: eid, ts: i, model: 'haiku', promptHash: 'p', text: `txt-${i}`,
+        tokensIn: 1, tokensOut: 1, confidence: 0.9,
+      });
+    }
+    const re = await storage.recentEvents(2);
+    expect(re).toHaveLength(2);
+    expect(re[0]!.id).toBeGreaterThan(re[1]!.id);
+    const et = await storage.eventTail(3);
+    expect(et).toHaveLength(3);
+    expect(et[0]!.sessionId).toBe('sess');
+    const st = await storage.summaryTail(3);
+    expect(st).toHaveLength(3);
+    expect(st[0]!.text).toBe('txt-3');
+  });
+
+  it('countByStatus + countAll + perToolCounts agree with counts()', async () => {
+    for (let i = 0; i < 3; i++) {
+      await storage.recordEvent({ ts: i, sessionId: 's', tool: i % 2 ? 'Edit' : 'Read', payload: { i } });
+    }
+    await storage.markEventStatus(1, 'summarized');
+    expect(await storage.countByStatus('raw')).toBe(2);
+    expect(await storage.countByStatus('summarized')).toBe(1);
+    expect(await storage.countAll('events')).toBe(3);
+    const perTool = await storage.perToolCounts();
+    expect(perTool['Read']).toBe(2);
+    expect(perTool['Edit']).toBe(1);
+  });
+
+  it('countRedacted matches events whose payload contains a [REDACTED:*] tag', async () => {
+    await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: { secret: '[REDACTED:aws]' } });
+    await storage.recordEvent({ ts: 2, sessionId: 's', tool: 'R', payload: { plain: 'x' } });
+    expect(await storage.countRedacted()).toBe(1);
+  });
+
+  it('countSharedInputHashes detects events sharing a payload hash', async () => {
+    const e1 = await storage.recordEvent({ ts: 1, sessionId: 'a', tool: 'R', payload: { same: true } });
+    const e2 = await storage.recordEvent({ ts: 2, sessionId: 'b', tool: 'R', payload: { same: true } });
+    await storage.recordSummary({ eventId: e1, ts: 0, model: 'm', promptHash: 'p', text: 't1', tokensIn: null, tokensOut: null, confidence: null });
+    await storage.recordSummary({ eventId: e2, ts: 0, model: 'm', promptHash: 'p', text: 't2', tokensIn: null, tokensOut: null, confidence: null });
+    expect(await storage.countSharedInputHashes()).toBe(1);
+  });
+
+  it('countSupersededDistinct reports unique older_id rows', async () => {
+    const e1 = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: { i: 1 } });
+    const e2 = await storage.recordEvent({ ts: 2, sessionId: 's', tool: 'R', payload: { i: 2 } });
+    const a = await storage.recordSummary({ eventId: e1, ts: 0, model: 'm', promptHash: 'p', text: 'a', tokensIn: null, tokensOut: null, confidence: null });
+    const b = await storage.recordSummary({ eventId: e2, ts: 1, model: 'm', promptHash: 'p', text: 'b', tokensIn: null, tokensOut: null, confidence: null });
+    await storage.recordSupersedes(b, a, 0.99, 0);
+    expect(await storage.countSupersededDistinct()).toBe(1);
+  });
+
+  it('sumSummaryTextChars approximates summary token storage', async () => {
+    const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: { i: 1 } });
+    await storage.recordSummary({ eventId: eid, ts: 0, model: 'm', promptHash: 'p', text: 'x'.repeat(100), tokensIn: null, tokensOut: null, confidence: null });
+    expect(await storage.sumSummaryTextChars()).toBeGreaterThan(0);
+  });
+
+  it('claimEvent atomically claims a single raw event by id, ignores already-claimed', async () => {
+    const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: { i: 1 } });
+    const claimed = await storage.claimEvent(eid);
+    expect(claimed).not.toBeNull();
+    expect(claimed!.status).toBe('claimed');
+    const second = await storage.claimEvent(eid);
+    expect(second).toBeNull();
+  });
+
+  it('prune drops old skipped events; keeps recent ones', async () => {
+    const oldTs = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const recentTs = Date.now() - 1 * 24 * 60 * 60 * 1000;
+    const eOld = await storage.recordEvent({ ts: oldTs, sessionId: 's', tool: 'R', payload: { i: 1 } });
+    const eNew = await storage.recordEvent({ ts: recentTs, sessionId: 's', tool: 'R', payload: { i: 2 } });
+    await storage.markEventStatus(eOld, 'skipped');
+    await storage.markEventStatus(eNew, 'skipped');
+    const r = await storage.prune({ maxAgeMs: 7 * 24 * 60 * 60 * 1000 });
+    expect(r.removedEvents).toBe(1);
+    expect(await storage.countByStatus('skipped')).toBe(1);
+  });
+
+  it('prune with superseded=true drops consolidator-superseded summaries', async () => {
+    const e1 = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: { i: 1 } });
+    const e2 = await storage.recordEvent({ ts: 2, sessionId: 's', tool: 'R', payload: { i: 2 } });
+    const a = await storage.recordSummary({ eventId: e1, ts: 0, model: 'm', promptHash: 'p', text: 'a', tokensIn: null, tokensOut: null, confidence: null });
+    const b = await storage.recordSummary({ eventId: e2, ts: 1, model: 'm', promptHash: 'p', text: 'b', tokensIn: null, tokensOut: null, confidence: null });
+    await storage.recordSupersedes(b, a, 0.99, 0);
+    const r = await storage.prune({ superseded: true });
+    expect(r.removedSummaries).toBe(1);
+  });
+
+  it('retrySkipped resets skipped events to raw with attempts cleared', async () => {
+    const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: { i: 1 } });
+    await storage.claimEvent(eid);
+    await storage.releaseClaimed(eid, 'rate limit');
+    await storage.claimEvent(eid);
+    await storage.releaseClaimed(eid, 'rate limit');
+    await storage.claimEvent(eid);
+    await storage.releaseClaimed(eid, 'rate limit'); // hits maxAttempts → skipped
+    expect(await storage.countByStatus('skipped')).toBe(1);
+    const requeued = await storage.retrySkipped();
+    expect(requeued).toBe(1);
+    expect(await storage.countByStatus('raw')).toBe(1);
+    expect(await storage.countByStatus('skipped')).toBe(0);
+  });
+
+  it('retrySkipped honors the limit argument', async () => {
+    for (let i = 0; i < 3; i++) {
+      const eid = await storage.recordEvent({ ts: i, sessionId: 's', tool: 'R', payload: { i } });
+      await storage.markEventStatus(eid, 'skipped');
+    }
+    const requeued = await storage.retrySkipped(2);
+    expect(requeued).toBe(2);
+    expect(await storage.countByStatus('skipped')).toBe(1);
+  });
+
+  it('addProvenanceEdge / outgoingProvenance / incomingProvenance round-trip', async () => {
+    const id = await storage.addProvenanceEdge({
+      ts: 100, fromKind: 'summary', fromId: '1', toKind: 'summary', toId: '2',
+      edgeType: 'derives_from', confidence: 0.9, source: 'test', metaJson: null,
+    });
+    expect(id).toBeGreaterThan(0);
+    const out = await storage.outgoingProvenance('summary', '1');
+    expect(out).toHaveLength(1);
+    expect(out[0]!['edge_type']).toBe('derives_from');
+    const inc = await storage.incomingProvenance('summary', '2', 'derives_from');
+    expect(inc).toHaveLength(1);
+  });
+
+  it('cache_get / cache_put round-trip via Storage methods', async () => {
+    await storage.putCachedSummary('k1', 'cached text', 5, 3, 100);
+    const r = await storage.getCachedSummary('k1');
+    expect(r?.text).toBe('cached text');
+    expect(r?.tokensIn).toBe(5);
+    expect(r?.tokensOut).toBe(3);
+    const miss = await storage.getCachedSummary('nope');
+    expect(miss).toBeNull();
+  });
 });
