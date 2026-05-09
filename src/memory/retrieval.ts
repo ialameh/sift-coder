@@ -163,6 +163,9 @@ export async function hybridSearch(
   }
 
   const dropped = await storage.supersededIds();
+  // Pinned summaries are exempt from the supersede sieve — even if a near-duplicate beats one
+  // in cosine, the user pin is a stronger signal than the consolidator's heuristic.
+  const pinned = await storage.pinnedIds();
   const ids = new Set<number>([...bm25Rank.keys(), ...vecRank.keys()]);
 
   const summaries = new Map<number, SearchHit | SummaryRow>();
@@ -177,7 +180,7 @@ export async function hybridSearch(
 
   const hits: HybridHit[] = [];
   for (const id of ids) {
-    if (dropped.has(id)) continue;
+    if (dropped.has(id) && !pinned.has(id)) continue;
     const row = summaries.get(id);
     if (!row) continue;
     const br = bm25Rank.get(id);

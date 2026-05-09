@@ -385,4 +385,72 @@ describe.each(BACKENDS)('storage backend parity ($name)', backend => {
     expect(map.get(s2)).toBe('Read');
     expect(map.has(9999)).toBe(false);
   });
+
+  it('pin / unpin / listPinned / pinnedIds round-trip', async () => {
+    const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: { i: 1 } });
+    const sid = await storage.recordSummary({ eventId: eid, ts: 1, model: 'm', promptHash: 'p', text: 'pin me', tokensIn: null, tokensOut: null, confidence: null });
+    expect((await storage.pinnedIds()).size).toBe(0);
+    expect(await storage.pin(sid)).toBe(true);
+    const pinned = await storage.listPinned(10);
+    expect(pinned).toHaveLength(1);
+    expect(pinned[0]!.text).toBe('pin me');
+    expect((await storage.pinnedIds()).has(sid)).toBe(true);
+    await storage.unpin(sid);
+    expect((await storage.pinnedIds()).size).toBe(0);
+    expect(await storage.listPinned(10)).toHaveLength(0);
+  });
+
+  it('listPinned orders by pinned_at descending (most recent first)', async () => {
+    const eid1 = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: { i: 1 } });
+    const eid2 = await storage.recordEvent({ ts: 2, sessionId: 's', tool: 'R', payload: { i: 2 } });
+    const s1 = await storage.recordSummary({ eventId: eid1, ts: 1, model: 'm', promptHash: 'p', text: 'first', tokensIn: null, tokensOut: null, confidence: null });
+    const s2 = await storage.recordSummary({ eventId: eid2, ts: 2, model: 'm', promptHash: 'p', text: 'second', tokensIn: null, tokensOut: null, confidence: null });
+    await storage.pin(s1, 100);
+    await storage.pin(s2, 200);
+    const pinned = await storage.listPinned(10);
+    expect(pinned[0]!.id).toBe(s2);
+    expect(pinned[1]!.id).toBe(s1);
+  });
+
+  it('doctor reports integrity ok and zero orphans on a healthy store', async () => {
+    const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: { i: 1 } });
+    const sid = await storage.recordSummary({ eventId: eid, ts: 1, model: 'm', promptHash: 'p', text: 't', tokensIn: null, tokensOut: null, confidence: null });
+    await storage.putEmbedding(sid, new Float32Array(3));
+    const r = await storage.doctor();
+    expect(r.integrity).toBe('ok');
+    expect(r.orphanSummaries).toBe(0);
+    expect(r.orphanEmbeddings).toBe(0);
+    expect(r.counts.events).toBe(1);
+    expect(r.counts.summaries).toBe(1);
+    expect(r.pinned).toBe(0);
+  });
+
+  it('doctor counts pinned summaries', async () => {
+    const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: { i: 1 } });
+    const sid = await storage.recordSummary({ eventId: eid, ts: 1, model: 'm', promptHash: 'p', text: 't', tokensIn: null, tokensOut: null, confidence: null });
+    await storage.pin(sid);
+    const r = await storage.doctor();
+    expect(r.pinned).toBe(1);
+  });
+
+  it('Consolidator does not mark a pinned summary as superseded', async () => {
+    const { Consolidator } = await import('../daemon/consolidator.js');
+    const { DeterministicEmbedder } = await import('../embedder.js');
+    const e = new DeterministicEmbedder(64);
+    const e1 = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: { i: 1 } });
+    const e2 = await storage.recordEvent({ ts: 2, sessionId: 's', tool: 'R', payload: { i: 2 } });
+    const s1 = await storage.recordSummary({ eventId: e1, ts: 1, model: 'm', promptHash: 'p', text: 'auth login session token', tokensIn: null, tokensOut: null, confidence: null });
+    const s2 = await storage.recordSummary({ eventId: e2, ts: 2, model: 'm', promptHash: 'p', text: 'auth login session token', tokensIn: null, tokensOut: null, confidence: null });
+    await storage.putEmbedding(s1, await e.embed('auth login session token'));
+    await storage.putEmbedding(s2, await e.embed('auth login session token'));
+    await storage.pin(s1);
+
+    const c = new Consolidator(storage, { cosineThreshold: 0.5, minNewSinceLastRun: 0 });
+    c.start();
+    const r = await c.tick();
+    c.stop();
+    // s1 is pinned and excluded from the candidate scan, so no supersede pair can mention it.
+    expect(r.pairsMarked).toBe(0);
+    expect((await storage.supersededIds()).has(s1)).toBe(false);
+  });
 });

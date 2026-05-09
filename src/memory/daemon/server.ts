@@ -290,6 +290,34 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
           return { ok: true, data: { requeued } };
         }
 
+        case 'pin': {
+          const ok = await deps.storage.pin(req.summaryId);
+          return { ok: true, data: { pinned: ok, summaryId: req.summaryId } };
+        }
+
+        case 'unpin': {
+          await deps.storage.unpin(req.summaryId);
+          return { ok: true, data: { pinned: false, summaryId: req.summaryId } };
+        }
+
+        case 'pinned': {
+          const rows = await deps.storage.listPinned(req.limit ?? 100);
+          const pinned = rows.map(r => ({
+            id: r.id,
+            eventId: r.eventId,
+            ts: new Date(r.ts).toISOString(),
+            model: r.model,
+            text: r.text.length > 240 ? r.text.slice(0, 240) + '...' : r.text,
+            confidence: r.confidence,
+          }));
+          return { ok: true, data: { pinned } };
+        }
+
+        case 'doctor': {
+          const r = await deps.storage.doctor();
+          return { ok: true, data: r };
+        }
+
         case 'summaries': {
           const limit = req.limit ?? 20;
           const rows = await deps.storage.recentSummaries(limit);

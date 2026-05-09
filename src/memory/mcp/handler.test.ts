@@ -326,3 +326,68 @@ describe('mem_search routes drain through sampling when transport is provided', 
     expect(mem.calls.find(c => c.kind === 'drain')).toBeUndefined();
   });
 });
+
+describe('ops MCP tools', () => {
+  it('mem_pin forwards a pin RPC with the summary id', async () => {
+    mem.scripted.push({ ok: true, data: { pinned: true, summaryId: 42 } });
+    const r = await dispatch(
+      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'mem_pin', arguments: { summary_id: 42 } } },
+      { client: mem as unknown as MemoryClient },
+    );
+    expect(mem.calls.find(c => c.kind === 'pin' && c.summaryId === 42)).toBeTruthy();
+    expect(r.result).toBeDefined();
+  });
+
+  it('mem_unpin forwards an unpin RPC', async () => {
+    mem.scripted.push({ ok: true, data: { pinned: false, summaryId: 42 } });
+    await dispatch(
+      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'mem_unpin', arguments: { summary_id: 42 } } },
+      { client: mem as unknown as MemoryClient },
+    );
+    expect(mem.calls.find(c => c.kind === 'unpin' && c.summaryId === 42)).toBeTruthy();
+  });
+
+  it('mem_pinned forwards a pinned RPC with the limit', async () => {
+    mem.scripted.push({ ok: true, data: { pinned: [] } });
+    await dispatch(
+      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'mem_pinned', arguments: { limit: 5 } } },
+      { client: mem as unknown as MemoryClient },
+    );
+    expect(mem.calls.find(c => c.kind === 'pinned' && c.limit === 5)).toBeTruthy();
+  });
+
+  it('mem_prune translates days → maxAgeMs', async () => {
+    mem.scripted.push({ ok: true, data: { removedEvents: 0, removedSummaries: 0 } });
+    await dispatch(
+      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'mem_prune', arguments: { days: 14, superseded: true } } },
+      { client: mem as unknown as MemoryClient },
+    );
+    const call = mem.calls.find(c => c.kind === 'prune');
+    expect(call).toBeTruthy();
+    expect((call as { maxAgeMs: number }).maxAgeMs).toBe(14 * 24 * 60 * 60 * 1000);
+    expect((call as { superseded: boolean }).superseded).toBe(true);
+  });
+
+  it('mem_retry forwards a retry_skipped RPC', async () => {
+    mem.scripted.push({ ok: true, data: { requeued: 3 } });
+    await dispatch(
+      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'mem_retry', arguments: { limit: 5 } } },
+      { client: mem as unknown as MemoryClient },
+    );
+    expect(mem.calls.find(c => c.kind === 'retry_skipped' && c.limit === 5)).toBeTruthy();
+  });
+
+  it('mem_doctor forwards a doctor RPC', async () => {
+    mem.scripted.push({ ok: true, data: { integrity: 'ok' } });
+    await dispatch(
+      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'mem_doctor', arguments: {} } },
+      { client: mem as unknown as MemoryClient },
+    );
+    expect(mem.calls.find(c => c.kind === 'doctor')).toBeTruthy();
+  });
+
+  it('tools/list now exposes 11 tools (5 original + 6 ops)', async () => {
+    const r = await dispatch({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, { client: mem as unknown as MemoryClient });
+    expect((r.result as { tools: unknown[] }).tools).toHaveLength(11);
+  });
+});

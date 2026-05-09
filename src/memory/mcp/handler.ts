@@ -95,6 +95,59 @@ export const TOOLS = [
       required: ['kind', 'id'],
     },
   },
+  {
+    name: 'mem_pin',
+    description: 'Mark a summary as user-curated. Pinned summaries are exempt from supersede + decay; use to lock in important facts (decisions, gotchas, configuration values) that should always surface in search.',
+    inputSchema: {
+      type: 'object',
+      properties: { summary_id: { type: 'number' } },
+      required: ['summary_id'],
+    },
+  },
+  {
+    name: 'mem_unpin',
+    description: 'Remove the curation mark from a previously pinned summary.',
+    inputSchema: {
+      type: 'object',
+      properties: { summary_id: { type: 'number' } },
+      required: ['summary_id'],
+    },
+  },
+  {
+    name: 'mem_pinned',
+    description: 'List the most-recently pinned summaries.',
+    inputSchema: {
+      type: 'object',
+      properties: { limit: { type: 'number', default: 100 } },
+      required: [],
+    },
+  },
+  {
+    name: 'mem_prune',
+    description: 'Drop old skipped events (default >7 days) and optionally consolidator-superseded summaries. Returns counts of removed rows.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        days: { type: 'number', default: 7 },
+        superseded: { type: 'boolean', default: false },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'mem_retry',
+    description: 'Re-queue events whose drain previously hit a non-retryable error. Useful after a quota outage or backend swap.',
+    inputSchema: {
+      type: 'object',
+      properties: { limit: { type: 'number' } },
+      required: [],
+    },
+  },
+  {
+    name: 'mem_doctor',
+    description: 'Health check over the memory store: integrity, orphan summaries / embeddings, vec0 cardinality drift, counts. Returns a structured report.',
+    inputSchema: { type: 'object', properties: {}, required: [] },
+  },
 ];
 
 export interface DrainResult {
@@ -300,6 +353,36 @@ export async function dispatch(req: JsonRpcRequest, deps: HandlerDeps): Promise<
             nodeId: String(args['id'] ?? ''),
             depth: Number(args['depth'] ?? 4),
           });
+          return ok(req.id, res);
+        }
+        case 'mem_pin': {
+          const res = await deps.client.send({ kind: 'pin', summaryId: Number(args['summary_id']) });
+          return ok(req.id, res);
+        }
+        case 'mem_unpin': {
+          const res = await deps.client.send({ kind: 'unpin', summaryId: Number(args['summary_id']) });
+          return ok(req.id, res);
+        }
+        case 'mem_pinned': {
+          const res = await deps.client.send({ kind: 'pinned', limit: Number(args['limit'] ?? 100) });
+          return ok(req.id, res);
+        }
+        case 'mem_prune': {
+          const days = Number(args['days'] ?? 7);
+          const res = await deps.client.send({
+            kind: 'prune',
+            maxAgeMs: days * 24 * 60 * 60 * 1000,
+            superseded: Boolean(args['superseded']),
+          });
+          return ok(req.id, res);
+        }
+        case 'mem_retry': {
+          const limit = args['limit'] !== undefined ? Number(args['limit']) : undefined;
+          const res = await deps.client.send({ kind: 'retry_skipped', limit });
+          return ok(req.id, res);
+        }
+        case 'mem_doctor': {
+          const res = await deps.client.send({ kind: 'doctor' });
           return ok(req.id, res);
         }
         default:

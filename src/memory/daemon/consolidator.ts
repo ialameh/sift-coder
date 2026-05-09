@@ -71,7 +71,10 @@ export class Consolidator {
     this.lastTotal = all.length;
 
     const dropped = await this.storage.supersededIds();
-    const live = all.filter(e => !dropped.has(e.summaryId));
+    // Pinned summaries are user-curated long-term memory. Skip them entirely so the
+    // consolidator can never mark them as the loser of a near-duplicate pair.
+    const pinned = await this.storage.pinnedIds();
+    const live = all.filter(e => !dropped.has(e.summaryId) && !pinned.has(e.summaryId));
     live.sort((a, b) => a.ts - b.ts);
 
     let pairsMarked = 0;

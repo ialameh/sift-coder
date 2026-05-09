@@ -23,6 +23,10 @@ Single entry point for memory daemon operations.
 | `backfill [source]` | Backfill from past Claude Code transcripts |
 | `prune [--days N] [--superseded]` | Drop skipped events older than N days (default 7); `--superseded` also drops dedup losers |
 | `retry [N]` | Re-queue skipped events for another drain pass (optionally first N) |
+| `pin <summaryId>` | Mark a summary as user-curated (exempt from supersede + decay) |
+| `unpin <summaryId>` | Remove the curation mark |
+| `pinned [N]` | List the most-recently pinned summaries (default 100) |
+| `doctor [--json]` | Health check: integrity, orphans, vec0 drift, counts |
 | `web` | Print web UI URL for browser inspection |
 | `list` | List recent summaries |
 
