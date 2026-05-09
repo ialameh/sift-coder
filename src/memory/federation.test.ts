@@ -28,7 +28,11 @@ async function mkWs(key: string, withConsent: boolean): Promise<string> {
 const factory = undefined as unknown as (path: string) => import('./storage/storage.js').DBHandle & { close(): void };
 
 beforeEach(() => { home = mkdtempSync(join(tmpdir(), 'fed-')); });
-afterEach(() => { rmSync(home, { recursive: true, force: true }); });
+afterEach(() => {
+  // Windows occasionally retains an SQLite file handle for a tick after close(), so a
+  // bare rmSync can race with the lock release. maxRetries lets the cleanup ride that out.
+  rmSync(home, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+});
 
 describe('listConsentedWorkspaces', () => {
   it('returns workspaces with a federate.consent flag', async () => {
