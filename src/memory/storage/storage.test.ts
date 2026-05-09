@@ -148,13 +148,13 @@ class FakeDB implements DBHandle {
         all: () => Promise.resolve([]),
       });
     }
-    if (stmt.includes('FROM summary_embeddings e JOIN summaries s')) {
+    if (stmt.includes('FROM summary_embeddings e')) {
       return Promise.resolve({
         run: () => Promise.resolve({ lastInsertRowid: 0 }),
         get: () => Promise.resolve(undefined),
         all: () => Promise.resolve(Array.from(this.embeddings.entries()).map(([sid, e]) => {
           const sum = this.summaries.find(s => s['id'] === sid);
-          return { sid, dim: e.dim, vec: e.vec, ts: (sum?.['ts'] as number | undefined) ?? e.ts };
+          return { sid, dim: e.dim, vec: e.vec, ts: (sum?.['ts'] as number | undefined) ?? e.ts, tool: null };
         })),
       });
     }

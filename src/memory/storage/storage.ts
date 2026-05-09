@@ -65,6 +65,8 @@ export interface SearchHit {
   text: string;
   ts: number;
   score: number;
+  /** Originating tool from the source event, used by per-tool decay during retrieval scoring. */
+  tool?: string;
 }
 
 export interface StorageCounts {
@@ -359,8 +361,11 @@ export class Storage {
     if (!safe) return [];
     const rows = await (await this.db.prepare(
       `SELECT s.id AS id, s.event_id AS event_id, s.text AS text, s.ts AS ts,
+              e.tool AS tool,
               bm25(summaries_fts) AS score
-       FROM summaries_fts JOIN summaries s ON s.id = summaries_fts.rowid
+       FROM summaries_fts
+         JOIN summaries s ON s.id = summaries_fts.rowid
+         LEFT JOIN events e ON e.id = s.event_id
        WHERE summaries_fts MATCH ?
        ORDER BY score ASC LIMIT ?`
     )).all(safe, k) as Record<string, unknown>[];
@@ -370,6 +375,7 @@ export class Storage {
       text: r['text'] as string,
       ts: r['ts'] as number,
       score: r['score'] as number,
+      tool: (r['tool'] as string | null) ?? undefined,
     }));
   }
 
@@ -391,6 +397,23 @@ export class Storage {
       tokensOut: (r['tokens_out'] as number | null) ?? null,
       confidence: (r['confidence'] as number | null) ?? null,
     }));
+  }
+
+  /**
+   * Look up the originating tool name for a list of summary ids in one query. Used by
+   * vec-side retrieval to apply per-tool decay without re-fetching events one-by-one.
+   */
+  async toolsForSummaries(ids: number[]): Promise<Map<number, string>> {
+    if (ids.length === 0) return new Map();
+    const placeholders = ids.map(() => '?').join(',');
+    const rows = await (await this.db.prepare(
+      `SELECT s.id AS sid, e.tool AS tool
+       FROM summaries s LEFT JOIN events e ON e.id = s.event_id
+       WHERE s.id IN (${placeholders})`
+    )).all(...ids) as Array<{ sid: number; tool: string | null }>;
+    const map = new Map<number, string>();
+    for (const r of rows) if (r.tool) map.set(r.sid, r.tool);
+    return map;
   }
 
   async timeline(nearId: number, window = 10): Promise<SummaryRow[]> {
@@ -418,6 +441,62 @@ export class Storage {
     await (await this.db.prepare(
       'INSERT OR REPLACE INTO summary_embeddings (summary_id, dim, vec) VALUES (?, ?, ?)'
     )).run(summaryId, vec.length, buf);
+    // When sqlite-vec is loaded, mirror the vector into the vec0 virtual table so MATCH
+    // queries can use the indexed similarity scan instead of a JS-side cosine over every row.
+    // vec0 enforces BigInt rowid binding — passing a regular Number trips its primary-key
+    // type check at runtime even though the value is integral.
+    if (this.vecEnabled) {
+      try {
+        await (await this.db.prepare(
+          'INSERT OR REPLACE INTO summaries_vec (rowid, embedding) VALUES (?, ?)'
+        )).run(BigInt(summaryId), buf);
+      } catch { /* vec table may not exist on legacy DBs that pre-date this branch */ }
+    }
+  }
+
+  /**
+   * Backfill the vec0 virtual table from `summary_embeddings`. Used at daemon boot when
+   * sqlite-vec was newly loaded against an existing DB whose summaries pre-date the vec
+   * integration. No-op when `vecEnabled` is false. Returns the number of vectors copied.
+   */
+  async backfillVec(): Promise<number> {
+    if (!this.vecEnabled) return 0;
+    const rows = await (await this.db.prepare(
+      `SELECT e.summary_id AS sid, e.vec AS vec FROM summary_embeddings e
+        WHERE NOT EXISTS (SELECT 1 FROM summaries_vec v WHERE v.rowid = e.summary_id)`
+    )).all() as Array<{ sid: number; vec: Buffer }>;
+    let copied = 0;
+    for (const r of rows) {
+      try {
+        await (await this.db.prepare(
+          'INSERT OR REPLACE INTO summaries_vec (rowid, embedding) VALUES (?, ?)'
+        )).run(BigInt(r.sid), r.vec);
+        copied++;
+      } catch { /* dim mismatch — skip silently; consolidator will catch up */ }
+    }
+    return copied;
+  }
+
+  /**
+   * Vec0-backed nearest-neighbor search. Returns up to `k` summary ids ranked by cosine
+   * distance ascending (i.e. most similar first). `cosine` field is converted from the
+   * distance metric so callers can compare against the JS-side path.
+   *
+   * Only callable when `vecEnabled` is true; the caller should fall back to JS cosine over
+   * `allEmbeddings()` otherwise.
+   */
+  async searchVec(qv: Float32Array, k: number): Promise<Array<{ summaryId: number; distance: number; cosine: number }>> {
+    if (!this.vecEnabled) return [];
+    const buf = Buffer.from(qv.buffer, qv.byteOffset, qv.byteLength);
+    const rows = await (await this.db.prepare(
+      `SELECT rowid AS sid, distance FROM summaries_vec WHERE embedding MATCH ? AND k = ? ORDER BY distance`
+    )).all(buf, k) as Array<{ sid: number; distance: number }>;
+    return rows.map(r => ({
+      summaryId: r.sid,
+      distance: r.distance,
+      // sqlite-vec default metric is L2 over normalized vectors; cosine = 1 - dist^2/2.
+      cosine: 1 - (r.distance * r.distance) / 2,
+    }));
   }
 
   async getEmbedding(summaryId: number): Promise<Float32Array | null> {
@@ -428,15 +507,18 @@ export class Storage {
     return new Float32Array(row.vec.buffer, row.vec.byteOffset, row.dim);
   }
 
-  async allEmbeddings(): Promise<Array<{ summaryId: number; vec: Float32Array; ts: number }>> {
+  async allEmbeddings(): Promise<Array<{ summaryId: number; vec: Float32Array; ts: number; tool: string | null }>> {
     const rows = await (await this.db.prepare(
-      `SELECT e.summary_id AS sid, e.dim AS dim, e.vec AS vec, s.ts AS ts
-       FROM summary_embeddings e JOIN summaries s ON s.id = e.summary_id`
-    )).all() as Array<{ sid: number; dim: number; vec: Buffer; ts: number }>;
+      `SELECT e.summary_id AS sid, e.dim AS dim, e.vec AS vec, s.ts AS ts, ev.tool AS tool
+       FROM summary_embeddings e
+         JOIN summaries s ON s.id = e.summary_id
+         LEFT JOIN events ev ON ev.id = s.event_id`
+    )).all() as Array<{ sid: number; dim: number; vec: Buffer; ts: number; tool: string | null }>;
     return rows.map(r => ({
       summaryId: r.sid,
       vec: new Float32Array(r.vec.buffer, r.vec.byteOffset, r.dim),
       ts: r.ts,
+      tool: r.tool,
     }));
   }
 

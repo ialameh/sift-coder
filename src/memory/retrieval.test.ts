@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { hybridSearch } from './retrieval.js';
+import { hybridSearch, DEFAULT_DECAY_TAU_MS_BY_TOOL, resetRerankCorpusCache } from './retrieval.js';
 import { Storage, type DBHandle, type SearchHit, type SummaryRow } from './storage/storage.js';
 import { DeterministicEmbedder } from './embedder.js';
 
@@ -38,11 +38,11 @@ class FakeDB implements DBHandle {
           })),
       };
     }
-    if (stmt.includes('FROM summary_embeddings e JOIN summaries s')) {
+    if (stmt.includes('FROM summary_embeddings e')) {
       return {
         run: () => ({ lastInsertRowid: 0 }),
         get: () => undefined,
-        all: () => this.embeddings,
+        all: () => this.embeddings.map(r => ({ ...r, tool: null })),
       };
     }
     if (stmt.startsWith('SELECT older_id FROM summary_supersedes')) {
@@ -180,5 +180,37 @@ describe('hybridSearch', () => {
     db.embeddings.push({ sid: 999, dim: 0, vec: Buffer.alloc(0), ts: 0 });
     const hits = await hybridSearch(storage, e, 'anything', 0);
     expect(hits.find(h => h.id === 999)).toBeUndefined();
+  });
+
+  it('exposes a default per-tool decay map favouring code edits', () => {
+    expect(DEFAULT_DECAY_TAU_MS_BY_TOOL['Edit']).toBeGreaterThan(DEFAULT_DECAY_TAU_MS_BY_TOOL['Bash']!);
+    expect(DEFAULT_DECAY_TAU_MS_BY_TOOL['Write']).toBeGreaterThan(DEFAULT_DECAY_TAU_MS_BY_TOOL['Read']!);
+  });
+
+  it('per-tool decay favors code-edit summaries over old bash output of equal RRF rank', async () => {
+    const oldEditTs = -10 * 24 * 60 * 60 * 1000; // 10 days old
+    const oldBashTs = -10 * 24 * 60 * 60 * 1000; // same age
+    const editRow: SummaryRow = { id: 1, eventId: 1, ts: oldEditTs, model: 'm', promptHash: 'p', text: 'refactored auth.ts to use jwt', tokensIn: null, tokensOut: null, confidence: null };
+    const bashRow: SummaryRow = { id: 2, eventId: 2, ts: oldBashTs, model: 'm', promptHash: 'p', text: 'ran ls in src directory', tokensIn: null, tokensOut: null, confidence: null };
+    addSummary(editRow);
+    addSummary(bashRow);
+    // Push tool-bearing FTS hits so the per-tool decay path is exercised. Both match the query
+    // identically, but `Edit` has a 30-day tau vs `Bash`'s 3-day tau, so the edit ranks higher.
+    db.ftsRanked.push({ id: 1, eventId: 1, text: editRow.text, ts: oldEditTs, score: -1, tool: 'Edit' });
+    db.ftsRanked.push({ id: 2, eventId: 2, text: bashRow.text, ts: oldBashTs, score: -1, tool: 'Bash' });
+    const hits = await hybridSearch(storage, null, 'auth', 0);
+    expect(hits[0]!.id).toBe(1);
+    expect(hits[0]!.tool).toBe('Edit');
+  });
+
+  it('per-tool decay falls back to global tau when tool is unknown', async () => {
+    resetRerankCorpusCache();
+    const ts = -1 * 24 * 60 * 60 * 1000;
+    const row: SummaryRow = { id: 1, eventId: 1, ts, model: 'm', promptHash: 'p', text: 'auth fact', tokensIn: null, tokensOut: null, confidence: null };
+    addSummary(row);
+    db.ftsRanked.push({ id: 1, eventId: 1, text: row.text, ts, score: -1, tool: 'BrandNewTool' });
+    const hits = await hybridSearch(storage, null, 'auth', 0, { decayTauMs: 7 * 24 * 60 * 60 * 1000 });
+    expect(hits).toHaveLength(1);
+    expect(hits[0]!.recency).toBeCloseTo(Math.exp(-1 / 7), 2);
   });
 });

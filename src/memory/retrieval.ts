@@ -1,17 +1,79 @@
 /**
- * Hybrid retrieval: BM25 (FTS5) + dense (cosine over JS-side embeddings) fused via Reciprocal Rank Fusion.
- * Optional Ebbinghaus recency decay applied as a multiplicative score boost.
+ * Hybrid retrieval: BM25 (FTS5) + dense (cosine) fused via Reciprocal Rank Fusion. Optional
+ * Ebbinghaus recency decay applied as a multiplicative score boost, with **per-tool tau** so
+ * code edits decay slower than transient bash output.
  *
  * RRF: score(d) = Σ_l 1 / (rrf_k + rank_l(d))
- * Decay: boost(d) = exp(-(now - ts(d)) / tau_ms)
+ * Decay: boost(d) = exp(-(now - ts(d)) / tau(tool))
  *
- * Vector search is intentionally JS-side over allEmbeddings(): for the small N typical of memory
- * (up to ~10k summaries), this is faster than round-tripping a sqlite-vec MATCH per query, and
- * avoids the optional native dependency. Switch to vec0 when corpora exceed that scale.
+ * Vector backend selection:
+ *   - `storage.vecEnabled === true` (sqlite-vec loaded): indexed `vec0 MATCH` scan.
+ *   - else: JS-side cosine over `allEmbeddings()`. Fine up to ~10k rows.
  */
 import { cosine, type Embedder } from './embedder.js';
 import type { Storage, SearchHit, SummaryRow } from './storage/storage.js';
-import { rerank } from './reranker.js';
+import { rerank, buildRerankCorpus, type RerankCorpus } from './reranker.js';
+
+/**
+ * Corpus IDF cache. Built lazily on first rerank call, refreshed when the summary count drifts
+ * by `CORPUS_INVALIDATE_PCT` from when the cache was built. A single daemon serves many
+ * searches per minute and the corpus changes slowly (~one new summary per drain), so caching
+ * here saves O(n × tokens) work per query.
+ */
+const CORPUS_INVALIDATE_PCT = 0.05;
+let corpusCache: { corpus: RerankCorpus; sourceCount: number } | null = null;
+
+/**
+ * Reset the cached corpus. Useful in tests; production callers shouldn't need this — staleness
+ * is bounded by the percent-drift heuristic.
+ */
+export function resetRerankCorpusCache(): void {
+  corpusCache = null;
+}
+
+async function getOrBuildCorpus(storage: Storage): Promise<RerankCorpus> {
+  const total = await storage.countAll('summaries');
+  if (corpusCache) {
+    const drift = Math.abs(total - corpusCache.sourceCount) / Math.max(1, corpusCache.sourceCount);
+    if (drift < CORPUS_INVALIDATE_PCT) return corpusCache.corpus;
+  }
+  // Sample up to 2000 most-recent summaries so the IDF stays bounded on huge stores. The
+  // recency bias is intentional: query relevance tracks recent vocabulary.
+  const sample = await storage.recentSummaries(2000);
+  const corpus = buildRerankCorpus(sample.map(s => s.text));
+  corpusCache = { corpus, sourceCount: total };
+  return corpus;
+}
+
+/**
+ * Per-tool Ebbinghaus tau (in ms). Lookups fall back to `decayTauMs` when the tool isn't in
+ * the map. The defaults reflect signal half-life observed across coding sessions:
+ *   - Long: code edits — fact survives weeks of related work.
+ *   - Mid:  Read — file inspections you may revisit.
+ *   - Short: shell output — usually only relevant in the moment.
+ *   - Web:  web fetches — short shelf life, but worth retaining a week.
+ */
+export const DEFAULT_DECAY_TAU_MS_BY_TOOL: Readonly<Record<string, number>> = Object.freeze({
+  Edit: 30 * 24 * 60 * 60 * 1000,
+  Write: 30 * 24 * 60 * 60 * 1000,
+  MultiEdit: 30 * 24 * 60 * 60 * 1000,
+  NotebookEdit: 30 * 24 * 60 * 60 * 1000,
+  Read: 14 * 24 * 60 * 60 * 1000,
+  Glob: 7 * 24 * 60 * 60 * 1000,
+  Grep: 5 * 24 * 60 * 60 * 1000,
+  Bash: 3 * 24 * 60 * 60 * 1000,
+  WebFetch: 7 * 24 * 60 * 60 * 1000,
+  WebSearch: 7 * 24 * 60 * 60 * 1000,
+});
+
+function tauForTool(
+  tool: string | undefined,
+  byTool: Record<string, number>,
+  fallback: number,
+): number {
+  if (tool && tool in byTool) return byTool[tool]!;
+  return fallback;
+}
 
 export interface AsyncReranker {
   rerank(query: string, hits: HybridHit[]): Promise<HybridHit[]>;
@@ -21,6 +83,8 @@ export interface HybridOptions {
   k?: number;
   rrfK?: number;
   decayTauMs?: number;
+  /** Override the per-tool decay map. Falls back to `decayTauMs` for unmapped tools. */
+  decayTauMsByTool?: Record<string, number>;
   candidatePool?: number;
   bm25Weight?: number;
   vectorWeight?: number;
@@ -39,9 +103,11 @@ export interface HybridHit {
   vecRank?: number;
   cosine?: number;
   recency?: number;
+  /** Originating tool (for downstream rendering and per-tool decay debugging). */
+  tool?: string;
 }
 
-const DEFAULTS: Required<Omit<HybridOptions, 'asyncReranker' | 'boostFn'>> = {
+const DEFAULTS: Required<Omit<HybridOptions, 'asyncReranker' | 'boostFn' | 'decayTauMsByTool'>> = {
   k: 5,
   rrfK: 60,
   decayTauMs: 7 * 24 * 60 * 60 * 1000,
@@ -59,24 +125,41 @@ export async function hybridSearch(
   opts: HybridOptions = {}
 ): Promise<HybridHit[]> {
   const cfg = { ...DEFAULTS, ...opts };
+  const decayByTool: Record<string, number> = opts.decayTauMsByTool ?? DEFAULT_DECAY_TAU_MS_BY_TOOL;
 
   const bm25Hits = await storage.searchFts(query, cfg.candidatePool);
   const bm25Rank = new Map<number, number>();
   bm25Hits.forEach((h, i) => bm25Rank.set(h.id, i + 1));
 
+  // Vector candidates: prefer indexed vec0 MATCH when sqlite-vec is loaded; otherwise fall
+  // back to a JS-side cosine over every embedding. Both paths produce the same shape so the
+  // RRF + decay + rerank stages downstream are unchanged.
   const vecRank = new Map<number, number>();
   const vecCos = new Map<number, number>();
+  const vecTools = new Map<number, string>();
   if (embedder) {
     const qv = await embedder.embed(query);
-    const all = await storage.allEmbeddings();
-    const scored = all
-      .map(e => ({ id: e.summaryId, ts: e.ts, sim: cosine(qv, e.vec) }))
-      .sort((a, b) => b.sim - a.sim)
-      .slice(0, cfg.candidatePool);
-    scored.forEach((e, i) => {
-      vecRank.set(e.id, i + 1);
-      vecCos.set(e.id, e.sim);
-    });
+    if (storage.vecEnabled) {
+      const indexedHits = await storage.searchVec(qv, cfg.candidatePool);
+      indexedHits.forEach((e, i) => {
+        vecRank.set(e.summaryId, i + 1);
+        vecCos.set(e.summaryId, e.cosine);
+      });
+      // Fetch tools for these ids in one query so per-tool decay can apply downstream.
+      const tools = await storage.toolsForSummaries(indexedHits.map(h => h.summaryId));
+      for (const [sid, tool] of tools) vecTools.set(sid, tool);
+    } else {
+      const all = await storage.allEmbeddings();
+      const scored = all
+        .map(e => ({ id: e.summaryId, ts: e.ts, sim: cosine(qv, e.vec), tool: e.tool }))
+        .sort((a, b) => b.sim - a.sim)
+        .slice(0, cfg.candidatePool);
+      scored.forEach((e, i) => {
+        vecRank.set(e.id, i + 1);
+        vecCos.set(e.id, e.sim);
+        if (e.tool) vecTools.set(e.id, e.tool);
+      });
+    }
   }
 
   const dropped = await storage.supersededIds();
@@ -102,7 +185,10 @@ export async function hybridSearch(
     const rrf =
       (br ? cfg.bm25Weight / (cfg.rrfK + br) : 0) +
       (vr ? cfg.vectorWeight / (cfg.rrfK + vr) : 0);
-    const recency = Math.exp(-(now - row.ts) / cfg.decayTauMs);
+    // Per-tool decay: tools come from BM25 hits (joined in searchFts) or the vec-side tools map.
+    const tool: string | undefined = (row as SearchHit).tool ?? vecTools.get(id);
+    const tau = tauForTool(tool, decayByTool, cfg.decayTauMs);
+    const recency = Math.exp(-(now - row.ts) / tau);
     const score = rrf * recency;
     const text = row.text;
     const eventId = (row as SearchHit).eventId ?? (row as SummaryRow).eventId;
@@ -116,6 +202,7 @@ export async function hybridSearch(
       ...(vr !== undefined ? { vecRank: vr } : {}),
       ...(vecCos.has(id) ? { cosine: vecCos.get(id)! } : {}),
       recency,
+      ...(tool ? { tool } : {}),
     });
   }
 
@@ -129,7 +216,8 @@ export async function hybridSearch(
     return reranked.slice(0, cfg.k);
   }
   if (cfg.rerank) {
-    return rerank(query, pool, { k: cfg.k });
+    const corpus = await getOrBuildCorpus(storage);
+    return rerank(query, pool, { k: cfg.k, corpus });
   }
   return hits.slice(0, cfg.k);
 }

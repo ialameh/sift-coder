@@ -11,11 +11,11 @@ class FakeDB implements DBHandle {
   loadExtension(): void { throw new Error('no'); }
   prepare(sql: string) {
     const stmt = sql.trim();
-    if (stmt.includes('FROM summary_embeddings e JOIN summaries s')) {
+    if (stmt.includes('FROM summary_embeddings e')) {
       return {
         run: () => ({ lastInsertRowid: 0 }),
         get: () => undefined,
-        all: () => Array.from(this.embeddings.entries()).map(([sid, e]) => ({ sid, dim: e.dim, vec: e.vec, ts: e.ts })),
+        all: () => Array.from(this.embeddings.entries()).map(([sid, e]) => ({ sid, dim: e.dim, vec: e.vec, ts: e.ts, tool: null })),
       };
     }
     if (stmt.startsWith('SELECT older_id FROM summary_supersedes')) {
