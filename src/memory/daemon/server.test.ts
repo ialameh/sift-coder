@@ -5,6 +5,7 @@ import { WAL } from './wal.js';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import Database from 'better-sqlite3';
 import type { ModelClient, ModelRequest, ModelResult } from './summarizer.js';
 import { Summarizer } from './summarizer.js';
 
@@ -437,6 +438,113 @@ describe('buildHandler', () => {
     const r = await h({ kind: 'why', nodeKind: 'summary', nodeId: '1', depth: 2 }) as { ok: true; data: { edges: unknown[] } };
     expect(r.ok).toBe(true);
     expect(r.data.edges).toHaveLength(1);
+  });
+});
+
+describe('buildHandler with real Storage (cross-platform)', () => {
+  let dir: string;
+  let realDb: Database.Database;
+  let realStorage: Storage;
+  let realWal: WAL;
+  let realWalDir: string;
+
+  beforeEach(async () => {
+    dir = mkdtempSync(join(tmpdir(), 'srv-real-'));
+    realDb = new Database(join(dir, 'd.sqlite'));
+    realStorage = await Storage.init(realDb);
+    realWalDir = mkdtempSync(join(tmpdir(), 'srv-real-wal-'));
+    realWal = new WAL(join(realWalDir, 'wal.ndjson'));
+    realWal.open();
+  });
+  afterEach(() => {
+    try { realWal.close(); } catch { /* ignore */ }
+    try { realDb.close(); } catch { /* ignore */ }
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    rmSync(realWalDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  });
+
+  it('serves the summaries RPC kind ordered most-recent-first', async () => {
+    for (let i = 0; i < 4; i++) {
+      const eid = await realStorage.recordEvent({ ts: i, sessionId: 's', tool: 'R', payload: { i } });
+      await realStorage.recordSummary({
+        eventId: eid, ts: i, model: 'haiku', promptHash: 'p', text: `text-${i}`,
+        tokensIn: 1, tokensOut: 1, confidence: 0.9,
+      });
+    }
+    const h = buildHandler({ storage: realStorage, wal: realWal, cwd: '/x' });
+    const r = await h({ kind: 'summaries', limit: 2 }) as { ok: true; data: { summaries: Array<{ text: string }> } };
+    expect(r.ok).toBe(true);
+    expect(r.data.summaries).toHaveLength(2);
+    expect(r.data.summaries[0]!.text).toBe('text-3');
+    expect(r.data.summaries[1]!.text).toBe('text-2');
+  });
+
+  it('summaries truncates long text to 240 chars with an ellipsis', async () => {
+    const eid = await realStorage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: {} });
+    await realStorage.recordSummary({
+      eventId: eid, ts: 1, model: 'm', promptHash: 'p', text: 'A'.repeat(300),
+      tokensIn: 1, tokensOut: 1, confidence: 0.9,
+    });
+    const h = buildHandler({ storage: realStorage, wal: realWal, cwd: '/x' });
+    const r = await h({ kind: 'summaries' }) as { ok: true; data: { summaries: Array<{ text: string }> } };
+    expect(r.data.summaries[0]!.text.endsWith('...')).toBe(true);
+    expect(r.data.summaries[0]!.text.length).toBe(243);
+  });
+
+  it('returns an error for unknown request kinds', async () => {
+    const h = buildHandler({ storage: realStorage, wal: realWal, cwd: '/x' });
+    const r = await h({ kind: 'definitely-not-real' } as unknown as { kind: 'ping' });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toContain('unknown request kind');
+  });
+
+  it('drain releases retryable failures back to raw with attempts incremented', async () => {
+    const eid = await realStorage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: { p: 1 } });
+    const failClient: ModelClient = {
+      async generate(): Promise<ModelResult> { throw new Error('You exceeded your current quota'); },
+    };
+    const summarizer = new Summarizer(realStorage, failClient);
+    const h = buildHandler({ storage: realStorage, wal: realWal, cwd: '/x', summarizer });
+    const r = await h({ kind: 'drain', batch: 1 }) as { ok: true; data: { processed: number; errors: number; pending: number } };
+    expect(r.ok).toBe(true);
+    expect(r.data.processed).toBe(0);
+    expect(r.data.errors).toBe(1);
+    expect(r.data.pending).toBe(1); // released back to raw, still pending
+    const ev = await realStorage.getEvent(eid);
+    expect(ev?.status).toBe('raw');
+  });
+
+  it('drain skips terminal failures (parse error)', async () => {
+    const eid = await realStorage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: { p: 1 } });
+    const failClient: ModelClient = {
+      async generate(): Promise<ModelResult> { throw new Error('schema validation failed'); },
+    };
+    const summarizer = new Summarizer(realStorage, failClient);
+    const h = buildHandler({ storage: realStorage, wal: realWal, cwd: '/x', summarizer });
+    const r = await h({ kind: 'drain', batch: 1 }) as { ok: true; data: { processed: number; errors: number; pending: number } };
+    expect(r.ok).toBe(true);
+    expect(r.data.errors).toBe(1);
+    expect(r.data.pending).toBe(0);
+    const ev = await realStorage.getEvent(eid);
+    expect(ev?.status).toBe('skipped');
+  });
+
+  it('drain successfully summarizes events and writes embeddings', async () => {
+    await realStorage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: { p: 1 } });
+    const okClient: ModelClient = {
+      async generate(): Promise<ModelResult> {
+        return { text: '{"text":"summary","confidence":0.9}', tokensIn: 5, tokensOut: 3 };
+      },
+    };
+    const summarizer = new Summarizer(realStorage, okClient);
+    const h = buildHandler({ storage: realStorage, wal: realWal, cwd: '/x', summarizer });
+    const r = await h({ kind: 'drain', batch: 1 }) as { ok: true; data: { processed: number; errors: number } };
+    expect(r.ok).toBe(true);
+    expect(r.data.processed).toBe(1);
+    expect(r.data.errors).toBe(0);
+    const counts = await realStorage.counts();
+    expect(counts.summaries).toBe(1);
+    expect(counts.summarized).toBe(1);
   });
 });
 
