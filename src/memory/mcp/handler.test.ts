@@ -487,6 +487,16 @@ describe('ops MCP tools', () => {
     expect(call.limit).toBe(25);
   });
 
+  it('mem_sessions forwards a sessions RPC with limit', async () => {
+    mem.scripted.push({ ok: true, data: { sessions: [] } });
+    await dispatch(
+      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'mem_sessions', arguments: { limit: 10 } } },
+      { client: mem as unknown as MemoryClient },
+    );
+    const call = mem.calls.find(c => c.kind === 'sessions') as { limit: number };
+    expect(call.limit).toBe(10);
+  });
+
   it('mem_dashboard forwards a dashboard RPC with patternsMin', async () => {
     mem.scripted.push({ ok: true, data: { stats: {}, doctor: {}, pinned: [], patterns: [] } });
     await dispatch(

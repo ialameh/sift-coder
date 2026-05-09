@@ -40,7 +40,8 @@ export type RequestKind =
   | 'session_digest'
   | 'auto_pin_patterns'
   | 'as_of'
-  | 'dashboard';
+  | 'dashboard'
+  | 'sessions';
 
 export interface CaptureRequest {
   kind: 'capture';
@@ -346,7 +347,8 @@ export type Request =
   | SessionDigestRequest
   | AutoPinPatternsRequest
   | AsOfRequest
-  | DashboardRequest;
+  | DashboardRequest
+  | SessionsRequest;
 
 /**
  * Build a single concat-text view of a session's summaries — a "digest" suitable to feed back
@@ -387,6 +389,16 @@ export interface AsOfRequest {
 export interface DashboardRequest {
   kind: 'dashboard';
   patternsMin?: number;
+}
+
+/**
+ * List sessions with first/last ts + event count. Used to discover session ids for
+ * `mem_thread`, `mem_replay`, `mem_session_digest`, which all take a session id input.
+ */
+export interface SessionsRequest {
+  kind: 'sessions';
+  /** Cap on returned sessions, ordered by last activity desc. Default 20. */
+  limit?: number;
 }
 
 export interface OkResponse<T = unknown> {

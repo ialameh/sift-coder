@@ -405,6 +405,22 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
           return { ok: true, data: r };
         }
 
+        case 'sessions': {
+          const rows = await deps.storage.listSessions(req.limit ?? 20);
+          return {
+            ok: true,
+            data: {
+              sessions: rows.map(r => ({
+                sessionId: r.sessionId,
+                firstTs: new Date(r.firstTs).toISOString(),
+                lastTs: new Date(r.lastTs).toISOString(),
+                eventCount: r.eventCount,
+                cwd: r.cwd,
+              })),
+            },
+          };
+        }
+
         case 'dashboard': {
           const [stats, doctor, pinned, patterns] = await Promise.all([
             deps.storage.stats(60 * 60 * 1000),
