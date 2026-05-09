@@ -501,6 +501,52 @@ switch (cmd) {
     }
     break;
   }
+  case 'compact': {
+    const ageDays = args.includes('--cache-days') ? parseInt(args[args.indexOf('--cache-days') + 1] ?? '30', 10) : 30;
+    try {
+      const r = await rpc({ kind: 'compact', cacheMaxAgeMs: ageDays * 24 * 60 * 60 * 1000 }, 120000);
+      if (r.ok && !args.includes('--json')) {
+        const d = r.data;
+        const fmt = (b) => b == null ? 'n/a' : (b < 1024*1024 ? (b/1024).toFixed(1)+' KiB' : (b/1024/1024).toFixed(2)+' MiB');
+        console.log(`cache pruned   ${d.cachePruned}`);
+        console.log(`embeddings     dropped=${d.embeddingsDropped}`);
+        console.log(`fts rebuilt    ${d.ftsRebuilt}`);
+        console.log(`vacuum         ${d.vacuumed} (${fmt(d.sizeBefore)} → ${fmt(d.sizeAfter)})`);
+      } else {
+        console.log(JSON.stringify(r, null, 2));
+      }
+      break;
+    } catch (e) {
+      if (e.message && !e.message.includes('ENOENT') && !e.message.includes('ECONNREFUSED')) throw e;
+    }
+    const { storage } = await openStorage();
+    const r = await storage.compact({ cacheMaxAgeMs: ageDays * 24 * 60 * 60 * 1000 });
+    await storage.close();
+    console.log(JSON.stringify({ ok: true, data: r }, null, 2));
+    break;
+  }
+  case 'patterns': {
+    const minIdx = args.indexOf('--min');
+    const min = minIdx >= 0 ? parseInt(args[minIdx + 1] ?? '3', 10) : 3;
+    try {
+      const r = await rpc({ kind: 'patterns', minRepeats: min, limit: 25 }, 30000);
+      if (r.ok && !args.includes('--json')) {
+        for (const p of r.data.patterns ?? []) {
+          console.log(`x${p.occurrences}  sessions=${p.distinctSessions}  tools=${p.tools.join(',')}  hash=${p.inputHash.slice(0,12)}…  sample=#${p.sampleEventId}`);
+        }
+      } else {
+        console.log(JSON.stringify(r, null, 2));
+      }
+      break;
+    } catch (e) {
+      if (e.message && !e.message.includes('ENOENT') && !e.message.includes('ECONNREFUSED')) throw e;
+    }
+    const { storage } = await openStorage();
+    const r = await storage.patterns(min);
+    await storage.close();
+    console.log(JSON.stringify({ ok: true, data: { patterns: r } }, null, 2));
+    break;
+  }
   case 'context-budget': case 'ctx': {
     const tokIdx = args.indexOf('--max-tokens');
     const maxTokens = tokIdx >= 0 ? parseInt(args[tokIdx + 1] ?? '4000', 10) : 4000;
@@ -769,6 +815,8 @@ Usage:
   siftcoder stats [--day] [--json]  throughput + backlog ETA + cache hit rate + top tools
   siftcoder watch [interval-s]  live one-line dashboard (default 2s); Ctrl+C to exit
   siftcoder context-budget <query> [--max-tokens N]  greedy fill: top-ranked summaries under a token cap
+  siftcoder compact [--cache-days N]  storage hygiene: VACUUM + cache prune + FTS rebuild
+  siftcoder patterns [--min N]  recurring input_hash buckets across sessions
   siftcoder auth-token [--rotate]  print (or rotate) the web UI bearer token
   siftcoder web                 print web UI URL
 `);

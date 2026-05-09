@@ -34,7 +34,9 @@ export type RequestKind =
   | 'symbol_search'
   | 'stats'
   | 'replay'
-  | 'context_budget';
+  | 'context_budget'
+  | 'compact'
+  | 'patterns';
 
 export interface CaptureRequest {
   kind: 'capture';
@@ -281,6 +283,28 @@ export interface ContextBudgetRequest {
   candidatePool?: number;
 }
 
+/**
+ * Storage hygiene: VACUUM + summary_cache prune + dim-mismatched embedding cleanup. Cheap
+ * operationally; restores disk space lost to row deletions and rebuilds the FTS index.
+ */
+export interface CompactRequest {
+  kind: 'compact';
+  /** Drop summary_cache rows older than this many ms (default: 30 days). */
+  cacheMaxAgeMs?: number;
+}
+
+/**
+ * Recurring-pattern detection. Finds events whose `input_hash` repeats across many sessions —
+ * a signal that the captured behaviour is a habit (the user does this often) and a candidate
+ * for pinning, learning, or workflow optimization.
+ */
+export interface PatternsRequest {
+  kind: 'patterns';
+  /** Minimum repeat count to qualify as a pattern (default: 3). */
+  minRepeats?: number;
+  limit?: number;
+}
+
 export type Request =
   | CaptureRequest
   | SearchRequest
@@ -312,7 +336,9 @@ export type Request =
   | SymbolSearchRequest
   | StatsRequest
   | ReplayRequest
-  | ContextBudgetRequest;
+  | ContextBudgetRequest
+  | CompactRequest
+  | PatternsRequest;
 
 export interface OkResponse<T = unknown> {
   ok: true;

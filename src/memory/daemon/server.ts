@@ -358,6 +358,28 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
           return { ok: true, data: r };
         }
 
+        case 'compact': {
+          const r = await deps.storage.compact({
+            cacheMaxAgeMs: req.cacheMaxAgeMs,
+            expectedDim: deps.embedder?.dim,
+          });
+          return { ok: true, data: r };
+        }
+
+        case 'patterns': {
+          const r = await deps.storage.patterns(req.minRepeats ?? 3, req.limit ?? 50);
+          return {
+            ok: true,
+            data: {
+              patterns: r.map(p => ({
+                ...p,
+                firstTs: new Date(p.firstTs).toISOString(),
+                lastTs: new Date(p.lastTs).toISOString(),
+              })),
+            },
+          };
+        }
+
         case 'context_budget': {
           const k = req.candidatePool ?? 50;
           const hits = await hybridSearch(deps.storage, deps.embedder ?? null, req.query, Date.now(), { k, candidatePool: k });

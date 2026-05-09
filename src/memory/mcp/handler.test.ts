@@ -424,6 +424,27 @@ describe('ops MCP tools', () => {
     expect(call.k).toBe(7);
   });
 
+  it('mem_compact forwards a compact RPC with cacheMaxAgeMs', async () => {
+    mem.scripted.push({ ok: true, data: { cachePruned: 0 } });
+    await dispatch(
+      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'mem_compact', arguments: { cache_max_age_ms: 1000 } } },
+      { client: mem as unknown as MemoryClient },
+    );
+    const call = mem.calls.find(c => c.kind === 'compact') as { cacheMaxAgeMs: number };
+    expect(call.cacheMaxAgeMs).toBe(1000);
+  });
+
+  it('mem_patterns forwards a patterns RPC with thresholds', async () => {
+    mem.scripted.push({ ok: true, data: { patterns: [] } });
+    await dispatch(
+      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'mem_patterns', arguments: { min_repeats: 5, limit: 20 } } },
+      { client: mem as unknown as MemoryClient },
+    );
+    const call = mem.calls.find(c => c.kind === 'patterns') as { minRepeats: number; limit: number };
+    expect(call.minRepeats).toBe(5);
+    expect(call.limit).toBe(20);
+  });
+
   it('mem_context_budget forwards a context_budget RPC with maxTokens', async () => {
     mem.scripted.push({ ok: true, data: { hits: [], tokensUsed: 0, tokensBudget: 4000 } });
     await dispatch(

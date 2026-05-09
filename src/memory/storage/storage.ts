@@ -252,6 +252,110 @@ export class Storage {
   }
 
   /**
+   * Compact the store: drop stale summary_cache rows, drop dim-mismatched embeddings (when
+   * an embedder swap leaves orphans the consolidator can't compare), rebuild the FTS index,
+   * and VACUUM to reclaim disk. Returns counts so the caller can render a compact report.
+   *
+   * Cheap to run weekly. Cannot delete summarized events or summaries — those are first-class
+   * data; use `prune` for that.
+   */
+  async compact(opts: { cacheMaxAgeMs?: number; expectedDim?: number } = {}): Promise<{
+    cachePruned: number;
+    embeddingsDropped: number;
+    ftsRebuilt: boolean;
+    vacuumed: boolean;
+    sizeBefore: number | null;
+    sizeAfter: number | null;
+  }> {
+    const cacheMaxAgeMs = opts.cacheMaxAgeMs ?? 30 * 24 * 60 * 60 * 1000;
+    const cutoff = Date.now() - cacheMaxAgeMs;
+    let cachePruned = 0;
+    {
+      const before = await this.countAll('summary_cache');
+      await (await this.db.prepare('DELETE FROM summary_cache WHERE created_at < ?')).run(cutoff);
+      const after = await this.countAll('summary_cache');
+      cachePruned = Math.max(0, before - after);
+    }
+
+    let embeddingsDropped = 0;
+    if (opts.expectedDim && opts.expectedDim > 0) {
+      const before = await this.countAll('summary_embeddings');
+      await (await this.db.prepare(
+        'DELETE FROM summary_embeddings WHERE dim != ?'
+      )).run(opts.expectedDim);
+      const after = await this.countAll('summary_embeddings');
+      embeddingsDropped = Math.max(0, before - after);
+    }
+
+    let ftsRebuilt = false;
+    try {
+      // FTS5 docs: rebuild via INSERT INTO fts(fts) VALUES('rebuild').
+      await this.db.exec(`INSERT INTO summaries_fts(summaries_fts) VALUES('rebuild')`);
+      ftsRebuilt = true;
+    } catch { /* fts table may not exist on legacy DBs */ }
+
+    let vacuumed = false;
+    let sizeBefore: number | null = null;
+    let sizeAfter: number | null = null;
+    try {
+      const sizeRow = await (await this.db.prepare(
+        'SELECT page_count * page_size AS bytes FROM pragma_page_count(), pragma_page_size()'
+      )).get() as { bytes?: number } | undefined;
+      sizeBefore = sizeRow?.bytes ?? null;
+      await this.db.exec('VACUUM');
+      const after = await (await this.db.prepare(
+        'SELECT page_count * page_size AS bytes FROM pragma_page_count(), pragma_page_size()'
+      )).get() as { bytes?: number } | undefined;
+      sizeAfter = after?.bytes ?? null;
+      vacuumed = true;
+    } catch { /* VACUUM can fail mid-transaction; non-fatal */ }
+
+    return { cachePruned, embeddingsDropped, ftsRebuilt, vacuumed, sizeBefore, sizeAfter };
+  }
+
+  /**
+   * Recurring-pattern detection. Returns input_hash buckets that recur across `minRepeats`+
+   * events, with the spread of sessions and tools they came from. A signal of habitual
+   * behaviour worth pinning or learning.
+   */
+  async patterns(minRepeats = 3, limit = 50): Promise<Array<{
+    inputHash: string;
+    occurrences: number;
+    distinctSessions: number;
+    tools: string[];
+    firstTs: number;
+    lastTs: number;
+    sampleEventId: number;
+  }>> {
+    const rows = await (await this.db.prepare(
+      `SELECT input_hash AS h,
+              count(*) AS c,
+              count(DISTINCT session_id) AS sessions,
+              GROUP_CONCAT(DISTINCT tool) AS tools,
+              min(ts) AS first_ts,
+              max(ts) AS last_ts,
+              max(id) AS sample_id
+         FROM events
+        GROUP BY input_hash
+       HAVING count(*) >= ?
+        ORDER BY c DESC
+        LIMIT ?`
+    )).all(minRepeats, limit) as Array<{
+      h: string; c: number; sessions: number; tools: string;
+      first_ts: number; last_ts: number; sample_id: number;
+    }>;
+    return rows.map(r => ({
+      inputHash: r.h,
+      occurrences: r.c,
+      distinctSessions: r.sessions,
+      tools: r.tools ? r.tools.split(',') : [],
+      firstTs: r.first_ts,
+      lastTs: r.last_ts,
+      sampleEventId: r.sample_id,
+    }));
+  }
+
+  /**
    * Replay a session's chronology: events in `id` order with their summaries (if any) joined
    * in. Used by `mem_replay` to reconstruct prior conversation context for an agent or human.
    */
