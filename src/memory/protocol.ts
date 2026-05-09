@@ -13,7 +13,8 @@ export type RequestKind =
   | 'shutdown'
   | 'backfill'
   | 'drain'
-  | 'why';
+  | 'why'
+  | 'summaries';
 
 export interface CaptureRequest {
   kind: 'capture';
@@ -78,6 +79,11 @@ export interface WhyRequest {
   depth?: number;
 }
 
+export interface SummariesRequest {
+  kind: 'summaries';
+  limit?: number;
+}
+
 export type Request =
   | CaptureRequest
   | SearchRequest
@@ -88,7 +94,8 @@ export type Request =
   | ShutdownRequest
   | BackfillRequest
   | DrainRequest
-  | WhyRequest;
+  | WhyRequest
+  | SummariesRequest;
 
 export interface OkResponse<T = unknown> {
   ok: true;

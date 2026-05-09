@@ -41,6 +41,30 @@ export interface DrainResult {
   firstError?: string;
 }
 
+/**
+ * Returns true if the error is transient and the event should go back into the queue
+ * for a later retry rather than being permanently skipped.
+ */
+export function isRetryableError(message: string): boolean {
+  const m = message.toLowerCase();
+  return (
+    m.includes('quota') ||
+    m.includes('rate limit') ||
+    m.includes('rate-limit') ||
+    m.includes('429') ||
+    m.includes('502') ||
+    m.includes('503') ||
+    m.includes('504') ||
+    m.includes('timeout') ||
+    m.includes('etimedout') ||
+    m.includes('econnreset') ||
+    m.includes('econnrefused') ||
+    m.includes('enotfound') ||
+    m.includes('socket hang up') ||
+    m.includes('overloaded')
+  );
+}
+
 async function runDrain(
   storage: Storage,
   summarizer: Summarizer,
@@ -48,23 +72,28 @@ async function runDrain(
   batch: number,
   backend: string,
 ): Promise<DrainResult> {
-  const events = await storage.pendingEvents(batch);
+  const events = await storage.claimPending(batch);
   let processed = 0;
   let errors = 0;
   let firstError: string | undefined;
   for (const ev of events) {
     try {
       const r = await summarizer.summarize(ev.id, ev.inputHash, ev.payloadJson, Date.now());
-      if (embedder) {
+      if (embedder && r.id > 0) {
         const v = await embedder.embed(r.text);
         await storage.putEmbedding(r.id, v);
       }
       await storage.markEventStatus(ev.id, 'summarized');
       processed++;
     } catch (e) {
-      await storage.markEventStatus(ev.id, 'skipped');
+      const msg = (e as Error).message;
+      if (isRetryableError(msg)) {
+        await storage.releaseClaimed(ev.id, msg);
+      } else {
+        await storage.markEventStatus(ev.id, 'skipped');
+      }
       errors++;
-      if (firstError === undefined) firstError = (e as Error).message;
+      if (firstError === undefined) firstError = msg;
     }
   }
   const pending = (await storage.pendingEvents(1)).length;
@@ -180,6 +209,20 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
           return { ok: true, data: r };
         }
 
+        case 'summaries': {
+          const limit = req.limit ?? 20;
+          const rows = await deps.storage.recentSummaries(limit);
+          const summaries = rows.map(r => ({
+            id: r.id,
+            eventId: r.eventId,
+            ts: new Date(r.ts).toISOString(),
+            model: r.model,
+            text: r.text.length > 240 ? r.text.slice(0, 240) + '...' : r.text,
+            confidence: r.confidence,
+          }));
+          return { ok: true, data: { summaries } };
+        }
+
         case 'why': {
           if (!deps.provenance) return { ok: true, data: { edges: [] } };
           const edges = deps.provenance.trace({ kind: req.nodeKind, id: req.nodeId }, req.depth ?? 4);
@@ -265,6 +308,7 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
           };
         }
       }
+      return { ok: false, error: `unknown request kind: ${(req as { kind: string }).kind}` };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }

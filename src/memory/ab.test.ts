@@ -24,14 +24,14 @@ afterEach(() => {
 
 async function seedSession(n: number, tokensPerEvent = 50) {
   for (let i = 0; i < n; i++) {
-    const eid = storage.recordEvent({
+    const eid = await storage.recordEvent({
       ts: 1000 + i,
       sessionId: 'demo',
       tool: i % 2 === 0 ? 'Edit' : 'Bash',
       payload: { content: `event payload ${i} `.repeat(10) },
       tokensEst: tokensPerEvent,
     });
-    const sid = storage.recordSummary({
+    const sid = await storage.recordSummary({
       eventId: eid,
       ts: 1000 + i,
       model: 'm',
@@ -41,7 +41,7 @@ async function seedSession(n: number, tokensPerEvent = 50) {
       tokensOut: 1,
       confidence: 0.9,
     });
-    storage.putEmbedding(sid, await e.embed(`summary of event ${i} touching auth login session`));
+    await storage.putEmbedding(sid, await e.embed(`summary of event ${i} touching auth login session`));
   }
 }
 
@@ -88,7 +88,7 @@ describe('AbHarness.run', () => {
   });
 
   it('falls back to approximate token counts when tokens_est is zero', async () => {
-    storage.recordEvent({
+    await storage.recordEvent({
       ts: 1, sessionId: 's', tool: 'R',
       payload: { content: 'x'.repeat(400) },
     });
@@ -97,7 +97,7 @@ describe('AbHarness.run', () => {
   });
 
   it('returns zero memory tokens when synthQuery cannot extract any informative tokens', async () => {
-    storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: '!@#$%', tokensEst: 5 });
+    await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: '!@#$%', tokensEst: 5 });
     const r = await new AbHarness(storage, null).run();
     expect(r.turns[0]!.branchBTokens).toBe(5);
   });

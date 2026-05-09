@@ -70,7 +70,7 @@ describe.skipIf(SKIP_ON_WINDOWS)('memory daemon e2e', () => {
     const stored = db.prepare('SELECT payload_json FROM events WHERE id = ?').get(1) as { payload_json: string };
     expect(JSON.parse(stored.payload_json).token).toBe('[REDACTED:aws]');
 
-    storage.recordSummary({
+    await storage.recordSummary({
       eventId: 1,
       ts: Date.now(),
       model: 'test',
@@ -108,6 +108,82 @@ describe.skipIf(SKIP_ON_WINDOWS)('memory daemon e2e', () => {
     expect(replay[0]!.tool).toBe('Bash');
   });
 
+  it('serves the summaries RPC kind with the latest summaries first', async () => {
+    db = new Database(dbPath);
+    const storage = await Storage.init(db);
+    wal = new WAL(walPath);
+    wal.open();
+    server = startServer({ storage, wal, socketPath, cwd: dir });
+    await waitFor(() => existsSync(socketPath));
+
+    for (let i = 0; i < 4; i++) {
+      const eid = await storage.recordEvent({ ts: i, sessionId: 's', tool: 'R', payload: { i } });
+      await storage.recordSummary({
+        eventId: eid, ts: i, model: 'haiku', promptHash: 'p', text: `summary-${i}`,
+        tokensIn: 1, tokensOut: 1, confidence: 0.9,
+      });
+    }
+    const client = new MemoryClient({ socketPath });
+    const r = await client.send<{ summaries: Array<{ id: number; text: string }> }>({
+      kind: 'summaries',
+      limit: 3,
+    });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.data.summaries).toHaveLength(3);
+    expect(r.data.summaries[0]!.text).toBe('summary-3');
+    expect(r.data.summaries[2]!.text).toBe('summary-1');
+  });
+
+  it('rejects unknown request kinds with an explicit error', async () => {
+    db = new Database(dbPath);
+    const storage = await Storage.init(db);
+    wal = new WAL(walPath);
+    wal.open();
+    server = startServer({ storage, wal, socketPath, cwd: dir });
+    await waitFor(() => existsSync(socketPath));
+
+    const client = new MemoryClient({ socketPath });
+    // Cast to bypass the request union; the daemon should still respond cleanly.
+    const r = await client.send({ kind: 'definitely-not-a-kind' } as unknown as { kind: 'ping' });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error).toContain('unknown request kind');
+    }
+  });
+
+  it('replays WAL entries on Storage boot when the SQLite row is missing', async () => {
+    // Write a frame directly to the WAL without persisting an event row, simulating a crash
+    // between fsync and sqlite write.
+    wal = new WAL(walPath);
+    wal.open();
+    wal.append({
+      ts: 1234,
+      sessionId: 'recovery-sess',
+      tool: 'Recover',
+      inputHash: 'abc',
+      payload: { recovered: true },
+    });
+    wal.close();
+
+    // Reopen storage and replay (mirroring daemon boot logic).
+    const storage2 = await Storage.init(new Database(dbPath));
+    const entries = WAL.replay(walPath);
+    for (const entry of entries) {
+      await storage2.ensureSession(entry.sessionId, dir, entry.ts);
+      if (await storage2.hasEvent(entry.sessionId, entry.inputHash)) continue;
+      await storage2.recordEvent({
+        ts: entry.ts,
+        sessionId: entry.sessionId,
+        tool: entry.tool,
+        payload: entry.payload,
+      });
+    }
+    const counts = await storage2.counts();
+    expect(counts.events).toBe(1);
+    await storage2.close();
+  });
+
   it('supports timeline retrieval over real summaries', async () => {
     db = new Database(dbPath);
     const storage = await Storage.init(db);
@@ -116,10 +192,10 @@ describe.skipIf(SKIP_ON_WINDOWS)('memory daemon e2e', () => {
     server = startServer({ storage, wal, socketPath, cwd: dir });
     await waitFor(() => existsSync(socketPath));
 
-    storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: {} });
     for (let i = 0; i < 5; i++) {
-      storage.recordSummary({
-        eventId: 1, ts: i, model: 'm', promptHash: 'p',
+      const eid = await storage.recordEvent({ ts: i, sessionId: 's', tool: 'R', payload: { i } });
+      await storage.recordSummary({
+        eventId: eid, ts: i, model: 'm', promptHash: 'p',
         text: `step-${i}`, tokensIn: null, tokensOut: null, confidence: null,
       });
     }

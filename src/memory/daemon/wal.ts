@@ -1,8 +1,11 @@
 /**
  * Append-only write-ahead log. ndjson, fsynced on every write.
- * Crash recovery: replay missing rows into SQLite on daemon boot.
+ * Crash recovery: replay missing rows into SQLite on daemon boot — see `replayInto`.
+ *
+ * Truncation policy: after a successful boot replay, the WAL is rotated by being truncated to
+ * size zero so the file does not grow unboundedly across restarts.
  */
-import { openSync, writeSync, fsyncSync, closeSync, existsSync, readFileSync } from 'node:fs';
+import { openSync, writeSync, fsyncSync, closeSync, existsSync, readFileSync, truncateSync } from 'node:fs';
 
 export interface WalEntry {
   ts: number;
@@ -48,5 +51,14 @@ export class WAL {
       }
     }
     return out;
+  }
+
+  /**
+   * Truncate the WAL to zero bytes. Call after a successful boot replay so the file does not
+   * grow without bound across restarts. Only safe to call when no writers are active.
+   */
+  static truncate(path: string): void {
+    if (!existsSync(path)) return;
+    truncateSync(path, 0);
   }
 }

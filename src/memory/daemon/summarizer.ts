@@ -54,7 +54,10 @@ export class Summarizer {
     this.haiku = opts.haikuModel ?? DEFAULT_HAIKU;
     this.sonnet = opts.sonnetModel ?? DEFAULT_SONNET;
     this.threshold = opts.confidenceThreshold ?? 0.6;
-    this.maxTokens = opts.maxTokens ?? 256;
+    // 512 tokens of headroom keeps "text + confidence" envelopes well under the cap so JSON
+    // is rarely truncated mid-string. The `text` field itself is constrained to <= 240 chars
+    // by the system prompt.
+    this.maxTokens = opts.maxTokens ?? 512;
   }
 
   static promptHash(system: string): string {
@@ -145,22 +148,39 @@ export class Summarizer {
   }
 }
 
+/**
+ * Parse the model's JSON envelope. Robust to:
+ *   - Markdown code-fences (```json ... ```)
+ *   - Truncated JSON (maxTokens exhaustion) where the closing brace and quote are missing
+ * Falls back to a regex-extracted "text" field rather than storing the raw envelope.
+ */
 export function parseModelOutput(raw: string): { text: string; confidence: number } {
-  const trimmed = raw.trim();
-  const jsonStart = trimmed.indexOf('{');
-  const jsonEnd = trimmed.lastIndexOf('}');
+  const stripped = raw
+    .replace(/^\s*```(?:json)?\s*/i, '')
+    .replace(/\s*```\s*$/i, '')
+    .trim();
+  const jsonStart = stripped.indexOf('{');
+  const jsonEnd = stripped.lastIndexOf('}');
   if (jsonStart >= 0 && jsonEnd > jsonStart) {
-    const slice = trimmed.slice(jsonStart, jsonEnd + 1);
+    const slice = stripped.slice(jsonStart, jsonEnd + 1);
     try {
       const obj = JSON.parse(slice) as { text?: unknown; confidence?: unknown };
-      const text = typeof obj.text === 'string' ? obj.text : trimmed;
+      const text = typeof obj.text === 'string' ? obj.text : stripped;
       const conf = typeof obj.confidence === 'number' ? obj.confidence : 0.5;
       return { text, confidence: clamp01(conf) };
     } catch {
-      // fall through
+      // Truncated JSON — only attempt regex recovery if the value string is unterminated
+      // (no closing `"` after `"text":"...`). This preserves the legacy fallback (raw text
+      // at confidence 0.5) for syntactically broken but otherwise complete envelopes such as
+      // `{"text":"x","confidence":NaN}`.
+      const truncated = /"text"\s*:\s*"((?:[^"\\]|\\.)*?)$/s.exec(slice);
+      if (truncated?.[1]) {
+        const recovered = truncated[1].replace(/\\"/g, '"').replace(/\\n/g, '\n').trim();
+        if (recovered.length > 0) return { text: recovered, confidence: 0.4 };
+      }
     }
   }
-  return { text: trimmed, confidence: 0.5 };
+  return { text: stripped, confidence: 0.5 };
 }
 
 function clamp01(n: number): number {

@@ -54,13 +54,13 @@ function ts(ms: number): string {
   return new Date(ms).toISOString().replace('T', ' ').slice(0, 19);
 }
 
-export function renderWatchSnapshot(storage: Storage, opts: WatchOptions = {}): string {
+export async function renderWatchSnapshot(storage: Storage, opts: WatchOptions = {}): Promise<string> {
   const limit = opts.limit ?? 20;
   const width = opts.width ?? 80;
 
-  const counts = readCounts(storage);
-  const events = readEventTail(storage, limit);
-  const summaries = readSummaryTail(storage, limit);
+  const counts = await readCounts(storage);
+  const events = await readEventTail(storage, limit);
+  const summaries = await readSummaryTail(storage, limit);
 
   const header = box('SiftCoder Memory — Snapshot', [
     `${DIM}Captured at${RESET} ${ts(Date.now())}`,
@@ -83,30 +83,44 @@ export function renderWatchSnapshot(storage: Storage, opts: WatchOptions = {}): 
   ].join('');
 }
 
-function readCounts(storage: Storage): {
+interface AsyncDb {
+  prepare(sql: string): Promise<{
+    get(...p: unknown[]): Promise<unknown>;
+    all(...p: unknown[]): Promise<unknown[]>;
+  }>;
+}
+
+function asyncDb(storage: Storage): AsyncDb {
+  return (storage as unknown as { ['db']: AsyncDb })['db'];
+}
+
+async function readCounts(storage: Storage): Promise<{
   events: number; raw: number; summarized: number; skipped: number;
   summaries: number; embeddings: number; superseded: number;
-} {
-  const db = (storage as unknown as { ['db']: { prepare: (sql: string) => { get: () => CountRow } } })['db'];
-  /* c8 ignore next -- count(*) always returns a row; the ?? 0 is a defensive type guard */
-  const c = (sql: string): number => db.prepare(sql).get()?.c ?? 0;
+}> {
+  const db = asyncDb(storage);
+  const c = async (sql: string): Promise<number> => {
+    const row = await (await db.prepare(sql)).get() as CountRow | undefined;
+    /* c8 ignore next -- count(*) always returns a row; ?? 0 is a defensive type guard */
+    return row?.c ?? 0;
+  };
   return {
-    events:      c('SELECT count(*) AS c FROM events'),
-    raw:         c("SELECT count(*) AS c FROM events WHERE status = 'raw'"),
-    summarized:  c("SELECT count(*) AS c FROM events WHERE status = 'summarized'"),
-    skipped:     c("SELECT count(*) AS c FROM events WHERE status = 'skipped'"),
-    summaries:   c('SELECT count(*) AS c FROM summaries'),
-    embeddings:  c('SELECT count(*) AS c FROM summary_embeddings'),
-    superseded:  c('SELECT count(DISTINCT older_id) AS c FROM summary_supersedes'),
+    events:      await c('SELECT count(*) AS c FROM events'),
+    raw:         await c("SELECT count(*) AS c FROM events WHERE status = 'raw'"),
+    summarized:  await c("SELECT count(*) AS c FROM events WHERE status = 'summarized'"),
+    skipped:     await c("SELECT count(*) AS c FROM events WHERE status = 'skipped'"),
+    summaries:   await c('SELECT count(*) AS c FROM summaries'),
+    embeddings:  await c('SELECT count(*) AS c FROM summary_embeddings'),
+    superseded:  await c('SELECT count(DISTINCT older_id) AS c FROM summary_supersedes'),
   };
 }
 
-function readEventTail(storage: Storage, limit: number): EventTailRow[] {
-  const db = (storage as unknown as { ['db']: { prepare: (sql: string) => { all: (...p: unknown[]) => unknown[] } } })['db'];
-  return db.prepare('SELECT id, ts, tool, status FROM events ORDER BY id DESC LIMIT ?').all(limit) as EventTailRow[];
+async function readEventTail(storage: Storage, limit: number): Promise<EventTailRow[]> {
+  const db = asyncDb(storage);
+  return await (await db.prepare('SELECT id, ts, tool, status FROM events ORDER BY id DESC LIMIT ?')).all(limit) as EventTailRow[];
 }
 
-function readSummaryTail(storage: Storage, limit: number): SummaryTailRow[] {
-  const db = (storage as unknown as { ['db']: { prepare: (sql: string) => { all: (...p: unknown[]) => unknown[] } } })['db'];
-  return db.prepare('SELECT id, ts, model, substr(text, 1, 200) AS text, confidence FROM summaries ORDER BY id DESC LIMIT ?').all(limit) as SummaryTailRow[];
+async function readSummaryTail(storage: Storage, limit: number): Promise<SummaryTailRow[]> {
+  const db = asyncDb(storage);
+  return await (await db.prepare('SELECT id, ts, model, substr(text, 1, 200) AS text, confidence FROM summaries ORDER BY id DESC LIMIT ?')).all(limit) as SummaryTailRow[];
 }

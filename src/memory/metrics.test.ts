@@ -63,9 +63,11 @@ describe('computeSavings', () => {
   });
 
   it('reports spend and cache hit rate', async () => {
-    const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: {} });
-    await storage.recordSummary({ eventId: eid, ts: 0, model: 'm', promptHash: 'p', text: 'first', tokensIn: 10, tokensOut: 5, confidence: 0.9 });
-    await storage.recordSummary({ eventId: eid, ts: 1, model: 'm', promptHash: 'p', text: 'second', tokensIn: 10, tokensOut: 5, confidence: 0.9 });
+    // Two events share the same payload (= same input_hash), so the second summary is a cache hit.
+    const e1 = await storage.recordEvent({ ts: 1, sessionId: 's1', tool: 'R', payload: { same: true } });
+    const e2 = await storage.recordEvent({ ts: 2, sessionId: 's2', tool: 'R', payload: { same: true } });
+    await storage.recordSummary({ eventId: e1, ts: 0, model: 'm', promptHash: 'p', text: 'first', tokensIn: 10, tokensOut: 5, confidence: 0.9 });
+    await storage.recordSummary({ eventId: e2, ts: 1, model: 'm', promptHash: 'p', text: 'first', tokensIn: 10, tokensOut: 5, confidence: 0.9 });
     await storage.putCachedSummary('k1', '{"text":"first","confidence":0.9}', 10, 5, 0);
     const r = await computeSavings(storage);
     expect(r.spend.summaries).toBe(2);
@@ -77,9 +79,10 @@ describe('computeSavings', () => {
   });
 
   it('reports dedup ratio when supersedes rows exist', async () => {
-    const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: {} });
-    const a = await storage.recordSummary({ eventId: eid, ts: 0, model: 'm', promptHash: 'p', text: 'a', tokensIn: 1, tokensOut: 1, confidence: 0.9 });
-    const b = await storage.recordSummary({ eventId: eid, ts: 1, model: 'm', promptHash: 'p', text: 'b', tokensIn: 1, tokensOut: 1, confidence: 0.9 });
+    const e1 = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: { i: 1 } });
+    const e2 = await storage.recordEvent({ ts: 2, sessionId: 's', tool: 'R', payload: { i: 2 } });
+    const a = await storage.recordSummary({ eventId: e1, ts: 0, model: 'm', promptHash: 'p', text: 'a', tokensIn: 1, tokensOut: 1, confidence: 0.9 });
+    const b = await storage.recordSummary({ eventId: e2, ts: 1, model: 'm', promptHash: 'p', text: 'b', tokensIn: 1, tokensOut: 1, confidence: 0.9 });
     await storage.recordSupersedes(b, a, 0.99, 0);
     const r = await computeSavings(storage);
     expect(r.dedup.superseded).toBe(1);

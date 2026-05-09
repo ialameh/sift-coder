@@ -84,8 +84,19 @@ export async function computeSavings(storage: Storage): Promise<SavingsReport> {
   const tokensIn  = await n('SELECT sum(tokens_in)  AS n FROM summaries');
   const tokensOut = await n('SELECT sum(tokens_out) AS n FROM summaries');
   const cacheRows = await c('SELECT count(*) AS c FROM summary_cache');
-  const cacheHits = Math.max(0, summaries - cacheRows);
-  const cacheHitRate = summaries === 0 ? 0 : cacheHits / summaries;
+  // Cache hit estimate: an event whose summary was served from a prior cache entry will not
+  // have its (model, prompt_hash, input_hash) appear in summary_cache as a *new* row, so the
+  // count of summaries whose input_hash is shared by two or more events approximates hits.
+  const sharedInputs = await c(
+    `SELECT COUNT(*) AS c FROM (
+       SELECT e.input_hash FROM events e
+       JOIN summaries s ON s.event_id = e.id
+       GROUP BY e.input_hash
+       HAVING COUNT(*) > 1
+     )`
+  );
+  const cacheHits = sharedInputs;
+  const cacheHitRate = summaries === 0 ? 0 : Math.min(1, cacheHits / summaries);
   const summaryTokensStored = await n('SELECT sum(length(text) / 4) AS n FROM summaries');
 
   const embeddings = await c('SELECT count(*) AS c FROM summary_embeddings');

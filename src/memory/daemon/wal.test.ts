@@ -61,4 +61,18 @@ describe('WAL', () => {
     w.close();
     expect(readFileSync(path, 'utf8')).toContain('"ts":1');
   });
+
+  it('truncate() empties the file', () => {
+    const path = join(dir, 'wal.ndjson');
+    const w = new WAL(path);
+    w.append({ ts: 1, sessionId: 's', tool: 'R', inputHash: 'h', payload: {} });
+    w.close();
+    expect(readFileSync(path, 'utf8').length).toBeGreaterThan(0);
+    WAL.truncate(path);
+    expect(readFileSync(path, 'utf8')).toBe('');
+  });
+
+  it('truncate() is a no-op for missing files', () => {
+    expect(() => WAL.truncate(join(dir, 'absent.ndjson'))).not.toThrow();
+  });
 });

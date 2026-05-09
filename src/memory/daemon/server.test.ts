@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { buildHandler } from './server.js';
+import { buildHandler, isRetryableError } from './server.js';
 import { Storage, type DBHandle } from '../storage/storage.js';
 import { WAL } from './wal.js';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -437,5 +437,30 @@ describe('buildHandler', () => {
     const r = await h({ kind: 'why', nodeKind: 'summary', nodeId: '1', depth: 2 }) as { ok: true; data: { edges: unknown[] } };
     expect(r.ok).toBe(true);
     expect(r.data.edges).toHaveLength(1);
+  });
+});
+
+describe('isRetryableError', () => {
+  it('flags quota / rate-limit / 5xx / network errors as retryable', () => {
+    expect(isRetryableError('You exceeded your current quota')).toBe(true);
+    expect(isRetryableError('429 Too Many Requests')).toBe(true);
+    expect(isRetryableError('rate limit exceeded')).toBe(true);
+    expect(isRetryableError('rate-limit exceeded')).toBe(true);
+    expect(isRetryableError('upstream returned 503')).toBe(true);
+    expect(isRetryableError('upstream returned 502 Bad Gateway')).toBe(true);
+    expect(isRetryableError('504 Gateway Timeout')).toBe(true);
+    expect(isRetryableError('socket hang up')).toBe(true);
+    expect(isRetryableError('ECONNRESET')).toBe(true);
+    expect(isRetryableError('ECONNREFUSED')).toBe(true);
+    expect(isRetryableError('ENOTFOUND api.example.com')).toBe(true);
+    expect(isRetryableError('request timed out (ETIMEDOUT)')).toBe(true);
+    expect(isRetryableError('overloaded')).toBe(true);
+  });
+
+  it('treats parse and validation errors as terminal', () => {
+    expect(isRetryableError('invalid JSON output')).toBe(false);
+    expect(isRetryableError('schema validation failed')).toBe(false);
+    expect(isRetryableError('400 Bad Request')).toBe(false);
+    expect(isRetryableError('401 Unauthorized')).toBe(false);
   });
 });

@@ -98,6 +98,23 @@ describe('parseModelOutput', () => {
     expect(r.text).toBe('{"confidence":0.9}');
     expect(r.confidence).toBe(0.9);
   });
+
+  it('strips ```json``` markdown code-fences before parsing', () => {
+    const r = parseModelOutput('```json\n{"text":"hello","confidence":0.7}\n```');
+    expect(r.text).toBe('hello');
+    expect(r.confidence).toBe(0.7);
+  });
+
+  it('recovers a partial text field when the JSON envelope is truncated mid-string', () => {
+    const r = parseModelOutput('{"text":"refactored auth.ts to use jwtVerify');
+    expect(r.text).toContain('refactored auth.ts');
+    expect(r.confidence).toBeLessThanOrEqual(0.5);
+  });
+
+  it('recovers truncated text after ```json fence', () => {
+    const r = parseModelOutput('```json\n{"text":"updated README.md, wired');
+    expect(r.text).toContain('updated README.md');
+  });
 });
 
 describe('Summarizer.summarize', () => {
@@ -136,7 +153,7 @@ Output JSON only: {"text": string, "confidence": number 0..1}.
 Skip fluff. No pronouns. No hedging.`
     );
     const sonnetKey = storage.cacheKey('claude-sonnet-4-6', systemHash, 'h1');
-    storage.putCachedSummary(sonnetKey, '{"text":"presaved","confidence":0.95}', 9, 9, 0);
+    await storage.putCachedSummary(sonnetKey, '{"text":"presaved","confidence":0.95}', 9, 9, 0);
     client.scripted.push({ text: '{"text":"weak","confidence":0.3}', tokensIn: 1, tokensOut: 1 });
     const r = await sum.summarize(1, 'h1', 'user', 100);
     expect(client.calls.filter(c => c.model.includes('sonnet'))).toHaveLength(0);
@@ -153,7 +170,7 @@ Skip fluff. No pronouns. No hedging.`
     client.scripted.push({ text: '{"text":"ok","confidence":0.9}', tokensIn: 1, tokensOut: 1 });
     const r = await s.summarize(1, 'h', 'u', 1);
     expect(r.model).toContain('haiku');
-    expect(client.calls[0]!.maxTokens).toBe(256);
+    expect(client.calls[0]!.maxTokens).toBe(512);
   });
 
   it('respects a custom confidence threshold and model overrides', async () => {

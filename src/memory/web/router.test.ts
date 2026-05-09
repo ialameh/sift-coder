@@ -78,6 +78,12 @@ describe('auth', () => {
     const r = await route(req({ authorization: 'Bearer ' }), deps());
     expect(r.status).toBe(401);
   });
+
+  it('rejects a token of mismatched length without leaking timing info', async () => {
+    // Different length must short-circuit before timingSafeEqual to avoid throwing.
+    const r = await route(req({ authorization: 'Bearer short' }), deps());
+    expect(r.status).toBe(401);
+  });
 });
 
 describe('GET /api/health', () => {
