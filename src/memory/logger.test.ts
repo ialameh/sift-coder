@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Logger, MemorySink, FileSink } from './logger.js';
@@ -56,6 +56,39 @@ describe('Logger', () => {
     sink.close(); // close fd before afterEach rmdir — open handles block rmdir on Windows
     const content = readFileSync(path, 'utf8');
     expect(content).toContain('"message":"written"');
+  });
+
+  it('FileSink rotates when maxBytes is exceeded, preserving prior content as .1', () => {
+    const path = join(dir, 'rot.ndjson');
+    // Tiny cap forces rotation after first write batch. checkEveryWrites=1 makes rotation
+    // observable per write rather than every 64th.
+    const sink = new FileSink(path, { maxBytes: 50, checkEveryWrites: 1, keepGenerations: 2 });
+    const log = new Logger('mem', sink);
+    for (let i = 0; i < 10; i++) log.info('large-line-' + i + '-aaaaaaaaaaaaaaaaaaaaaaaa');
+    sink.close();
+    expect(existsSync(path)).toBe(true);
+    expect(existsSync(path + '.1')).toBe(true);
+  });
+
+  it('FileSink keeps at most keepGenerations rotations', () => {
+    const path = join(dir, 'rot.ndjson');
+    const sink = new FileSink(path, { maxBytes: 30, checkEveryWrites: 1, keepGenerations: 1 });
+    const log = new Logger('mem', sink);
+    for (let i = 0; i < 30; i++) log.info('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-' + i);
+    sink.close();
+    // keepGenerations=1 → only `.1` exists; no `.2`/`.3`.
+    expect(existsSync(path + '.1')).toBe(true);
+    expect(existsSync(path + '.2')).toBe(false);
+  });
+
+  it('FileSink with maxBytes=0 disables rotation entirely', () => {
+    const path = join(dir, 'norot.ndjson');
+    const sink = new FileSink(path, { maxBytes: 0, checkEveryWrites: 1 });
+    const log = new Logger('mem', sink);
+    for (let i = 0; i < 100; i++) log.info('line-' + i);
+    sink.close();
+    expect(existsSync(path)).toBe(true);
+    expect(existsSync(path + '.1')).toBe(false);
   });
 });
 
