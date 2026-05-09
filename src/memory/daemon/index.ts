@@ -19,6 +19,7 @@ import { buildVecDdl } from '../storage/schema.js';
 import { WAL } from './wal.js';
 import { startServer } from './server.js';
 import { Consolidator } from './consolidator.js';
+import { SymbolWorker } from './symbol-worker.js';
 import { DeterministicEmbedder } from '../embedder.js';
 import { FileSink, Logger } from '../logger.js';
 import { buildHandler } from './server.js';
@@ -159,8 +160,19 @@ async function main() {
   const consolidator = new Consolidator(storage);
   consolidator.start();
 
-  const regexFallback = new AsyncFromSync(new RegexSymbolExtractor());
-  const asyncSymbols = CdgSymbolExtractor.fromEnv(process.env, regexFallback);
+  const regexFallbackSync = new RegexSymbolExtractor();
+  const symbolWorker = new SymbolWorker(storage, {
+    syncExtractor: regexFallbackSync,
+    asyncExtractor: CdgSymbolExtractor.fromEnv(process.env, new AsyncFromSync(regexFallbackSync)),
+    intervalMs: 30_000,
+  });
+  symbolWorker.start();
+  logger.info('symbol worker started', {});
+
+  // Capture / backfill no longer call extractors inline — the SymbolWorker handles that
+  // off the hot path. We still pass `asyncSymbols` to startServer for legacy callers (e.g.
+  // tests) and so the dep is logged for observability when CDG is wired up.
+  const asyncSymbols = CdgSymbolExtractor.fromEnv(process.env, new AsyncFromSync(regexFallbackSync));
   if (asyncSymbols) logger.info('cdg adapter enabled', { url: process.env['SIFTCODER_CDG_URL'] });
 
   // Model client selection for drain: GLM → Gemini → Ollama → Anthropic → none.
@@ -297,6 +309,7 @@ async function main() {
 
   function shutdown() {
     consolidator.stop();
+    symbolWorker.stop();
     if (counterTimer) clearInterval(counterTimer);
     if (sweepTimer) clearInterval(sweepTimer);
     logger.info('daemon stopping');

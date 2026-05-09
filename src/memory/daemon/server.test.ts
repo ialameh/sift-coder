@@ -238,7 +238,10 @@ describe('buildHandler', () => {
     if (!r.ok) expect(r.error).toBe('boom');
   });
 
-  it('extracts code symbols from tool payloads when path looks like code', async () => {
+  it('capture stores the payload verbatim — symbol extraction is deferred to SymbolWorker', async () => {
+    // Symbols no longer land inline; the capture path stays free of CDG/regex calls so a
+    // slow extractor cannot block tool capture. The SymbolWorker (covered separately) writes
+    // events.symbols_json after the fact.
     const h = buildHandler({ storage, wal, cwd: '/x' });
     const r = await h({
       kind: 'capture', sessionId: 's', tool: 'Write',
@@ -247,26 +250,6 @@ describe('buildHandler', () => {
       },
     });
     expect(r.ok).toBe(true);
-    const stored = JSON.parse(db.events[0]!['payload_json'] as string) as { symbols?: string[] };
-    expect(stored.symbols).toEqual(expect.arrayContaining(['function:login', 'class:Auth']));
-  });
-
-  it('skips symbol extraction for non-code paths', async () => {
-    const h = buildHandler({ storage, wal, cwd: '/x' });
-    await h({
-      kind: 'capture', sessionId: 's', tool: 'Write',
-      payload: { tool_input: { file_path: '/repo/README.md', content: 'function login() {}' } },
-    });
-    const stored = JSON.parse(db.events[0]!['payload_json'] as string) as { symbols?: string[] };
-    expect(stored.symbols).toBeUndefined();
-  });
-
-  it('honors a null symbol extractor (extraction disabled)', async () => {
-    const h = buildHandler({ storage, wal, cwd: '/x', symbols: null });
-    await h({
-      kind: 'capture', sessionId: 's', tool: 'Write',
-      payload: { tool_input: { file_path: '/repo/auth.ts', content: 'export function x() {}' } },
-    });
     const stored = JSON.parse(db.events[0]!['payload_json'] as string) as { symbols?: string[] };
     expect(stored.symbols).toBeUndefined();
   });
@@ -297,66 +280,15 @@ describe('buildHandler', () => {
     expect(stored.symbols).toBeUndefined();
   });
 
-  it('uses asyncSymbols extractor when provided, overriding the sync extractor', async () => {
-    const asyncStub = {
-      async extract() {
-        return [
-          { kind: 'function' as const, name: 'fromCdg' },
-          { kind: 'class' as const, name: 'Async' },
-        ];
-      },
-    };
+  it('capture does not call any symbol extractor inline (hot path stays clean)', async () => {
+    let inlineCalls = 0;
+    const asyncStub = { async extract() { inlineCalls++; return []; } };
     const h = buildHandler({ storage, wal, cwd: '/x', asyncSymbols: asyncStub });
     await h({
       kind: 'capture', sessionId: 's', tool: 'Write',
       payload: { tool_input: { file_path: '/x.ts', content: 'export function x() {}' } },
     });
-    const stored = JSON.parse(db.events[0]!['payload_json'] as string) as { symbols?: string[] };
-    expect(stored.symbols).toEqual(['function:fromCdg', 'class:Async']);
-  });
-
-  it('asyncSymbols falls through when path is not code', async () => {
-    let called = false;
-    const asyncStub = {
-      async extract() { called = true; return []; },
-    };
-    const h = buildHandler({ storage, wal, cwd: '/x', asyncSymbols: asyncStub });
-    await h({
-      kind: 'capture', sessionId: 's', tool: 'Write',
-      payload: { tool_input: { file_path: '/README.md', content: 'function x() {}' } },
-    });
-    expect(called).toBe(false);
-  });
-
-  it('asyncSymbols returning [] leaves payload unannotated', async () => {
-    const asyncStub = { async extract() { return []; } };
-    const h = buildHandler({ storage, wal, cwd: '/x', asyncSymbols: asyncStub });
-    await h({
-      kind: 'capture', sessionId: 's', tool: 'Write',
-      payload: { tool_input: { file_path: '/x.ts', content: 'export const a = 1' } },
-    });
-    const stored = JSON.parse(db.events[0]!['payload_json'] as string) as { symbols?: string[] };
-    expect(stored.symbols).toBeUndefined();
-  });
-
-  it('extracts symbols when path is provided via tool_input.path', async () => {
-    const h = buildHandler({ storage, wal, cwd: '/x' });
-    await h({
-      kind: 'capture', sessionId: 's', tool: 'Write',
-      payload: { tool_input: { path: '/x.py', content: 'def f(): pass' } },
-    });
-    const stored = JSON.parse(db.events[0]!['payload_json'] as string) as { symbols?: string[] };
-    expect(stored.symbols).toEqual(expect.arrayContaining(['function:f']));
-  });
-
-  it('extracts symbols when path is provided via tool_input.notebook_path', async () => {
-    const h = buildHandler({ storage, wal, cwd: '/x' });
-    await h({
-      kind: 'capture', sessionId: 's', tool: 'Write',
-      payload: { tool_input: { notebook_path: '/x.py', file_text: 'def g(): pass' } },
-    });
-    const stored = JSON.parse(db.events[0]!['payload_json'] as string) as { symbols?: string[] };
-    expect(stored.symbols).toEqual(expect.arrayContaining(['function:g']));
+    expect(inlineCalls).toBe(0);
   });
 
   it('handles a non-object payload without throwing', async () => {
@@ -682,6 +614,24 @@ describe('buildHandler with real Storage (cross-platform)', () => {
     expect(r.data.source).toBe('transcripts');
     expect(r.data.scanned).toBe(0);
     expect(r.data.captured).toBe(0);
+  });
+
+  it('thread RPC returns sessions sharing input_hash', async () => {
+    const sessions = ['s1', 's2', 's3'];
+    for (const sid of sessions) {
+      await realStorage.recordEvent({ ts: 1, sessionId: sid, tool: 'R', payload: { same: true } });
+    }
+    const h = buildHandler({ storage: realStorage, wal: realWal, cwd: '/x' });
+    const r = await h({ kind: 'thread', sessionId: 's1', limit: 10 }) as { ok: true; data: { sessions: Array<{ sessionId: string; sharedEvents: number }> } };
+    expect(r.data.sessions).toHaveLength(2);
+    expect(new Set(r.data.sessions.map(s => s.sessionId))).toEqual(new Set(['s2', 's3']));
+  });
+
+  it('thread RPC returns empty when the session has no shared inputs', async () => {
+    await realStorage.recordEvent({ ts: 1, sessionId: 'lonely', tool: 'R', payload: { unique: 1 } });
+    const h = buildHandler({ storage: realStorage, wal: realWal, cwd: '/x' });
+    const r = await h({ kind: 'thread', sessionId: 'lonely' }) as { ok: true; data: { sessions: unknown[] } };
+    expect(r.data.sessions).toEqual([]);
   });
 
   it('backfill RPC rejects unsupported sources', async () => {

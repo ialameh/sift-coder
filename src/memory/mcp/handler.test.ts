@@ -386,6 +386,18 @@ describe('ops MCP tools', () => {
     expect(mem.calls.find(c => c.kind === 'doctor')).toBeTruthy();
   });
 
+  it('mem_thread forwards a thread RPC with the session id', async () => {
+    mem.scripted.push({ ok: true, data: { sessions: [] } });
+    await dispatch(
+      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'mem_thread', arguments: { session_id: 'abc-123', limit: 5 } } },
+      { client: mem as unknown as MemoryClient },
+    );
+    const call = mem.calls.find(c => c.kind === 'thread');
+    expect(call).toBeTruthy();
+    expect((call as { sessionId: string }).sessionId).toBe('abc-123');
+    expect((call as { limit: number }).limit).toBe(5);
+  });
+
   it('tools/list exposes the full memory tool surface', async () => {
     const r = await dispatch({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, { client: mem as unknown as MemoryClient });
     expect((r.result as { tools: unknown[] }).tools.length).toBeGreaterThanOrEqual(11);
