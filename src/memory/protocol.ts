@@ -28,7 +28,8 @@ export type RequestKind =
   | 'doctor'
   | 'sweep_expired'
   | 'export'
-  | 'import';
+  | 'import'
+  | 'thread';
 
 export interface CaptureRequest {
   kind: 'capture';
@@ -204,6 +205,16 @@ export interface ImportRequest {
   ndjson: string;
 }
 
+/**
+ * Cross-session continuity. Given a session id, return other sessions whose events share
+ * an `input_hash` with this one — i.e. "you've seen this exact input before, here's where".
+ */
+export interface ThreadRequest {
+  kind: 'thread';
+  sessionId: string;
+  limit?: number;
+}
+
 export type Request =
   | CaptureRequest
   | SearchRequest
@@ -229,7 +240,8 @@ export type Request =
   | DoctorRequest
   | SweepExpiredRequest
   | ExportRequest
-  | ImportRequest;
+  | ImportRequest
+  | ThreadRequest;
 
 export interface OkResponse<T = unknown> {
   ok: true;

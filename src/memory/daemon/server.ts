@@ -10,7 +10,7 @@ import { redact } from '../privacy.js';
 import { WAL } from './wal.js';
 import type { Embedder } from '../embedder.js';
 import { hybridSearch } from '../retrieval.js';
-import { RegexSymbolExtractor, looksLikeCodePath, type SymbolExtractor, type AsyncSymbolExtractor } from '../symbols.js';
+import type { SymbolExtractor, AsyncSymbolExtractor } from '../symbols.js';
 import { approximate } from '../tokens.js';
 import { listTranscripts, readTranscript, parseTranscript } from '../replay.js';
 import type { Summarizer } from './summarizer.js';
@@ -30,8 +30,6 @@ export interface ServerDeps {
   drainBackend?: string;
   provenance?: ProvenanceStore | null;
 }
-
-const defaultExtractor = new RegexSymbolExtractor();
 
 export interface DrainResult {
   processed: number;
@@ -102,40 +100,6 @@ async function runDrain(
     : { processed, errors, pending, backend };
 }
 
-interface CodePayload {
-  payload: Record<string, unknown>;
-  path: string;
-  code: string;
-}
-
-function extractCodePayload(payload: unknown): CodePayload | null {
-  if (!payload || typeof payload !== 'object') return null;
-  const p = payload as Record<string, unknown>;
-  const input = p['tool_input'] as Record<string, unknown> | null | undefined;
-  if (!input) return null;
-  const path = (input['file_path'] ?? input['path'] ?? input['notebook_path']) as string | undefined;
-  if (!looksLikeCodePath(path)) return null;
-  const code = (input['content'] ?? input['new_string'] ?? input['file_text']) as string | undefined;
-  if (typeof code !== 'string' || code.length === 0) return null;
-  return { payload: p, path: path!, code };
-}
-
-function annotateSymbols(payload: unknown, extractor: SymbolExtractor): unknown {
-  const code = extractCodePayload(payload);
-  if (!code) return payload;
-  const hits = extractor.extract(code.code);
-  if (hits.length === 0) return payload;
-  return { ...code.payload, symbols: hits.map(h => `${h.kind}:${h.name}`) };
-}
-
-async function annotateSymbolsAsync(payload: unknown, extractor: AsyncSymbolExtractor): Promise<unknown> {
-  const code = extractCodePayload(payload);
-  if (!code) return payload;
-  const hits = await extractor.extract(code.code, { path: code.path });
-  if (hits.length === 0) return payload;
-  return { ...code.payload, symbols: hits.map(h => `${h.kind}:${h.name}`) };
-}
-
 export type Handler = (req: Request) => Promise<Response>;
 
 export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 'embedder' | 'symbols' | 'asyncSymbols' | 'onShutdown' | 'summarizer' | 'drainBatch' | 'drainBackend' | 'provenance'>): Handler {
@@ -150,14 +114,11 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
 
         case 'capture': {
           const ts = req.ts ?? Date.now();
-          let annotated: unknown;
-          if (deps.asyncSymbols) {
-            annotated = await annotateSymbolsAsync(req.payload, deps.asyncSymbols);
-          } else {
-            const extractor = deps.symbols === null ? null : (deps.symbols ?? defaultExtractor);
-            annotated = extractor ? annotateSymbols(req.payload, extractor) : req.payload;
-          }
-          const { value: redactedPayload } = redact(annotated);
+          // Symbol annotation runs in a background worker (see SymbolWorker in
+          // daemon/index.ts). Keeping it off the capture hot path means a slow CDG /
+          // tree-sitter call cannot block tool capture from the host. The payload is stored
+          // verbatim; symbols land later in `events.symbols_json`.
+          const { value: redactedPayload } = redact(req.payload);
           const source = req.source ?? 'claude-code';
           const stamped =
             redactedPayload && typeof redactedPayload === 'object' && !Array.isArray(redactedPayload)
@@ -351,6 +312,20 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
           return { ok: true, data: { inserted, skipped, errors } };
         }
 
+        case 'thread': {
+          const rows = await deps.storage.sessionThread(req.sessionId, req.limit ?? 20);
+          return {
+            ok: true,
+            data: {
+              sessions: rows.map(r => ({
+                sessionId: r.sessionId,
+                sharedEvents: r.sharedEvents,
+                lastTs: new Date(r.lastTs).toISOString(),
+              })),
+            },
+          };
+        }
+
         case 'summaries': {
           const limit = req.limit ?? 20;
           const rows = await deps.storage.recentSummaries(limit);
@@ -404,14 +379,8 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
             const frames = parseTranscript(jsonl, t.sessionId, { limit: req.perTranscriptLimit });
             for (const f of frames) {
               try {
-                let annotated: unknown;
-                if (deps.asyncSymbols) {
-                  annotated = await annotateSymbolsAsync(f.payload, deps.asyncSymbols);
-                } else {
-                  const extractor = deps.symbols === null ? null : (deps.symbols ?? defaultExtractor);
-                  annotated = extractor ? annotateSymbols(f.payload, extractor) : f.payload;
-                }
-                const { value: redactedPayload } = redact(annotated);
+                // Backfill defers symbol extraction to the SymbolWorker, same as live capture.
+                const { value: redactedPayload } = redact(f.payload);
                 const stamped =
                   redactedPayload && typeof redactedPayload === 'object' && !Array.isArray(redactedPayload)
                     ? { ...(redactedPayload as Record<string, unknown>), _source: f.source }

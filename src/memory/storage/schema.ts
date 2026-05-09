@@ -120,6 +120,12 @@ export const MIGRATIONS: ReadonlyArray<string> = [
   // content (CI logs, transient bash output, etc.).
   `ALTER TABLE events ADD COLUMN expires_at INTEGER`,
   `CREATE INDEX IF NOT EXISTS idx_events_expires ON events(expires_at) WHERE expires_at IS NOT NULL`,
+  // Symbol annotation moved off the capture hot path. The column stores a JSON array of
+  // `kind:name` pairs (e.g. ["function:login", "class:Auth"]) once a background worker has
+  // processed the event. NULL means "not yet annotated"; an empty array means "annotated, no
+  // symbols extracted" — the worker writes one or the other but never leaves NULL forever.
+  `ALTER TABLE events ADD COLUMN symbols_json TEXT`,
+  `CREATE INDEX IF NOT EXISTS idx_events_symbols_pending ON events(id) WHERE symbols_json IS NULL`,
   // Backfill / live-capture race fix: enforce one event per (session_id, input_hash). The
   // pre-fix path used a SELECT-then-INSERT which TOCTOU-races under concurrent writers.
   // Pre-existing duplicates are deduped to the latest id before the index is created.

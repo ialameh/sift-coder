@@ -171,6 +171,18 @@ export const TOOLS = [
     description: 'Delete events whose TTL has passed (cascades to summaries, embeddings, provenance). Returns the number of events removed.',
     inputSchema: { type: 'object', properties: {}, required: [] },
   },
+  {
+    name: 'mem_thread',
+    description: 'Cross-session continuity: given a session id, return other sessions whose events share an input_hash — i.e. "you have seen this exact input before, here is where". Useful when an agent recognizes a familiar prompt or tool call and wants to surface the prior outcome.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        session_id: { type: 'string' },
+        limit: { type: 'number', default: 20 },
+      },
+      required: ['session_id'],
+    },
+  },
 ];
 
 export interface DrainResult {
@@ -418,6 +430,14 @@ export async function dispatch(req: JsonRpcRequest, deps: HandlerDeps): Promise<
         }
         case 'mem_sweep_expired': {
           const res = await deps.client.send({ kind: 'sweep_expired' });
+          return ok(req.id, res);
+        }
+        case 'mem_thread': {
+          const res = await deps.client.send({
+            kind: 'thread',
+            sessionId: String(args['session_id'] ?? ''),
+            limit: Number(args['limit'] ?? 20),
+          });
           return ok(req.id, res);
         }
         default:

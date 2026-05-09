@@ -207,6 +207,86 @@ export class Storage {
   }
 
   /**
+   * Async symbol annotation pipeline. Capture writes events with `symbols_json IS NULL`; a
+   * background worker pops pending rows, runs the symbol extractor, and `setEventSymbols`
+   * commits the result. The hot path stays off the extractor entirely, so a slow CDG /
+   * tree-sitter call can't block tool capture.
+   */
+  async eventsNeedingSymbols(limit = 32): Promise<EventRow[]> {
+    const rows = await (await this.db.prepare(
+      `SELECT id, ts, session_id, tool, input_hash, payload_json, status, tokens_est
+       FROM events
+       WHERE symbols_json IS NULL
+       ORDER BY id DESC
+       LIMIT ?`
+    )).all(limit) as Record<string, unknown>[];
+    return rows.map(r => ({
+      id: r['id'] as number,
+      ts: r['ts'] as number,
+      sessionId: r['session_id'] as string,
+      tool: r['tool'] as string,
+      inputHash: r['input_hash'] as string,
+      payloadJson: r['payload_json'] as string,
+      status: r['status'] as string,
+      tokensEst: (r['tokens_est'] as number | undefined) ?? 0,
+    }));
+  }
+
+  async setEventSymbols(eventId: number, symbols: string[]): Promise<void> {
+    await (await this.db.prepare(
+      'UPDATE events SET symbols_json = ? WHERE id = ?'
+    )).run(JSON.stringify(symbols), eventId);
+  }
+
+  async getEventSymbols(eventId: number): Promise<string[] | null> {
+    const row = await (await this.db.prepare(
+      'SELECT symbols_json FROM events WHERE id = ?'
+    )).get(eventId) as { symbols_json?: string | null } | undefined;
+    if (!row || row.symbols_json == null) return null;
+    try {
+      const parsed = JSON.parse(row.symbols_json) as unknown;
+      return Array.isArray(parsed) ? parsed.map(String) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Cross-session continuity: find every other event that shares this event's `input_hash`
+   * but lives in a different session. Used by the `mem_thread` tool to surface "you've seen
+   * this exact input before, here's what happened then."
+   */
+  async relatedSessionsByInputHash(eventId: number): Promise<Array<{ sessionId: string; eventId: number; ts: number; tool: string }>> {
+    const ev = await (await this.db.prepare(
+      'SELECT input_hash, session_id FROM events WHERE id = ?'
+    )).get(eventId) as { input_hash?: string; session_id?: string } | undefined;
+    if (!ev?.input_hash) return [];
+    const rows = await (await this.db.prepare(
+      `SELECT id, session_id, ts, tool FROM events
+        WHERE input_hash = ? AND session_id != ?
+        ORDER BY ts DESC`
+    )).all(ev.input_hash, ev.session_id) as Array<{ id: number; session_id: string; ts: number; tool: string }>;
+    return rows.map(r => ({ sessionId: r.session_id, eventId: r.id, ts: r.ts, tool: r.tool }));
+  }
+
+  /**
+   * Resolve a session to its thread: the set of (sessionId, hits) where each hit is an event
+   * in another session that captured an identical input_hash. Sorted by hit count desc.
+   */
+  async sessionThread(sessionId: string, limit = 20): Promise<Array<{ sessionId: string; sharedEvents: number; lastTs: number }>> {
+    const rows = await (await this.db.prepare(
+      `SELECT b.session_id AS sid, count(*) AS c, max(b.ts) AS last_ts
+         FROM events a
+         JOIN events b ON b.input_hash = a.input_hash AND b.session_id != a.session_id
+        WHERE a.session_id = ?
+        GROUP BY b.session_id
+        ORDER BY c DESC, last_ts DESC
+        LIMIT ?`
+    )).all(sessionId, limit) as Array<{ sid: string; c: number; last_ts: number }>;
+    return rows.map(r => ({ sessionId: r.sid, sharedEvents: r.c, lastTs: r.last_ts }));
+  }
+
+  /**
    * Delete events whose `expires_at` is in the past. Cascades to summaries / embeddings via
    * the existing `ON DELETE CASCADE` foreign keys. Returns the number of events removed.
    */

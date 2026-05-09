@@ -471,6 +471,45 @@ describe.each(BACKENDS)('storage backend parity ($name)', backend => {
     expect(row?.expires_at).toBe(ts + ttl);
   });
 
+  it('sessionThread surfaces other sessions sharing input_hash', async () => {
+    const e1 = await storage.recordEvent({ ts: 1, sessionId: 's1', tool: 'R', payload: { same: true } });
+    const e2 = await storage.recordEvent({ ts: 2, sessionId: 's2', tool: 'R', payload: { same: true } });
+    const e3 = await storage.recordEvent({ ts: 3, sessionId: 's3', tool: 'R', payload: { same: true } });
+    void e1; void e2; void e3;
+    const r = await storage.sessionThread('s1');
+    expect(r).toHaveLength(2);
+    const sids = new Set(r.map(x => x.sessionId));
+    expect(sids.has('s2')).toBe(true);
+    expect(sids.has('s3')).toBe(true);
+  });
+
+  it('relatedSessionsByInputHash skips events in the same session', async () => {
+    const e1 = await storage.recordEvent({ ts: 1, sessionId: 's1', tool: 'R', payload: { same: true } });
+    await storage.recordEvent({ ts: 2, sessionId: 's2', tool: 'R', payload: { same: true } });
+    const related = await storage.relatedSessionsByInputHash(e1);
+    expect(related).toHaveLength(1);
+    expect(related[0]!.sessionId).toBe('s2');
+  });
+
+  it('eventsNeedingSymbols returns events where symbols_json is NULL', async () => {
+    const e1 = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'Write', payload: { tool_input: { file_path: '/a.ts', content: 'fn' } } });
+    const e2 = await storage.recordEvent({ ts: 2, sessionId: 's', tool: 'Write', payload: { tool_input: { file_path: '/b.ts', content: 'fn' } } });
+    expect(await storage.eventsNeedingSymbols(10)).toHaveLength(2);
+    await storage.setEventSymbols(e1, ['function:foo']);
+    expect(await storage.eventsNeedingSymbols(10)).toHaveLength(1);
+    await storage.setEventSymbols(e2, []);
+    expect(await storage.eventsNeedingSymbols(10)).toHaveLength(0);
+  });
+
+  it('getEventSymbols round-trips JSON, returns null for unannotated', async () => {
+    const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: { i: 1 } });
+    expect(await storage.getEventSymbols(eid)).toBeNull();
+    await storage.setEventSymbols(eid, ['function:f', 'class:C']);
+    expect(await storage.getEventSymbols(eid)).toEqual(['function:f', 'class:C']);
+    await storage.setEventSymbols(eid, []);
+    expect(await storage.getEventSymbols(eid)).toEqual([]);
+  });
+
   it('importRow returns skipped for an unknown table', async () => {
     const r = await storage.importRow('not_a_table', { foo: 1 });
     expect(r).toBe('skipped');
