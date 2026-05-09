@@ -433,6 +433,67 @@ describe.each(BACKENDS)('storage backend parity ($name)', backend => {
     expect(r.pinned).toBe(1);
   });
 
+  it('UNIQUE(session_id, input_hash) deduplicates concurrent identical captures', async () => {
+    const a = await storage.recordEvent({ ts: 1, sessionId: 'sess', tool: 'R', payload: { same: true } });
+    const b = await storage.recordEvent({ ts: 2, sessionId: 'sess', tool: 'R', payload: { same: true } });
+    expect(a).toBeGreaterThan(0);
+    expect(b).toBe(a); // second insert returned the existing id, not a new row
+    expect(await storage.countAll('events')).toBe(1);
+  });
+
+  it('TTL: events with expires_at in the past are removed by sweepExpired', async () => {
+    const past = Date.now() - 1000;
+    const future = Date.now() + 60_000;
+    await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: { i: 1 }, ttlMs: -1000 });
+    // ttlMs is added to ts: Date.now()-1000 + (-1000) = past. Use literal expires_at via ttlMs based on now.
+    await (await (storage as unknown as { ['db']: { prepare(s: string): Promise<{ run(...p: unknown[]): Promise<unknown> }> } })['db'].prepare(
+      'UPDATE events SET expires_at = ? WHERE id = 1'
+    )).run(past);
+    await storage.recordEvent({ ts: Date.now(), sessionId: 's', tool: 'R', payload: { i: 2 } });
+    await (await (storage as unknown as { ['db']: { prepare(s: string): Promise<{ run(...p: unknown[]): Promise<unknown> }> } })['db'].prepare(
+      'UPDATE events SET expires_at = ? WHERE id = 2'
+    )).run(future);
+    const removed = await storage.sweepExpired();
+    expect(removed).toBe(1);
+    expect(await storage.countAll('events')).toBe(1);
+  });
+
+  it('recordEvent stores ttlMs as expires_at = ts + ttlMs', async () => {
+    const ts = 1_000_000;
+    const ttl = 60_000;
+    const eid = await storage.recordEvent({ ts, sessionId: 's', tool: 'R', payload: { i: 1 }, ttlMs: ttl });
+    const ev = await storage.getEvent(eid);
+    expect(ev).not.toBeNull();
+    // expires_at column isn't in EventRow's typed shape; verify by manual scalar query.
+    const row = await (await (storage as unknown as { ['db']: { prepare(s: string): Promise<{ get(...p: unknown[]): Promise<unknown> }> } })['db'].prepare(
+      'SELECT expires_at FROM events WHERE id = ?'
+    )).get(eid) as { expires_at?: number } | undefined;
+    expect(row?.expires_at).toBe(ts + ttl);
+  });
+
+  it('export → import round-trip preserves all rows (idempotent)', async () => {
+    const eid = await storage.recordEvent({ ts: 100, sessionId: 's', tool: 'Edit', payload: { p: 1 } });
+    const sid = await storage.recordSummary({ eventId: eid, ts: 100, model: 'm', promptHash: 'p', text: 'fact', tokensIn: 1, tokensOut: 1, confidence: 0.9 });
+    await storage.putEmbedding(sid, new Float32Array([0.1, 0.2, 0.3]));
+    await storage.pin(sid, 200);
+
+    const lines: string[] = [];
+    for await (const r of storage.exportRows()) lines.push(JSON.stringify(r));
+    expect(lines.length).toBeGreaterThanOrEqual(3); // session + event + summary at minimum
+
+    // Re-import into the same store: should be a no-op (UNIQUE / PK conflicts).
+    let inserted = 0, skipped = 0;
+    for (const line of lines) {
+      const { table, row } = JSON.parse(line);
+      const r = await storage.importRow(table, row);
+      if (r === 'inserted') inserted++; else skipped++;
+    }
+    expect(inserted).toBe(0);
+    expect(skipped).toBeGreaterThan(0);
+    expect(await storage.countAll('events')).toBe(1);
+    expect(await storage.countAll('summaries')).toBe(1);
+  });
+
   it('Consolidator does not mark a pinned summary as superseded', async () => {
     const { Consolidator } = await import('../daemon/consolidator.js');
     const { DeterministicEmbedder } = await import('../embedder.js');

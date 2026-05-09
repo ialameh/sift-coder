@@ -26,7 +26,10 @@ Single entry point for memory daemon operations.
 | `pin <summaryId>` | Mark a summary as user-curated (exempt from supersede + decay) |
 | `unpin <summaryId>` | Remove the curation mark |
 | `pinned [N]` | List the most-recently pinned summaries (default 100) |
-| `doctor [--json]` | Health check: integrity, orphans, vec0 drift, counts |
+| `doctor [--json] [--heal]` | Health check; `--heal` repairs vec0 drift |
+| `export <file>` | Dump events + summaries + embeddings + provenance to ndjson |
+| `import <file>` | Load an ndjson snapshot (idempotent, INSERT OR IGNORE) |
+| `search <query> [--k N] [--json]` | Hybrid search via the daemon |
 | `web` | Print web UI URL for browser inspection |
 | `list` | List recent summaries |
 

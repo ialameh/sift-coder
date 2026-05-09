@@ -115,6 +115,18 @@ export const MIGRATIONS: ReadonlyArray<string> = [
   // user (or an agent) can curate long-term memories that the consolidator won't kill.
   `ALTER TABLE summaries ADD COLUMN pinned_at INTEGER`,
   `CREATE INDEX IF NOT EXISTS idx_summaries_pinned ON summaries(pinned_at) WHERE pinned_at IS NOT NULL`,
+  // expires_at: NULL = retained indefinitely. Non-null = epoch ms after which a periodic
+  // sweep deletes the event and its dependents (cascade). Per-capture TTL for ephemeral
+  // content (CI logs, transient bash output, etc.).
+  `ALTER TABLE events ADD COLUMN expires_at INTEGER`,
+  `CREATE INDEX IF NOT EXISTS idx_events_expires ON events(expires_at) WHERE expires_at IS NOT NULL`,
+  // Backfill / live-capture race fix: enforce one event per (session_id, input_hash). The
+  // pre-fix path used a SELECT-then-INSERT which TOCTOU-races under concurrent writers.
+  // Pre-existing duplicates are deduped to the latest id before the index is created.
+  // Cascade dependents (summaries, embeddings) follow via FK.
+  `DELETE FROM summaries WHERE event_id IN (SELECT id FROM events WHERE id NOT IN (SELECT MAX(id) FROM events GROUP BY session_id, input_hash))`,
+  `DELETE FROM events WHERE id NOT IN (SELECT MAX(id) FROM events GROUP BY session_id, input_hash)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_events_session_inputhash ON events(session_id, input_hash)`,
 ];
 
 /**

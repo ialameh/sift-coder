@@ -340,9 +340,10 @@ switch (cmd) {
     break;
   }
   case 'doctor': {
+    const heal = args.includes('--heal');
     let report;
     try {
-      const r = await rpc({ kind: 'doctor' }, 30000);
+      const r = await rpc({ kind: 'doctor', heal }, 60000);
       if (r.ok) report = r.data;
     } catch (e) {
       if (e.message && !e.message.includes('ENOENT') && !e.message.includes('ECONNREFUSED')) throw e;
@@ -364,9 +365,82 @@ switch (cmd) {
       lines.push(`pinned      ${report.pinned}`);
       const c = report.counts;
       lines.push(`counts      events=${c.events} raw=${c.raw} summarized=${c.summarized} skipped=${c.skipped} summaries=${c.summaries} embeddings=${c.embeddings} superseded=${c.superseded}`);
+      if (report.healed) lines.push(`healed      vecBackfilled=${report.healed.vecBackfilled}`);
       console.log(lines.join('\n'));
     }
     break;
+  }
+  case 'export': {
+    const target = args[0];
+    if (!target) { console.error('usage: siftcoder export <file.ndjson>'); process.exit(1); }
+    let r;
+    try {
+      r = await rpc({ kind: 'export', all: true }, 120000);
+    } catch (e) {
+      if (e.message && !e.message.includes('ENOENT') && !e.message.includes('ECONNREFUSED')) throw e;
+    }
+    if (r?.ok) {
+      fs.writeFileSync(target, r.data.ndjson + '\n');
+      console.log(JSON.stringify({ ok: true, file: target, records: r.data.records }, null, 2));
+      break;
+    }
+    // Local fallback
+    const { storage } = await openStorage();
+    const lines = [];
+    for await (const row of storage.exportRows()) lines.push(JSON.stringify(row));
+    await storage.close();
+    fs.writeFileSync(target, lines.join('\n') + '\n');
+    console.log(JSON.stringify({ ok: true, file: target, records: lines.length }, null, 2));
+    break;
+  }
+  case 'import': {
+    const source = args[0];
+    if (!source || !fs.existsSync(source)) { console.error(`usage: siftcoder import <file.ndjson>`); process.exit(1); }
+    const ndjson = fs.readFileSync(source, 'utf8');
+    try {
+      const r = await rpc({ kind: 'import', ndjson }, 300000);
+      console.log(JSON.stringify(r, null, 2));
+      break;
+    } catch (e) {
+      if (e.message && !e.message.includes('ENOENT') && !e.message.includes('ECONNREFUSED')) throw e;
+    }
+    const { storage } = await openStorage();
+    let inserted = 0, skipped = 0, errors = 0;
+    for (const line of ndjson.split('\n')) {
+      if (!line.trim()) continue;
+      try {
+        const { table, row } = JSON.parse(line);
+        const r = await storage.importRow(table, row);
+        if (r === 'inserted') inserted++; else skipped++;
+      } catch { errors++; }
+    }
+    await storage.close();
+    console.log(JSON.stringify({ ok: true, data: { inserted, skipped, errors } }, null, 2));
+    break;
+  }
+  case 'search': {
+    const query = args.filter(a => !a.startsWith('--')).join(' ');
+    if (!query) { console.error('usage: siftcoder search <query> [--k N]'); process.exit(1); }
+    const kIdx = args.indexOf('--k');
+    const k = kIdx >= 0 ? parseInt(args[kIdx + 1] ?? '5', 10) : 5;
+    try {
+      const r = await rpc({ kind: 'search', query, k }, 30000);
+      if (r.ok) {
+        if (args.includes('--json')) {
+          console.log(JSON.stringify(r.data, null, 2));
+        } else {
+          for (const h of r.data.hits ?? []) {
+            const snip = h.text.length > 120 ? h.text.slice(0, 120) + '...' : h.text;
+            console.log(`#${h.id}  ${(h.score ?? 0).toFixed(4)}  [${h.tool ?? '?'}]  ${snip}`);
+          }
+        }
+        break;
+      }
+    } catch (e) {
+      if (e.message && !e.message.includes('ENOENT') && !e.message.includes('ECONNREFUSED')) throw e;
+    }
+    console.error('search requires the daemon to be running');
+    process.exit(1);
   }
   case 'web': {
     const portFile = paths().httpPort;
@@ -553,7 +627,10 @@ Usage:
   siftcoder pin <summaryId>     mark a summary as user-curated (exempt from supersede, decay-resistant)
   siftcoder unpin <summaryId>   remove the curation mark
   siftcoder pinned [N]          list the most-recently pinned summaries (default 100)
-  siftcoder doctor [--json]     health check: integrity, orphans, vec0 drift, counts
+  siftcoder doctor [--json] [--heal]  health check; --heal repairs vec0 drift
+  siftcoder export <file>       dump events + summaries + embeddings + provenance to ndjson
+  siftcoder import <file>       load an ndjson snapshot (idempotent, INSERT OR IGNORE)
+  siftcoder search <query> [--k N] [--json]  hybrid search via the daemon
   siftcoder web                 print web UI URL
 `);
 }

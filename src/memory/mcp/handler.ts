@@ -145,7 +145,30 @@ export const TOOLS = [
   },
   {
     name: 'mem_doctor',
-    description: 'Health check over the memory store: integrity, orphan summaries / embeddings, vec0 cardinality drift, counts. Returns a structured report.',
+    description: 'Health check over the memory store: integrity, orphan summaries / embeddings, vec0 cardinality drift, counts. Returns a structured report. Pass `heal: true` to repair vec0 drift in place.',
+    inputSchema: {
+      type: 'object',
+      properties: { heal: { type: 'boolean', default: false } },
+      required: [],
+    },
+  },
+  {
+    name: 'mem_export',
+    description: 'Snapshot the entire memory store as ndjson. Returns the snapshot inline plus a record count. Use to migrate or back up.',
+    inputSchema: { type: 'object', properties: {}, required: [] },
+  },
+  {
+    name: 'mem_import',
+    description: 'Load an ndjson snapshot produced by mem_export. Idempotent — INSERT OR IGNORE everywhere; safe to re-import overlapping data.',
+    inputSchema: {
+      type: 'object',
+      properties: { ndjson: { type: 'string' } },
+      required: ['ndjson'],
+    },
+  },
+  {
+    name: 'mem_sweep_expired',
+    description: 'Delete events whose TTL has passed (cascades to summaries, embeddings, provenance). Returns the number of events removed.',
     inputSchema: { type: 'object', properties: {}, required: [] },
   },
 ];
@@ -382,7 +405,19 @@ export async function dispatch(req: JsonRpcRequest, deps: HandlerDeps): Promise<
           return ok(req.id, res);
         }
         case 'mem_doctor': {
-          const res = await deps.client.send({ kind: 'doctor' });
+          const res = await deps.client.send({ kind: 'doctor', heal: Boolean(args['heal']) });
+          return ok(req.id, res);
+        }
+        case 'mem_export': {
+          const res = await deps.client.send({ kind: 'export', all: true });
+          return ok(req.id, res);
+        }
+        case 'mem_import': {
+          const res = await deps.client.send({ kind: 'import', ndjson: String(args['ndjson'] ?? '') });
+          return ok(req.id, res);
+        }
+        case 'mem_sweep_expired': {
+          const res = await deps.client.send({ kind: 'sweep_expired' });
           return ok(req.id, res);
         }
         default:

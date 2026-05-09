@@ -35,8 +35,8 @@ describe('renderWatchSnapshot', () => {
   });
 
   it('renders counts and event tail', async () => {
-    await storage.recordEvent({ ts: 1000, sessionId: 's', tool: 'Read', payload: {} });
-    await storage.recordEvent({ ts: 2000, sessionId: 's', tool: 'Edit', payload: {} });
+    await storage.recordEvent({ ts: 1000, sessionId: 's', tool: 'Read', payload: { i: 1 } });
+    await storage.recordEvent({ ts: 2000, sessionId: 's', tool: 'Edit', payload: { i: 2 } });
     await storage.markEventStatus(1, 'summarized');
     const out = await renderWatchSnapshot(storage, { limit: 5 });
     const plain = strip(out);

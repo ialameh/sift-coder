@@ -110,8 +110,8 @@ describe('GET /api/savings', () => {
 
 describe('GET /api/events', () => {
   it('returns recent events with default limit', async () => {
-    await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'Read', payload: {} });
-    await storage.recordEvent({ ts: 2, sessionId: 's', tool: 'Edit', payload: {} });
+    await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'Read', payload: { i: 1 } });
+    await storage.recordEvent({ ts: 2, sessionId: 's', tool: 'Edit', payload: { i: 2 } });
     const r = await route(req({ path: '/api/events' }), deps());
     expect(r.status).toBe(200);
     const body = JSON.parse(String(r.body));
@@ -119,7 +119,7 @@ describe('GET /api/events', () => {
   });
 
   it('honors the limit query param', async () => {
-    for (let i = 0; i < 5; i++) await storage.recordEvent({ ts: i, sessionId: 's', tool: 'R', payload: {} });
+    for (let i = 0; i < 5; i++) await storage.recordEvent({ ts: i, sessionId: 's', tool: 'R', payload: { i } });
     const r = await route(req({ path: '/api/events', query: { limit: '2' } }), deps());
     const body = JSON.parse(String(r.body));
     expect(body.data.events).toHaveLength(2);
