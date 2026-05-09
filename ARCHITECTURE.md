@@ -34,7 +34,7 @@ The unique additive value:
 │              │                                                       │
 │              ├─ Skills (siftcoder/*)        ─── markdown guidance    │
 │              ├─ Slash commands (siftcoder/*) ── thin wrappers        │
-│              ├─ MCP tools (siftcoder-memory) ── mem_search, mem_why… │
+│              ├─ MCP tools (siftcoder-memory) ── 26 mem_* tools (v1.1) │
 │              └─ Hooks (PreTool / PostTool / PreCompact / Stop / …)   │
 │                          │                                           │
 └──────────────────────────┼───────────────────────────────────────────┘
@@ -151,7 +151,15 @@ High-value groups:
 Quality gates run via on-demand `/siftcoder:quality` skill. Checkpoint/handoff are explicit workflow skills, not hidden automation. Compression is a skill backed by companion plugin state.
 
 ### MCP server
-`siftcoder-memory` exposing `mem_search`, `mem_get`, `mem_timeline`, `mem_why`, `mem_drain`. Declared inline in `plugin.json`.
+`siftcoder-memory` exposes 26 tools (v1.1.0). Declared inline in `plugin.json`.
+
+**Retrieval & state:** `mem_search`, `mem_get`, `mem_timeline`, `mem_why`, `mem_replay`, `mem_thread`, `mem_federate_search`, `mem_symbol_search`, `mem_context_budget`, `mem_as_of`, `mem_session_digest`, `mem_dashboard`, `mem_stats`.
+
+**Capture & curation:** `mem_capture`, `mem_pin`, `mem_unpin`, `mem_pinned`, `mem_auto_pin_patterns`, `mem_patterns`.
+
+**Operations:** `mem_drain`, `mem_prune`, `mem_retry`, `mem_doctor`, `mem_compact`, `mem_sweep_expired`, `mem_export`, `mem_import`.
+
+**Drain backend:** when the host advertises `sampling`, the MCP server delegates summarization to the host LLM via `sampling/createMessage` — no API key required. Otherwise falls back to GLM → Gemini → Ollama → Anthropic-direct on the daemon. See `src/memory/mcp/handler.ts` (drainViaSampling) and `src/memory/mcp/server.ts` (bidirectional StdioBridge).
 
 ### Monitors
 `memory-daemon-health.mjs` — pings UDS socket every 30s, logs and surfaces in `/siftcoder:mem status`.
@@ -172,24 +180,28 @@ tool result
   → WAL append → events table
 ```
 
-**Drain path (background):**
+**Drain path (background, MCP-side preferred):**
 ```
-consolidator tick
-  → SELECT events WHERE summary IS NULL LIMIT 16
-  → for each: cache lookup (model||prompt_hash||input_hash)
-              ↓ miss
-              Ollama (local) → confidence eval → Sonnet escalate if low
-  → INSERT summary + provenance edges
+mem_search (or mem_drain) on the host
+  → MCP server checks samplingTransport availability
+    ├─ available  → claim_for_summary (atomic raw → claimed)
+    │              → for each: cache_get → host sampling/createMessage → record_summary
+    │              → release_summary on retryable error (back to raw)
+    └─ unavailable → daemon-side runDrain (GLM → Gemini → Ollama → Anthropic cascade)
+  → INSERT summary + (vec0 if loaded) embedding via SymbolWorker-decoupled write
 ```
 
 **Retrieval path (mem_search):**
 ```
 MCP tool call mem_search(query, k=10)
-  → tokenise → BM25 over FTS5
-  → embed query → cosine over summaries
-  → RRF fuse → apply Ebbinghaus boost
-  → optional rerank (Claude or local cross-encoder)
-  → return top-k summaries + provenance hints
+  → status probe (eager-drain ramp by backlog: 8/16/32 above 50/200/500)
+  → drain pending (sampling- or daemon-side, see above)
+  → tokenise → BM25 over FTS5 (joined with events for tool propagation)
+  → embed query → vec0 MATCH if loaded, else JS-side cosine
+  → RRF fuse → per-tool Ebbinghaus decay (Edit 30d, Bash 3d, etc.)
+  → pinned summaries exempt from supersede sieve
+  → optional rerank (corpus-IDF cached or Claude cross-encoder)
+  → return top-k summaries + tool + provenance hints
 ```
 
 **PreCompact path:**
