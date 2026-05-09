@@ -21,6 +21,8 @@ Single entry point for memory daemon operations.
 | `setup` | Interactive first-time setup (Ollama probe, Anthropic key, config) |
 | `drain [batch]` | Force a drain pass (default batch=32) |
 | `backfill [source]` | Backfill from past Claude Code transcripts |
+| `prune [--days N] [--superseded]` | Drop skipped events older than N days (default 7); `--superseded` also drops dedup losers |
+| `retry [N]` | Re-queue skipped events for another drain pass (optionally first N) |
 | `web` | Print web UI URL for browser inspection |
 | `list` | List recent summaries |
 

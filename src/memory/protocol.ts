@@ -14,7 +14,14 @@ export type RequestKind =
   | 'backfill'
   | 'drain'
   | 'why'
-  | 'summaries';
+  | 'summaries'
+  | 'claim_for_summary'
+  | 'record_summary'
+  | 'release_summary'
+  | 'cache_get'
+  | 'cache_put'
+  | 'prune'
+  | 'retry_skipped';
 
 export interface CaptureRequest {
   kind: 'capture';
@@ -84,6 +91,66 @@ export interface SummariesRequest {
   limit?: number;
 }
 
+/**
+ * MCP-side drain support: lets the MCP server claim raw events, summarize them via the host's
+ * `sampling/createMessage`, and write the summaries back. Daemon stays the storage source of
+ * truth and never needs an API key when running inside Claude Code.
+ */
+export interface ClaimForSummaryRequest {
+  kind: 'claim_for_summary';
+  batch?: number;
+}
+
+export interface RecordSummaryRequest {
+  kind: 'record_summary';
+  eventId: number;
+  model: string;
+  promptHash: string;
+  text: string;
+  confidence: number | null;
+  tokensIn: number | null;
+  tokensOut: number | null;
+  /** Optional embedding produced by the MCP-side caller (must match `embeddingDim` on this daemon). */
+  embedding?: number[];
+  ts?: number;
+}
+
+export interface ReleaseSummaryRequest {
+  kind: 'release_summary';
+  eventId: number;
+  error: string;
+  /** terminal=true marks the event `skipped` regardless of attempt count. */
+  terminal?: boolean;
+}
+
+export interface CacheGetRequest {
+  kind: 'cache_get';
+  cacheKey: string;
+}
+
+export interface CachePutRequest {
+  kind: 'cache_put';
+  cacheKey: string;
+  text: string;
+  tokensIn: number | null;
+  tokensOut: number | null;
+  ts?: number;
+}
+
+export interface PruneRequest {
+  kind: 'prune';
+  /** Drop skipped events older than this many ms (default 7 days). */
+  maxAgeMs?: number;
+  /** If true, also drop superseded summaries. */
+  superseded?: boolean;
+}
+
+export interface RetrySkippedRequest {
+  kind: 'retry_skipped';
+  /** Optional cap on how many to re-queue. */
+  limit?: number;
+}
+
 export type Request =
   | CaptureRequest
   | SearchRequest
@@ -95,7 +162,14 @@ export type Request =
   | BackfillRequest
   | DrainRequest
   | WhyRequest
-  | SummariesRequest;
+  | SummariesRequest
+  | ClaimForSummaryRequest
+  | RecordSummaryRequest
+  | ReleaseSummaryRequest
+  | CacheGetRequest
+  | CachePutRequest
+  | PruneRequest
+  | RetrySkippedRequest;
 
 export interface OkResponse<T = unknown> {
   ok: true;

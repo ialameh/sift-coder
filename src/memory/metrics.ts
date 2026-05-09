@@ -14,13 +14,6 @@
  */
 import type { Storage } from './storage/storage.js';
 
-interface DBQuery {
-  prepare(sql: string): Promise<{
-    get(...p: unknown[]): Promise<unknown>;
-    all(...p: unknown[]): Promise<unknown[]>;
-  }>;
-}
-
 export interface SavingsReport {
   workspace: { dbPath: string | null; sizeBytes: number | null };
   capture: {
@@ -55,52 +48,27 @@ export interface SavingsReport {
   };
 }
 
-interface CountRow { c: number }
-interface NumRow { n: number | null }
-
-function getDb(storage: Storage): DBQuery {
-  return (storage as unknown as { ['db']: DBQuery })['db'];
-}
-
 export async function computeSavings(storage: Storage): Promise<SavingsReport> {
-  const db = getDb(storage);
-  /* c8 ignore next -- count(*) always returns a row; ?? 0 is a defensive type guard */
-  const c = async (sql: string): Promise<number> => { const row = await (await db.prepare(sql)).get() as CountRow | undefined; return row?.c ?? 0; };
-  /* c8 ignore next -- sum(...) always returns a row; ?? 0 is a defensive type guard */
-  const n = async (sql: string): Promise<number> => { const row = await (await db.prepare(sql)).get() as NumRow | undefined; return row?.n ?? 0; };
+  const events = await storage.countAll('events');
+  const tokensCaptured = await storage.sumNumber('SELECT sum(tokens_est) AS n FROM events');
+  const redactedEvents = await storage.countRedacted();
+  const summarized = await storage.countByStatus('summarized');
+  const skipped    = await storage.countByStatus('skipped');
+  const raw        = await storage.countByStatus('raw');
+  const perTool    = await storage.perToolCounts();
 
-  const events = await c('SELECT count(*) AS c FROM events');
-  const tokensCaptured = await n('SELECT sum(tokens_est) AS n FROM events');
-  const redactedEvents = await c("SELECT count(*) AS c FROM events WHERE payload_json LIKE '%REDACTED:%'");
-  const summarized = await c("SELECT count(*) AS c FROM events WHERE status = 'summarized'");
-  const skipped    = await c("SELECT count(*) AS c FROM events WHERE status = 'skipped'");
-  const raw        = await c("SELECT count(*) AS c FROM events WHERE status = 'raw'");
-
-  const perToolRows = await (await db.prepare('SELECT tool, count(*) AS c FROM events GROUP BY tool ORDER BY c DESC')).all() as Array<{ tool: string; c: number }>;
-  const perTool: Record<string, number> = {};
-  for (const r of perToolRows) perTool[r.tool] = r.c;
-
-  const summaries = await c('SELECT count(*) AS c FROM summaries');
-  const tokensIn  = await n('SELECT sum(tokens_in)  AS n FROM summaries');
-  const tokensOut = await n('SELECT sum(tokens_out) AS n FROM summaries');
-  const cacheRows = await c('SELECT count(*) AS c FROM summary_cache');
-  // Cache hit estimate: an event whose summary was served from a prior cache entry will not
-  // have its (model, prompt_hash, input_hash) appear in summary_cache as a *new* row, so the
-  // count of summaries whose input_hash is shared by two or more events approximates hits.
-  const sharedInputs = await c(
-    `SELECT COUNT(*) AS c FROM (
-       SELECT e.input_hash FROM events e
-       JOIN summaries s ON s.event_id = e.id
-       GROUP BY e.input_hash
-       HAVING COUNT(*) > 1
-     )`
-  );
-  const cacheHits = sharedInputs;
+  const summaries = await storage.countAll('summaries');
+  const tokensIn  = await storage.sumNumber('SELECT sum(tokens_in)  AS n FROM summaries');
+  const tokensOut = await storage.sumNumber('SELECT sum(tokens_out) AS n FROM summaries');
+  const cacheRows = await storage.countAll('summary_cache');
+  // Cache hit estimate: events sharing an input_hash whose summary already exists. The first
+  // event populates the cache, every subsequent same-hash event hits it.
+  const cacheHits = await storage.countSharedInputHashes();
   const cacheHitRate = summaries === 0 ? 0 : Math.min(1, cacheHits / summaries);
-  const summaryTokensStored = await n('SELECT sum(length(text) / 4) AS n FROM summaries');
+  const summaryTokensStored = await storage.sumSummaryTextChars();
 
-  const embeddings = await c('SELECT count(*) AS c FROM summary_embeddings');
-  const superseded = await c('SELECT count(DISTINCT older_id) AS c FROM summary_supersedes');
+  const embeddings = await storage.countAll('summary_embeddings');
+  const superseded = await storage.countSupersededDistinct();
   const dedupRatio = summaries === 0 ? 0 : superseded / summaries;
 
   const compressionRatio = tokensCaptured === 0 ? 0 : summaryTokensStored / tokensCaptured;

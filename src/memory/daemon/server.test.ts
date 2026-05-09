@@ -546,6 +546,89 @@ describe('buildHandler with real Storage (cross-platform)', () => {
     expect(counts.summaries).toBe(1);
     expect(counts.summarized).toBe(1);
   });
+
+  it('claim_for_summary returns claimed events and flips status to claimed', async () => {
+    for (let i = 0; i < 3; i++) {
+      await realStorage.recordEvent({ ts: i, sessionId: 's', tool: 'R', payload: { i } });
+    }
+    const h = buildHandler({ storage: realStorage, wal: realWal, cwd: '/x' });
+    const r = await h({ kind: 'claim_for_summary', batch: 2 }) as { ok: true; data: { events: Array<{ id: number }> } };
+    expect(r.ok).toBe(true);
+    expect(r.data.events).toHaveLength(2);
+    const counts = await realStorage.counts();
+    expect(counts.raw).toBe(1);
+  });
+
+  it('record_summary writes summary, embedding, and flips event status', async () => {
+    const { DeterministicEmbedder } = await import('../embedder.js');
+    const eid = await realStorage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: { p: 1 } });
+    await realStorage.markEventStatus(eid, 'claimed');
+    const h = buildHandler({ storage: realStorage, wal: realWal, cwd: '/x', embedder: new DeterministicEmbedder(384) });
+    const r = await h({
+      kind: 'record_summary',
+      eventId: eid,
+      model: 'mcp-sampling',
+      promptHash: 'p',
+      text: 'extracted summary',
+      confidence: 0.9,
+      tokensIn: null,
+      tokensOut: null,
+    }) as { ok: true; data: { id: number } };
+    expect(r.ok).toBe(true);
+    expect(r.data.id).toBeGreaterThan(0);
+    const counts = await realStorage.counts();
+    expect(counts.summaries).toBe(1);
+    expect(counts.summarized).toBe(1);
+    expect(counts.embeddings).toBe(1);
+  });
+
+  it('release_summary returns event to raw on retryable error', async () => {
+    const eid = await realStorage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: { p: 1 } });
+    await realStorage.markEventStatus(eid, 'claimed');
+    const h = buildHandler({ storage: realStorage, wal: realWal, cwd: '/x' });
+    const r = await h({ kind: 'release_summary', eventId: eid, error: 'timeout' }) as { ok: true; data: { status: string } };
+    expect(r.data.status).toBe('released');
+    const ev = await realStorage.getEvent(eid);
+    expect(ev?.status).toBe('raw');
+  });
+
+  it('release_summary with terminal=true marks event skipped', async () => {
+    const eid = await realStorage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: { p: 1 } });
+    await realStorage.markEventStatus(eid, 'claimed');
+    const h = buildHandler({ storage: realStorage, wal: realWal, cwd: '/x' });
+    const r = await h({ kind: 'release_summary', eventId: eid, error: 'parse fail', terminal: true }) as { ok: true; data: { status: string } };
+    expect(r.data.status).toBe('skipped');
+  });
+
+  it('cache_get / cache_put round-trip', async () => {
+    const h = buildHandler({ storage: realStorage, wal: realWal, cwd: '/x' });
+    await h({ kind: 'cache_put', cacheKey: 'k1', text: '{"text":"hello","confidence":0.8}', tokensIn: 5, tokensOut: 2 });
+    const r = await h({ kind: 'cache_get', cacheKey: 'k1' }) as { ok: true; data: { cached: { text: string; tokensIn: number | null } | null } };
+    expect(r.data.cached).not.toBeNull();
+    expect(r.data.cached!.text).toContain('hello');
+    expect(r.data.cached!.tokensIn).toBe(5);
+  });
+
+  it('prune drops skipped events older than the cutoff', async () => {
+    const oldTs = Date.now() - 10 * 24 * 60 * 60 * 1000;
+    const eid = await realStorage.recordEvent({ ts: oldTs, sessionId: 's', tool: 'R', payload: { i: 1 } });
+    await realStorage.markEventStatus(eid, 'skipped');
+    const h = buildHandler({ storage: realStorage, wal: realWal, cwd: '/x' });
+    const r = await h({ kind: 'prune', maxAgeMs: 7 * 24 * 60 * 60 * 1000 }) as { ok: true; data: { removedEvents: number } };
+    expect(r.data.removedEvents).toBe(1);
+    const counts = await realStorage.counts();
+    expect(counts.skipped).toBe(0);
+  });
+
+  it('retry_skipped re-queues skipped events as raw with attempts reset', async () => {
+    const eid = await realStorage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: { i: 1 } });
+    await realStorage.markEventStatus(eid, 'skipped');
+    const h = buildHandler({ storage: realStorage, wal: realWal, cwd: '/x' });
+    const r = await h({ kind: 'retry_skipped' }) as { ok: true; data: { requeued: number } };
+    expect(r.data.requeued).toBe(1);
+    const ev = await realStorage.getEvent(eid);
+    expect(ev?.status).toBe('raw');
+  });
 });
 
 describe('isRetryableError', () => {

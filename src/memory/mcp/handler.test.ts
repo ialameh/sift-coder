@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { dispatch, drain, TOOLS, type HandlerDeps } from './handler.js';
+import { dispatch, drain, drainViaSampling, TOOLS, type HandlerDeps } from './handler.js';
 import type { MemoryClient } from '../client.js';
 import type { Request, Response } from '../protocol.js';
+import type { SamplingTransport, SamplingRequestParams, SamplingResponse } from './sampling-client.js';
 
 class FakeMemoryClient {
   scripted: Response[] = [];
@@ -233,5 +234,95 @@ describe('drain', () => {
     const r = await drain(mem as unknown as MemoryClient, 4);
     expect(r.errors).toBe(2);
     expect(r.firstError).toBe('rate limit exceeded');
+  });
+});
+
+class FakeSamplingTransport implements SamplingTransport {
+  scripted: Array<SamplingResponse | Error> = [];
+  calls: SamplingRequestParams[] = [];
+  async requestSampling(params: SamplingRequestParams): Promise<SamplingResponse> {
+    this.calls.push(params);
+    const next = this.scripted.shift();
+    if (next instanceof Error) throw next;
+    return next ?? { role: 'assistant', content: { type: 'text', text: '{"text":"summary","confidence":0.9}' } };
+  }
+}
+
+describe('drainViaSampling', () => {
+  it('claims events, summarizes via host sampling, records summaries', async () => {
+    mem.scripted.push({ ok: true, data: { events: [
+      { id: 1, ts: 1, sessionId: 's', tool: 'R', inputHash: 'h1', payloadJson: '{"x":1}', tokensEst: 10 },
+      { id: 2, ts: 2, sessionId: 's', tool: 'R', inputHash: 'h2', payloadJson: '{"y":2}', tokensEst: 10 },
+    ] }});
+    mem.scripted.push({ ok: true, data: { cached: null } });
+    mem.scripted.push({ ok: true, data: { ok: true } }); // cache_put
+    mem.scripted.push({ ok: true, data: { id: 100 } }); // record_summary
+    mem.scripted.push({ ok: true, data: { cached: null } });
+    mem.scripted.push({ ok: true, data: { ok: true } });
+    mem.scripted.push({ ok: true, data: { id: 101 } });
+
+    const transport = new FakeSamplingTransport();
+    transport.scripted.push({ role: 'assistant', content: { type: 'text', text: '{"text":"first","confidence":0.9}' } });
+    transport.scripted.push({ role: 'assistant', content: { type: 'text', text: '{"text":"second","confidence":0.9}' } });
+
+    const r = await drainViaSampling(mem as unknown as MemoryClient, transport, 2);
+    expect(r.processed).toBe(2);
+    expect(r.errors).toBe(0);
+    expect(transport.calls).toHaveLength(2);
+    const recordCalls = mem.calls.filter(c => c.kind === 'record_summary');
+    expect(recordCalls).toHaveLength(2);
+  });
+
+  it('uses cached summary when available, skipping the host sampling call', async () => {
+    mem.scripted.push({ ok: true, data: { events: [
+      { id: 1, ts: 1, sessionId: 's', tool: 'R', inputHash: 'h1', payloadJson: '{}', tokensEst: 10 },
+    ] }});
+    mem.scripted.push({ ok: true, data: { cached: { text: '{"text":"cached","confidence":0.9}', tokensIn: 1, tokensOut: 1 } } });
+    mem.scripted.push({ ok: true, data: { id: 1 } });
+
+    const transport = new FakeSamplingTransport();
+    const r = await drainViaSampling(mem as unknown as MemoryClient, transport, 1);
+    expect(r.processed).toBe(1);
+    expect(transport.calls).toHaveLength(0);
+  });
+
+  it('releases retryable host errors back to raw, marks parse errors terminal', async () => {
+    mem.scripted.push({ ok: true, data: { events: [
+      { id: 1, ts: 1, sessionId: 's', tool: 'R', inputHash: 'h1', payloadJson: '{}', tokensEst: 10 },
+    ] }});
+    mem.scripted.push({ ok: true, data: { cached: null } });
+    mem.scripted.push({ ok: true, data: { status: 'released' } });
+
+    const transport = new FakeSamplingTransport();
+    transport.scripted.push(new Error('rate limit exceeded'));
+
+    const r = await drainViaSampling(mem as unknown as MemoryClient, transport, 1);
+    expect(r.processed).toBe(0);
+    expect(r.errors).toBe(1);
+    const release = mem.calls.find(c => c.kind === 'release_summary') as { terminal?: boolean };
+    expect(release.terminal).toBe(false);
+  });
+
+  it('returns zero processed when no events are available', async () => {
+    mem.scripted.push({ ok: true, data: { events: [] } });
+    const transport = new FakeSamplingTransport();
+    const r = await drainViaSampling(mem as unknown as MemoryClient, transport, 1);
+    expect(r.processed).toBe(0);
+    expect(r.errors).toBe(0);
+  });
+});
+
+describe('mem_search routes drain through sampling when transport is provided', () => {
+  it('uses sampling transport for drain in mem_search', async () => {
+    // claim_for_summary returns no events to keep the test simple — verify the routing alone.
+    mem.scripted.push({ ok: true, data: { events: [] } });
+    mem.scripted.push({ ok: true, data: { hits: [] } });
+    const transport = new FakeSamplingTransport();
+    await dispatch(
+      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'mem_search', arguments: { query: 'x' } } },
+      { client: mem as unknown as MemoryClient, samplingTransport: transport },
+    );
+    expect(mem.calls.find(c => c.kind === 'claim_for_summary')).toBeTruthy();
+    expect(mem.calls.find(c => c.kind === 'drain')).toBeUndefined();
   });
 });

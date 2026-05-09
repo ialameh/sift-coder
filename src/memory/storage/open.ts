@@ -26,6 +26,10 @@ export interface OpenStorageResult {
   db: DBHandle;
   backend: StorageBackendName;
   dbPath: string;
+  /** PG-specific DDL overrides — passed through to Storage.init so the schema matches the backend. */
+  coreDdl?: string;
+  vecDdl?: string;
+  migrations?: ReadonlyArray<string>;
 }
 
 export interface BackendResolverOptions {
@@ -61,12 +65,25 @@ interface SyncDB {
  * The underlying SQLite calls block the thread but the wrapper exposes Promises.
  */
 function wrapSyncDb(sync: SyncDB): DBHandle {
+  // Prepared-statement cache: better-sqlite3 parses + plans every `prepare()` call. The capture
+  // hot path runs the same handful of INSERTs millions of times — caching by SQL string skips
+  // the re-parse and gives a measurable latency win on busy daemons. Cache is cleared on close.
+  type PreparedSync = ReturnType<SyncDB['prepare']>;
+  const stmtCache = new Map<string, PreparedSync>();
+  const prep = (sql: string): PreparedSync => {
+    let s = stmtCache.get(sql);
+    if (!s) {
+      s = sync.prepare(sql);
+      stmtCache.set(sql, s);
+    }
+    return s;
+  };
   return {
     exec(sql: string): Promise<unknown> {
       return Promise.resolve(sync.exec(sql));
     },
     async prepare(sql: string) {
-      const stmt = sync.prepare(sql);
+      const stmt = prep(sql);
       return {
         run(...params: unknown[]) {
           return Promise.resolve(stmt.run(...params));
@@ -83,6 +100,7 @@ function wrapSyncDb(sync: SyncDB): DBHandle {
       sync.loadExtension(path);
     },
     close(): Promise<void> {
+      stmtCache.clear();
       return Promise.resolve(sync.close());
     },
   };
@@ -101,18 +119,16 @@ async function openWasmDb(dbPath: string): Promise<DBHandle> {
 // ─── PostgreSQL (opt-in only) ─────────────────────────────────────────────────
 
 /**
- * Opens PostgreSQL as an async DBHandle via the proper PostgresDB adapter.
+ * Opens PostgreSQL as an async DBHandle via the PostgresDB adapter. Returns the handle plus
+ * PG-specific DDL strings the resolver passes through to Storage.init so the schema matches.
+ *
  * Only available when SIFTCODER_DB_BACKEND=postgres is set.
  */
-async function openPostgresDb(dbPath: string): Promise<DBHandle> {
+async function openPostgresDb(dbPath: string): Promise<{ db: DBHandle; coreDdl: string; vecDdl: string; migrations: ReadonlyArray<string> }> {
   const { PostgresDB, pgOptionsFromEnv, PG_CORE_DDL, PG_VEC_DDL, PG_MIGRATIONS } = await import('./pg-db.js');
   const opts = pgOptionsFromEnv(dbPath);
   const db = await PostgresDB.connect(opts);
-  // Wrap the PostgresDB to inject PG-specific DDL so Storage.init() uses it
-  // PostgresDB already has exec/prepare/close — we just need to mark it with the right DDL
-  // by passing it through Storage.init with the PG options
-  void PG_CORE_DDL; void PG_VEC_DDL; void PG_MIGRATIONS; // reference to suppress unused warning
-  return db;
+  return { db, coreDdl: PG_CORE_DDL, vecDdl: PG_VEC_DDL, migrations: PG_MIGRATIONS };
 }
 
 // ─── Main resolver ────────────────────────────────────────────────────────────
@@ -155,8 +171,8 @@ export async function openStorage(opts: BackendResolverOptions): Promise<OpenSto
   // PostgreSQL: opt-in only (future hosted/team use)
   if (backend === 'postgres') {
     try {
-      const db = await openPostgresDb(dbPath);
-      return { db, backend: 'postgres', dbPath };
+      const { db, coreDdl, vecDdl, migrations } = await openPostgresDb(dbPath);
+      return { db, backend: 'postgres', dbPath, coreDdl, vecDdl, migrations };
     } catch (pgErr) {
       throw new Error(
         `PostgreSQL requested via SIFTCODER_DB_BACKEND=postgres but connection failed.\n` +
