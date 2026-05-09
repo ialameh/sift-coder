@@ -244,6 +244,19 @@ export const TOOLS = [
       required: ['session_id', 'payload'],
     },
   },
+  {
+    name: 'mem_context_budget',
+    description: 'Greedy fill against a token budget: hybrid-search for `query`, then return the highest-scoring summaries whose cumulative token count fits under `max_tokens`. Use to assemble a memory-context block sized to a model input window.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string' },
+        max_tokens: { type: 'number', default: 4000 },
+        candidate_pool: { type: 'number', default: 50 },
+      },
+      required: ['query', 'max_tokens'],
+    },
+  },
 ];
 
 export interface DrainResult {
@@ -408,10 +421,25 @@ export async function dispatch(req: JsonRpcRequest, deps: HandlerDeps): Promise<
     try {
       switch (name) {
         case 'mem_search': {
+          // Eager drain: scale batch with current backlog so a busy queue gets caught up
+          // proportionally to how far behind it is. The default 4 is fine for a clean store
+          // but lets a 500-event backlog take 125 search-triggered drains to clear at the
+          // base rate. Bump to 8 / 16 / 32 above thresholds.
+          const baseBatch = deps.drainBatch ?? 4;
+          let batch = baseBatch;
+          try {
+            const status = await deps.client.send<{ counts: { raw: number } }>({ kind: 'status' });
+            if (status.ok) {
+              const raw = status.data.counts.raw;
+              if (raw > 500) batch = Math.max(baseBatch, 32);
+              else if (raw > 200) batch = Math.max(baseBatch, 16);
+              else if (raw > 50) batch = Math.max(baseBatch, 8);
+            }
+          } catch { /* fall through to base batch */ }
           if (deps.samplingTransport) {
-            await drainViaSampling(deps.client, deps.samplingTransport, deps.drainBatch ?? 4);
+            await drainViaSampling(deps.client, deps.samplingTransport, batch);
           } else {
-            await drain(deps.client, deps.drainBatch ?? 4);
+            await drain(deps.client, batch);
           }
           const res = await deps.client.send({
             kind: 'search',
@@ -542,6 +570,15 @@ export async function dispatch(req: JsonRpcRequest, deps: HandlerDeps): Promise<
             payload: args['payload'] ?? {},
             ttlMs: args['ttl_ms'] !== undefined ? Number(args['ttl_ms']) : undefined,
             source: 'agent',
+          });
+          return ok(req.id, res);
+        }
+        case 'mem_context_budget': {
+          const res = await deps.client.send({
+            kind: 'context_budget',
+            query: String(args['query'] ?? ''),
+            maxTokens: Number(args['max_tokens'] ?? 4000),
+            candidatePool: args['candidate_pool'] !== undefined ? Number(args['candidate_pool']) : undefined,
           });
           return ok(req.id, res);
         }

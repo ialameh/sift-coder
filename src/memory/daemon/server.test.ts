@@ -616,6 +616,24 @@ describe('buildHandler with real Storage (cross-platform)', () => {
     expect(r.data.captured).toBe(0);
   });
 
+  it('context_budget RPC fills under the token cap and stops past it', async () => {
+    for (let i = 0; i < 5; i++) {
+      const eid = await realStorage.recordEvent({ ts: i, sessionId: 's', tool: 'Edit', payload: { i } });
+      await realStorage.recordSummary({
+        eventId: eid, ts: i, model: 'm', promptHash: 'p',
+        // ~25 tokens each — five summaries = ~125 tokens, fits 100-token budget after ~3-4.
+        text: 'cat dog run swim sky tree code text fish bird sun moon star tree leaf rock fire ice wind storm ocean wave',
+        tokensIn: null, tokensOut: null, confidence: 0.9,
+      });
+    }
+    const h = buildHandler({ storage: realStorage, wal: realWal, cwd: '/x' });
+    const r = await h({ kind: 'context_budget', query: 'cat', maxTokens: 60 }) as { ok: true; data: { hits: Array<{ tokens: number }>; tokensUsed: number } };
+    expect(r.ok).toBe(true);
+    expect(r.data.tokensUsed).toBeLessThanOrEqual(60);
+    const sumTokens = r.data.hits.reduce((s, h) => s + h.tokens, 0);
+    expect(sumTokens).toBeLessThanOrEqual(60);
+  });
+
   it('replay RPC returns events with summaries joined', async () => {
     const eid = await realStorage.recordEvent({ ts: 1, sessionId: 'rep', tool: 'Edit', payload: { p: 1 } });
     await realStorage.recordSummary({ eventId: eid, ts: 1, model: 'm', promptHash: 'p', text: 'edited', tokensIn: null, tokensOut: null, confidence: 0.9 });

@@ -462,6 +462,68 @@ switch (cmd) {
     console.log(JSON.stringify({ ok: true, data: { hits: rows } }, null, 2));
     break;
   }
+  case 'watch': {
+    // Live TUI loop: poll stats every 2s, print compact one-line update. Ctrl+C to exit.
+    const interval = parseInt(args[0] ?? '2', 10) * 1000;
+    const tty = process.stdout.isTTY;
+    const tick = async () => {
+      try {
+        const r = await rpc({ kind: 'stats', windowMs: 60_000 }, 5000);
+        if (r.ok) {
+          const d = r.data;
+          const c = d.counts;
+          const line = `[${new Date().toISOString().slice(11,19)}] events=${c.events} raw=${c.raw} sum=${c.summarized} skip=${c.skipped} | ev/m=${d.throughput.eventsPerMin.toFixed(1)} sm/m=${d.throughput.summariesPerMin.toFixed(1)} | eta=${d.backlog.etaSec ?? '-'}s | cache=${(d.cacheHitRate*100).toFixed(0)}%`;
+          if (tty) process.stdout.write('\r\x1b[K' + line); else console.log(line);
+        }
+      } catch (e) {
+        process.stderr.write(`\nwatch err: ${e.message}\n`);
+      }
+    };
+    await tick();
+    const t = setInterval(tick, interval);
+    process.on('SIGINT', () => { clearInterval(t); process.stdout.write('\n'); process.exit(0); });
+    // Keep alive forever (until SIGINT).
+    await new Promise(() => {});
+    break;
+  }
+  case 'auth-token': {
+    const tokenPath = path.join(os.homedir(), '.siftcoder', 'auth.token');
+    if (args[0] === '--rotate') {
+      const tok = crypto.randomBytes(32).toString('hex');
+      fs.mkdirSync(path.dirname(tokenPath), { recursive: true });
+      fs.writeFileSync(tokenPath, tok, { mode: 0o600 });
+      console.log(JSON.stringify({ ok: true, rotated: true, token: tok }, null, 2));
+    } else if (fs.existsSync(tokenPath)) {
+      console.log(fs.readFileSync(tokenPath, 'utf8').trim());
+    } else {
+      console.error('no token yet — start the daemon first (siftcoder check)');
+      process.exit(1);
+    }
+    break;
+  }
+  case 'context-budget': case 'ctx': {
+    const tokIdx = args.indexOf('--max-tokens');
+    const maxTokens = tokIdx >= 0 ? parseInt(args[tokIdx + 1] ?? '4000', 10) : 4000;
+    const query = args.filter((a, i) => !a.startsWith('--') && args[i - 1] !== '--max-tokens').join(' ');
+    if (!query) { console.error('usage: siftcoder context-budget <query> [--max-tokens N]'); process.exit(1); }
+    try {
+      const r = await rpc({ kind: 'context_budget', query, maxTokens }, 30000);
+      if (r.ok && !args.includes('--json')) {
+        console.log(`tokens used ${r.data.tokensUsed} / ${r.data.tokensBudget}\n`);
+        for (const h of r.data.hits ?? []) {
+          const txt = h.text.length > 120 ? h.text.slice(0, 120) + '...' : h.text;
+          console.log(`#${h.id}  ${h.score.toFixed(4)}  [${h.tool ?? '?'}]  (${h.tokens}t)  ${txt}`);
+        }
+      } else {
+        console.log(JSON.stringify(r, null, 2));
+      }
+      break;
+    } catch (e) {
+      if (e.message && !e.message.includes('ENOENT') && !e.message.includes('ECONNREFUSED')) throw e;
+    }
+    console.error('context-budget requires the daemon');
+    process.exit(1);
+  }
   case 'stats': {
     const w = args.includes('--day') ? 24 * 60 * 60 * 1000 : 60 * 60 * 1000;
     try {
@@ -705,6 +767,9 @@ Usage:
   siftcoder federate-search <query> [--k N] [--prefix X] [--max-ws N]  cross-workspace federated search
   siftcoder symbol-search <kind:name | term> [--k N] [--json]  match events by extracted symbol
   siftcoder stats [--day] [--json]  throughput + backlog ETA + cache hit rate + top tools
+  siftcoder watch [interval-s]  live one-line dashboard (default 2s); Ctrl+C to exit
+  siftcoder context-budget <query> [--max-tokens N]  greedy fill: top-ranked summaries under a token cap
+  siftcoder auth-token [--rotate]  print (or rotate) the web UI bearer token
   siftcoder web                 print web UI URL
 `);
 }

@@ -62,6 +62,7 @@ describe('dispatch', () => {
   });
 
   it('forwards mem_search to the daemon and drains pending events first', async () => {
+    mem.scripted.push({ ok: true, data: { counts: { raw: 0 } } }); // status RPC for backlog probe
     mem.scripted.push({ ok: true, data: { processed: 0, errors: 0, pending: 0 } }); // drain RPC
     mem.scripted.push({ ok: true, data: { hits: [] } }); // search RPC
     const r = await dispatch(
@@ -69,8 +70,8 @@ describe('dispatch', () => {
       { client: mem as unknown as MemoryClient, drainBatch: 4 }
     );
     expect(r.error).toBeUndefined();
-    expect(mem.calls[0]).toMatchObject({ kind: 'drain', batch: 4 });
-    expect(mem.calls[1]).toMatchObject({ kind: 'search', query: 'q', k: 3 });
+    expect(mem.calls.find(c => c.kind === 'drain')).toMatchObject({ kind: 'drain', batch: 4 });
+    expect(mem.calls.find(c => c.kind === 'search')).toMatchObject({ kind: 'search', query: 'q', k: 3 });
   });
 
   it('forwards mem_timeline params', async () => {
@@ -128,13 +129,26 @@ describe('dispatch', () => {
   });
 
   it('uses defaults when search args omit query/k and deps omit drainBatch', async () => {
+    mem.scripted.push({ ok: true, data: { counts: { raw: 0 } } }); // status probe
     mem.scripted.push({ ok: true, data: { processed: 0, errors: 0, pending: 0 } }); // drain
     mem.scripted.push({ ok: true, data: { hits: [] } }); // search
     await dispatch(
       { jsonrpc: '2.0', id: 100, method: 'tools/call', params: { name: 'mem_search', arguments: {} } },
       { client: mem as unknown as MemoryClient }
     );
-    expect(mem.calls[1]).toMatchObject({ kind: 'search', query: '', k: 5 });
+    expect(mem.calls.find(c => c.kind === 'search')).toMatchObject({ kind: 'search', query: '', k: 5 });
+  });
+
+  it('mem_search ramps drain batch when backlog is high', async () => {
+    mem.scripted.push({ ok: true, data: { counts: { raw: 600 } } }); // huge backlog → batch=32
+    mem.scripted.push({ ok: true, data: { processed: 0, errors: 0, pending: 600 } });
+    mem.scripted.push({ ok: true, data: { hits: [] } });
+    await dispatch(
+      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'mem_search', arguments: { query: 'q' } } },
+      { client: mem as unknown as MemoryClient, drainBatch: 4 }
+    );
+    const drainCall = mem.calls.find(c => c.kind === 'drain') as { batch: number };
+    expect(drainCall.batch).toBe(32);
   });
 
   it('uses defaults when mem_get omits ids and mem_drain omits batch', async () => {
@@ -408,6 +422,18 @@ describe('ops MCP tools', () => {
     const call = mem.calls.find(c => c.kind === 'symbol_search') as { query: string; k: number };
     expect(call.query).toBe('function:login');
     expect(call.k).toBe(7);
+  });
+
+  it('mem_context_budget forwards a context_budget RPC with maxTokens', async () => {
+    mem.scripted.push({ ok: true, data: { hits: [], tokensUsed: 0, tokensBudget: 4000 } });
+    await dispatch(
+      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'mem_context_budget', arguments: { query: 'auth', max_tokens: 2000, candidate_pool: 30 } } },
+      { client: mem as unknown as MemoryClient },
+    );
+    const call = mem.calls.find(c => c.kind === 'context_budget') as { query: string; maxTokens: number; candidatePool: number };
+    expect(call.query).toBe('auth');
+    expect(call.maxTokens).toBe(2000);
+    expect(call.candidatePool).toBe(30);
   });
 
   it('mem_replay forwards a replay RPC with the session id', async () => {
