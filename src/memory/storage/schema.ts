@@ -93,6 +93,13 @@ CREATE TABLE IF NOT EXISTS summary_cache (
   tokens_out  INTEGER,
   created_at  INTEGER NOT NULL
 );
+
+-- Tracks which entries in the MIGRATIONS array have been applied. Skips re-runs of expensive
+-- DELETE-based dedup migrations on every daemon boot.
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  name        TEXT PRIMARY KEY,
+  applied_at  INTEGER NOT NULL
+);
 `;
 
 /**

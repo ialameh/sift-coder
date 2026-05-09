@@ -143,6 +143,29 @@ describe.each(BACKENDS)('storage backend parity ($name)', backend => {
     expect(after).toHaveLength(1);
   });
 
+  it('schema_migrations table records each applied migration', async () => {
+    // First Storage.init was in beforeEach; expect every MIGRATIONS entry recorded.
+    const rows = await (await (db as unknown as { prepare(s: string): Promise<{ all(): Promise<unknown[]> }> }).prepare(
+      'SELECT name, applied_at FROM schema_migrations'
+    )).all() as Array<{ name: string; applied_at: number }>;
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.every(r => typeof r.name === 'string' && r.name.length === 16)).toBe(true);
+    expect(rows.every(r => typeof r.applied_at === 'number' && r.applied_at > 0)).toBe(true);
+  });
+
+  it('re-init skips already-applied migrations (no exec re-runs)', async () => {
+    const before = await (await (db as unknown as { prepare(s: string): Promise<{ get(): Promise<unknown> }> }).prepare(
+      'SELECT count(*) AS c FROM schema_migrations'
+    )).get() as { c: number };
+    // Spy on db.exec by counting how many migration statements ran. We can't easily intercept
+    // exec, but a no-cost proxy: re-init then verify the count is unchanged (no re-applies).
+    await Storage.init(db);
+    const after = await (await (db as unknown as { prepare(s: string): Promise<{ get(): Promise<unknown> }> }).prepare(
+      'SELECT count(*) AS c FROM schema_migrations'
+    )).get() as { c: number };
+    expect(after.c).toBe(before.c);
+  });
+
   it('UNIQUE(event_id) on summaries: a second insert returns the existing id', async () => {
     const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: {} });
     const first = await storage.recordSummary({

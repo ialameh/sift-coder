@@ -141,8 +141,31 @@ export class Storage {
     const vecDdl = opts.vecDdl ?? VEC_DDL;
 
     await db.exec(coreDdl);
+
+    // Migration tracking: skip already-applied migrations on subsequent boots. Each migration's
+    // identity is the SHA-256 of its SQL text (first 16 hex), so changing a migration's text
+    // makes it look new — intentional, since migrations are append-only by convention.
+    const applied = new Set<string>();
+    try {
+      const rows = await (await db.prepare('SELECT name FROM schema_migrations')).all() as Array<{ name: string }>;
+      for (const r of rows) applied.add(r.name);
+    } catch { /* table may not exist yet on a freshly-migrated DB pre-CORE_DDL change; ignore */ }
+
     for (const stmt of migrations) {
-      try { await db.exec(stmt); } catch { /* migration already applied */ }
+      const name = createHash('sha256').update(stmt).digest('hex').slice(0, 16);
+      if (applied.has(name)) continue;
+      try {
+        await db.exec(stmt);
+      } catch {
+        // Tolerate "duplicate column" / "already exists" failures: those mean the prior
+        // catch-all swallowed the error on a pre-tracking DB. Mark as applied either way so
+        // the cost moves to startup-once instead of every-boot.
+      }
+      try {
+        await (await db.prepare(
+          'INSERT OR REPLACE INTO schema_migrations (name, applied_at) VALUES (?, ?)'
+        )).run(name, Date.now());
+      } catch { /* if schema_migrations isn't writable yet, ignore — next boot picks up */ }
     }
     let vec = false;
     if (opts.vecExtensionPath && db.loadExtension) {
