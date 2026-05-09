@@ -456,6 +456,17 @@ describe('ops MCP tools', () => {
     expect(call.limit).toBe(25);
   });
 
+  it('mem_as_of forwards an as_of RPC with ts + limit', async () => {
+    mem.scripted.push({ ok: true, data: { counts: { events: 0, summaries: 0 }, summaries: [] } });
+    await dispatch(
+      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'mem_as_of', arguments: { ts: 12345, limit: 10 } } },
+      { client: mem as unknown as MemoryClient },
+    );
+    const call = mem.calls.find(c => c.kind === 'as_of') as { ts: number; limit: number };
+    expect(call.ts).toBe(12345);
+    expect(call.limit).toBe(10);
+  });
+
   it('mem_auto_pin_patterns forwards an auto_pin_patterns RPC', async () => {
     mem.scripted.push({ ok: true, data: { pinned: 0, patternsConsidered: 0 } });
     await dispatch(

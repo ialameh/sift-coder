@@ -299,6 +299,18 @@ export const TOOLS = [
       required: [],
     },
   },
+  {
+    name: 'mem_as_of',
+    description: 'Point-in-time view: counts + recent summaries as they existed at the given epoch ms timestamp. Use to debug "what did the agent know before X happened" or to reconstruct context for a past decision.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ts: { type: 'number' },
+        limit: { type: 'number', default: 20 },
+      },
+      required: ['ts'],
+    },
+  },
 ];
 
 export interface DrainResult {
@@ -651,6 +663,14 @@ export async function dispatch(req: JsonRpcRequest, deps: HandlerDeps): Promise<
           const res = await deps.client.send({
             kind: 'auto_pin_patterns',
             minRepeats: args['min_repeats'] !== undefined ? Number(args['min_repeats']) : undefined,
+          });
+          return ok(req.id, res);
+        }
+        case 'mem_as_of': {
+          const res = await deps.client.send({
+            kind: 'as_of',
+            ts: Number(args['ts'] ?? Date.now()),
+            limit: args['limit'] !== undefined ? Number(args['limit']) : undefined,
           });
           return ok(req.id, res);
         }

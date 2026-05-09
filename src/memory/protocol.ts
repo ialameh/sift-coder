@@ -38,7 +38,8 @@ export type RequestKind =
   | 'compact'
   | 'patterns'
   | 'session_digest'
-  | 'auto_pin_patterns';
+  | 'auto_pin_patterns'
+  | 'as_of';
 
 export interface CaptureRequest {
   kind: 'capture';
@@ -342,7 +343,8 @@ export type Request =
   | CompactRequest
   | PatternsRequest
   | SessionDigestRequest
-  | AutoPinPatternsRequest;
+  | AutoPinPatternsRequest
+  | AsOfRequest;
 
 /**
  * Build a single concat-text view of a session's summaries — a "digest" suitable to feed back
@@ -363,6 +365,17 @@ export interface SessionDigestRequest {
 export interface AutoPinPatternsRequest {
   kind: 'auto_pin_patterns';
   minRepeats?: number;
+}
+
+/**
+ * Point-in-time view: counts + recent summaries as they existed at `ts` (epoch ms). Used
+ * for time-travel debugging — "what did memory look like before I ran X."
+ */
+export interface AsOfRequest {
+  kind: 'as_of';
+  ts: number;
+  /** Cap on summaries returned (newest-as-of-ts first). */
+  limit?: number;
 }
 
 export interface OkResponse<T = unknown> {
