@@ -471,6 +471,27 @@ describe.each(BACKENDS)('storage backend parity ($name)', backend => {
     expect(row?.expires_at).toBe(ts + ttl);
   });
 
+  it('importRow returns skipped for an unknown table', async () => {
+    const r = await storage.importRow('not_a_table', { foo: 1 });
+    expect(r).toBe('skipped');
+  });
+
+  it('importRow round-trips an embedding via base64', async () => {
+    const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: { p: 1 } });
+    const sid = await storage.recordSummary({ eventId: eid, ts: 1, model: 'm', promptHash: 'p', text: 'x', tokensIn: null, tokensOut: null, confidence: null });
+    const v = new Float32Array([0.5, -0.5, 0.5]);
+    const buf = Buffer.from(v.buffer, v.byteOffset, v.byteLength);
+    const r = await storage.importRow('summary_embeddings', {
+      summary_id: sid,
+      dim: 3,
+      vec: buf.toString('base64'),
+    });
+    expect(r).toBe('inserted');
+    const got = await storage.getEmbedding(sid);
+    expect(got).not.toBeNull();
+    expect(Array.from(got!).map(n => Number(n.toFixed(2)))).toEqual([0.5, -0.5, 0.5]);
+  });
+
   it('export → import round-trip preserves all rows (idempotent)', async () => {
     const eid = await storage.recordEvent({ ts: 100, sessionId: 's', tool: 'Edit', payload: { p: 1 } });
     const sid = await storage.recordSummary({ eventId: eid, ts: 100, model: 'm', promptHash: 'p', text: 'fact', tokensIn: 1, tokensOut: 1, confidence: 0.9 });
