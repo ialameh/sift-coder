@@ -616,6 +616,24 @@ describe('buildHandler with real Storage (cross-platform)', () => {
     expect(r.data.captured).toBe(0);
   });
 
+  it('symbol_search RPC returns events matching a symbol', async () => {
+    const eid = await realStorage.recordEvent({ ts: 1, sessionId: 's', tool: 'Edit', payload: { tool_input: { file_path: '/x.ts', content: 'x' } } });
+    await realStorage.setEventSymbols(eid, ['function:login']);
+    const h = buildHandler({ storage: realStorage, wal: realWal, cwd: '/x' });
+    const r = await h({ kind: 'symbol_search', query: 'function:login', k: 5 }) as { ok: true; data: { hits: Array<{ eventId: number }> } };
+    expect(r.data.hits).toHaveLength(1);
+    expect(r.data.hits[0]!.eventId).toBe(eid);
+  });
+
+  it('stats RPC returns throughput, backlog, top tools', async () => {
+    await realStorage.recordEvent({ ts: Date.now(), sessionId: 's', tool: 'Edit', payload: { i: 1 } });
+    const h = buildHandler({ storage: realStorage, wal: realWal, cwd: '/x' });
+    const r = await h({ kind: 'stats', windowMs: 60_000 }) as { ok: true; data: { counts: { events: number }; throughput: { eventsPerMin: number }; topTools: Array<{ tool: string }> } };
+    expect(r.data.counts.events).toBe(1);
+    expect(r.data.throughput.eventsPerMin).toBeGreaterThan(0);
+    expect(r.data.topTools.find(t => t.tool === 'Edit')).toBeTruthy();
+  });
+
   it('thread RPC returns sessions sharing input_hash', async () => {
     const sessions = ['s1', 's2', 's3'];
     for (const sid of sessions) {

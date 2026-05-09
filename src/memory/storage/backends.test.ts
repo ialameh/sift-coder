@@ -491,6 +491,51 @@ describe.each(BACKENDS)('storage backend parity ($name)', backend => {
     expect(related[0]!.sessionId).toBe('s2');
   });
 
+  it('symbolSearch finds events by exact kind:name', async () => {
+    const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'Edit', payload: { tool_input: { file_path: '/x.ts', content: 'fn login() {}' } } });
+    await storage.setEventSymbols(eid, ['function:login', 'class:Auth']);
+    const sid = await storage.recordSummary({ eventId: eid, ts: 1, model: 'm', promptHash: 'p', text: 'edited login fn', tokensIn: null, tokensOut: null, confidence: null });
+    void sid;
+    const r = await storage.symbolSearch('function:login');
+    expect(r).toHaveLength(1);
+    expect(r[0]!.eventId).toBe(eid);
+    expect(r[0]!.symbols).toEqual(expect.arrayContaining(['function:login', 'class:Auth']));
+    expect(r[0]!.text).toBe('edited login fn');
+  });
+
+  it('symbolSearch substring-matches the name half when no kind: prefix is given', async () => {
+    const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'Edit', payload: { tool_input: { file_path: '/x.ts', content: 'cls' } } });
+    await storage.setEventSymbols(eid, ['class:UserAuthenticator']);
+    const r = await storage.symbolSearch('UserAuth');
+    expect(r).toHaveLength(1);
+    expect(r[0]!.eventId).toBe(eid);
+  });
+
+  it('symbolSearch returns events with null summary when not yet summarized', async () => {
+    const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'Edit', payload: { tool_input: { file_path: '/x.ts', content: 'x' } } });
+    await storage.setEventSymbols(eid, ['function:foo']);
+    const r = await storage.symbolSearch('foo');
+    expect(r).toHaveLength(1);
+    expect(r[0]!.text).toBeNull();
+  });
+
+  it('stats reports throughput, backlog ETA, top tools', async () => {
+    const now = Date.now();
+    for (let i = 0; i < 5; i++) {
+      await storage.recordEvent({ ts: now - i * 1000, sessionId: 's', tool: i % 2 ? 'Edit' : 'Read', payload: { i } });
+    }
+    const eid = await storage.recordEvent({ ts: now, sessionId: 's', tool: 'Bash', payload: { i: 99 } });
+    await storage.markEventStatus(eid, 'summarized');
+    await storage.recordSummary({ eventId: eid, ts: now, model: 'm', promptHash: 'p', text: 't', tokensIn: 1, tokensOut: 1, confidence: 0.9 });
+    const s = await storage.stats(60 * 60 * 1000);
+    expect(s.counts.events).toBe(6);
+    expect(s.throughput.eventsPerMin).toBeGreaterThan(0);
+    expect(s.topTools.length).toBeGreaterThan(0);
+    const tools = new Set(s.topTools.map(t => t.tool));
+    expect(tools.has('Read')).toBe(true);
+    expect(tools.has('Edit')).toBe(true);
+  });
+
   it('eventsNeedingSymbols returns events where symbols_json is NULL', async () => {
     const e1 = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'Write', payload: { tool_input: { file_path: '/a.ts', content: 'fn' } } });
     const e2 = await storage.recordEvent({ ts: 2, sessionId: 's', tool: 'Write', payload: { tool_input: { file_path: '/b.ts', content: 'fn' } } });

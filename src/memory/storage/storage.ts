@@ -252,6 +252,95 @@ export class Storage {
   }
 
   /**
+   * Symbol-based retrieval. Matches events whose `symbols_json` contains the query. Two
+   * patterns supported:
+   *   - `"kind:name"` (e.g. `"function:login"`) — exact match against an entry in the array.
+   *   - bare term (e.g. `"login"`) — substring match against any entry's name half.
+   * Joins through to summaries so callers get the rendered fact, not just the raw event.
+   */
+  async symbolSearch(query: string, k = 10): Promise<Array<{ summaryId: number | null; eventId: number; ts: number; tool: string; symbols: string[]; text: string | null }>> {
+    const trimmed = query.trim();
+    if (!trimmed) return [];
+    // Use LIKE for both forms — SQLite's JSON1 isn't guaranteed across builds. The pattern
+    // matches the JSON-encoded entry inside the symbols_json array.
+    const needle = trimmed.includes(':') ? `%"${trimmed}"%` : `%:${trimmed}%`;
+    const rows = await (await this.db.prepare(
+      `SELECT e.id AS event_id, e.ts AS ts, e.tool AS tool, e.symbols_json AS sj,
+              s.id AS summary_id, s.text AS text
+         FROM events e
+         LEFT JOIN summaries s ON s.event_id = e.id
+        WHERE e.symbols_json LIKE ?
+        ORDER BY e.id DESC
+        LIMIT ?`
+    )).all(needle, k) as Array<{
+      event_id: number; ts: number; tool: string; sj: string | null;
+      summary_id: number | null; text: string | null;
+    }>;
+    return rows.map(r => {
+      let symbols: string[] = [];
+      if (r.sj) {
+        try { const parsed = JSON.parse(r.sj) as unknown; if (Array.isArray(parsed)) symbols = parsed.map(String); } catch { /* skip */ }
+      }
+      return {
+        summaryId: r.summary_id,
+        eventId: r.event_id,
+        ts: r.ts,
+        tool: r.tool,
+        symbols,
+        text: r.text,
+      };
+    });
+  }
+
+  /**
+   * Operational stats: throughput, backlog, cache hit rate, top sessions, top tools. Single
+   * batched read; cheap enough to be polled by a status dashboard.
+   */
+  async stats(windowMs: number = 60 * 60 * 1000): Promise<{
+    counts: StorageCounts;
+    throughput: { eventsPerMin: number; summariesPerMin: number; windowMs: number };
+    backlog: { pending: number; etaSec: number | null };
+    cacheHitRate: number;
+    topTools: Array<{ tool: string; count: number }>;
+    topSessions: Array<{ sessionId: string; events: number }>;
+  }> {
+    const counts = await this.counts();
+    const since = Date.now() - windowMs;
+    const eventsInWindow = await this.scalar<number>(
+      'SELECT count(*) AS c FROM events WHERE ts >= ?',
+      since,
+    );
+    const summariesInWindow = await this.scalar<number>(
+      'SELECT count(*) AS c FROM summaries WHERE ts >= ?',
+      since,
+    );
+    const minutes = Math.max(1, windowMs / 60_000);
+    const eventsPerMin = eventsInWindow / minutes;
+    const summariesPerMin = summariesInWindow / minutes;
+    const etaSec = summariesPerMin > 0 ? Math.round((counts.raw / summariesPerMin) * 60) : null;
+    const totalSummaries = counts.summaries;
+    const sharedHashes = await this.countSharedInputHashes();
+    const cacheHitRate = totalSummaries === 0 ? 0 : Math.min(1, sharedHashes / totalSummaries);
+    const tools = await this.perToolCounts();
+    const topTools = Object.entries(tools)
+      .map(([tool, count]) => ({ tool, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+    const topSessionsRows = await (await this.db.prepare(
+      'SELECT session_id AS sid, count(*) AS c FROM events GROUP BY session_id ORDER BY c DESC LIMIT 10'
+    )).all() as Array<{ sid: string; c: number }>;
+    const topSessions = topSessionsRows.map(r => ({ sessionId: r.sid, events: r.c }));
+    return {
+      counts,
+      throughput: { eventsPerMin, summariesPerMin, windowMs },
+      backlog: { pending: counts.raw, etaSec },
+      cacheHitRate,
+      topTools,
+      topSessions,
+    };
+  }
+
+  /**
    * Cross-session continuity: find every other event that shares this event's `input_hash`
    * but lives in a different session. Used by the `mem_thread` tool to surface "you've seen
    * this exact input before, here's what happened then."

@@ -29,7 +29,10 @@ export type RequestKind =
   | 'sweep_expired'
   | 'export'
   | 'import'
-  | 'thread';
+  | 'thread'
+  | 'federate_search'
+  | 'symbol_search'
+  | 'stats';
 
 export interface CaptureRequest {
   kind: 'capture';
@@ -215,6 +218,42 @@ export interface ThreadRequest {
   limit?: number;
 }
 
+/**
+ * Cross-workspace federated search. Queries every workspace under ~/.siftcoder/workspaces
+ * that has an opt-in `federate.consent` flag. Hits are tagged with the originating workspace
+ * key so callers can show provenance ("[work/a1b2c3] handled the same migration last week").
+ */
+export interface FederateSearchRequest {
+  kind: 'federate_search';
+  query: string;
+  k?: number;
+  /** Filter — only query workspaces whose key starts with this prefix. */
+  workspacePrefix?: string;
+  /** Cap on the number of consented workspaces to query. */
+  maxWorkspaces?: number;
+}
+
+/**
+ * Symbol-based retrieval. Returns events whose extracted symbols (kind:name pairs written by
+ * the SymbolWorker) match the query — exact match by `kind:name` or partial match on the name.
+ */
+export interface SymbolSearchRequest {
+  kind: 'symbol_search';
+  /** "function:login" for exact, or "login" to match any symbol whose name contains the term. */
+  query: string;
+  k?: number;
+}
+
+/**
+ * Operational stats: drain throughput (events/min over the recent window), backlog ETA,
+ * cache hit rate, top tools, top sessions. Strictly read-only; cheap.
+ */
+export interface StatsRequest {
+  kind: 'stats';
+  /** Window in ms for throughput calculation; defaults to 1 hour. */
+  windowMs?: number;
+}
+
 export type Request =
   | CaptureRequest
   | SearchRequest
@@ -241,7 +280,10 @@ export type Request =
   | SweepExpiredRequest
   | ExportRequest
   | ImportRequest
-  | ThreadRequest;
+  | ThreadRequest
+  | FederateSearchRequest
+  | SymbolSearchRequest
+  | StatsRequest;
 
 export interface OkResponse<T = unknown> {
   ok: true;
