@@ -179,6 +179,7 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
             tool: req.tool,
             payload: stamped,
             tokensEst,
+            ttlMs: req.ttlMs,
           });
           return { ok: true, data: { id, tokensEst } };
         }
@@ -315,7 +316,39 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
 
         case 'doctor': {
           const r = await deps.storage.doctor();
+          if (req.heal && r.vecCardinality.drift > 0) {
+            const copied = await deps.storage.backfillVec();
+            return { ok: true, data: { ...r, healed: { vecBackfilled: copied } } };
+          }
           return { ok: true, data: r };
+        }
+
+        case 'sweep_expired': {
+          const removed = await deps.storage.sweepExpired(req.now);
+          return { ok: true, data: { removed } };
+        }
+
+        case 'export': {
+          const all: string[] = [];
+          for await (const r of deps.storage.exportRows()) {
+            all.push(JSON.stringify(r));
+          }
+          return { ok: true, data: { ndjson: all.join('\n'), records: all.length } };
+        }
+
+        case 'import': {
+          let inserted = 0;
+          let skipped = 0;
+          let errors = 0;
+          for (const line of req.ndjson.split('\n')) {
+            if (!line.trim()) continue;
+            try {
+              const { table, row } = JSON.parse(line) as { table: string; row: Record<string, unknown> };
+              const r = await deps.storage.importRow(table, row);
+              if (r === 'inserted') inserted++; else skipped++;
+            } catch { errors++; }
+          }
+          return { ok: true, data: { inserted, skipped, errors } };
         }
 
         case 'summaries': {
@@ -435,6 +468,13 @@ export function startServer(deps: ServerDeps): Server {
   // after EOF lands and socket.write() is silently dropped.
   const server = createServer({ allowHalfOpen: true }, (socket: Socket) => {
     const decoder = new FrameDecoder();
+    let pending = 0;
+    let clientEofSeen = false;
+
+    const maybeClose = () => {
+      if (clientEofSeen && pending === 0) socket.end();
+    };
+
     socket.on('data', async (chunk: Buffer) => {
       let frames: unknown[];
       try {
@@ -444,11 +484,26 @@ export function startServer(deps: ServerDeps): Server {
         socket.end();
         return;
       }
+      // Process each completed frame as it lands. Don't end the socket here — the request
+      // may arrive split across multiple `data` events (large frames split into multiple
+      // OS reads), so any single event might yield zero frames. Closing now would drop the
+      // remaining bytes and leave the client with a "short response" error. End only after
+      // the client signals EOF via `c.end()` AND every frame received so far has been
+      // handled.
       for (const frame of frames) {
-        const res = await handler(frame as Request);
-        socket.write(encodeFrame(res));
+        pending++;
+        try {
+          const res = await handler(frame as Request);
+          socket.write(encodeFrame(res));
+        } finally {
+          pending--;
+          maybeClose();
+        }
       }
-      socket.end();
+    });
+    socket.on('end', () => {
+      clientEofSeen = true;
+      maybeClose();
     });
     socket.on('error', () => { /* client may drop */ });
   });

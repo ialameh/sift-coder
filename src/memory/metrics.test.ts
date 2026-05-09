@@ -50,9 +50,9 @@ describe('computeSavings', () => {
   });
 
   it('reports drain coverage from event status', async () => {
-    const a = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: {} });
-    const b = await storage.recordEvent({ ts: 2, sessionId: 's', tool: 'R', payload: {} });
-    await storage.recordEvent({ ts: 3, sessionId: 's', tool: 'R', payload: {} });
+    const a = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: { i: 1 } });
+    const b = await storage.recordEvent({ ts: 2, sessionId: 's', tool: 'R', payload: { i: 2 } });
+    await storage.recordEvent({ ts: 3, sessionId: 's', tool: 'R', payload: { i: 3 } });
     await storage.markEventStatus(a, 'summarized');
     await storage.markEventStatus(b, 'skipped');
     const r = await computeSavings(storage);

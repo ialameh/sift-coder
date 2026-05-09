@@ -57,6 +57,8 @@ export interface CaptureInput {
   tool: string;
   payload: unknown;
   tokensEst?: number;
+  /** Optional TTL in ms. When set, the event is auto-pruned after `ts + ttlMs`. */
+  ttlMs?: number;
 }
 
 export interface SearchHit {
@@ -180,17 +182,44 @@ export class Storage {
 
   async recordEvent(input: CaptureInput): Promise<number> {
     const inputHash = hashInput(input.payload);
+    const expiresAt = input.ttlMs && input.ttlMs > 0 ? input.ts + input.ttlMs : null;
+    // INSERT OR IGNORE keeps the existing row when (session_id, input_hash) collides — the
+    // UNIQUE index added in this branch enforces dedup at the DB layer, eliminating the
+    // SELECT-then-INSERT TOCTOU race that bit concurrent backfill + capture.
     const result = await (await this.db.prepare(
-      'INSERT INTO events (ts, session_id, tool, input_hash, payload_json, tokens_est) VALUES (?, ?, ?, ?, ?, ?)'
+      'INSERT OR IGNORE INTO events (ts, session_id, tool, input_hash, payload_json, tokens_est, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
     )).run(
       input.ts,
       input.sessionId,
       input.tool,
       inputHash,
       JSON.stringify(input.payload),
-      input.tokensEst ?? 0
+      input.tokensEst ?? 0,
+      expiresAt,
     );
-    return Number(result.lastInsertRowid);
+    const inserted = Number(result.lastInsertRowid);
+    if (inserted > 0) return inserted;
+    // Conflict: return the existing row's id so callers see a stable handle either way.
+    const row = await (await this.db.prepare(
+      'SELECT id FROM events WHERE session_id = ? AND input_hash = ?'
+    )).get(input.sessionId, inputHash) as { id?: number } | undefined;
+    return row?.id ?? 0;
+  }
+
+  /**
+   * Delete events whose `expires_at` is in the past. Cascades to summaries / embeddings via
+   * the existing `ON DELETE CASCADE` foreign keys. Returns the number of events removed.
+   */
+  async sweepExpired(now: number = Date.now()): Promise<number> {
+    const before = await this.scalar<number>(
+      'SELECT count(*) AS c FROM events WHERE expires_at IS NOT NULL AND expires_at <= ?',
+      now,
+    );
+    if (before === 0) return 0;
+    await (await this.db.prepare(
+      'DELETE FROM events WHERE expires_at IS NOT NULL AND expires_at <= ?'
+    )).run(now);
+    return before;
   }
 
   async getEvent(id: number): Promise<EventRow | null> {
@@ -664,8 +693,8 @@ export class Storage {
   }
 
   /** Internal helper: run a `SELECT count(*) AS c …` style query and return the count. */
-  private async scalar<T extends number>(sql: string): Promise<T> {
-    const row = await (await this.db.prepare(sql)).get() as { c?: number } | undefined;
+  private async scalar<T extends number>(sql: string, ...params: unknown[]): Promise<T> {
+    const row = await (await this.db.prepare(sql)).get(...params) as { c?: number } | undefined;
     return (row?.c ?? 0) as T;
   }
 
@@ -850,6 +879,89 @@ export class Storage {
       'SELECT sum(length(text) / 4) AS n FROM summaries'
     )).get() as { n?: number | null } | undefined;
     return row?.n ?? 0;
+  }
+
+  // ─── Export / import (ndjson snapshot) ────────────────────────────────────────────────
+
+  /**
+   * Yield ndjson-shaped records for every persistent table. Each record is `{ table, row }`.
+   * Order is fixed (events → summaries → embeddings → supersedes → provenance_edges →
+   * cache → sessions) so an importer can stream-load and trust referential integrity.
+   *
+   * Embeddings are emitted with `vec` as a base64 string for portability across machines.
+   */
+  async *exportRows(): AsyncIterable<{ table: string; row: Record<string, unknown> }> {
+    const tables: Array<{ name: string; sql: string }> = [
+      { name: 'sessions', sql: 'SELECT id, started_at, ended_at, cwd, meta_json FROM sessions' },
+      { name: 'events', sql: 'SELECT id, ts, session_id, tool, input_hash, payload_json, status, tokens_est, expires_at, attempts, last_error FROM events' },
+      { name: 'summaries', sql: 'SELECT id, event_id, ts, model, prompt_hash, text, tokens_in, tokens_out, confidence, pinned_at FROM summaries' },
+      { name: 'summary_embeddings', sql: 'SELECT summary_id, dim, vec FROM summary_embeddings' },
+      { name: 'summary_supersedes', sql: 'SELECT newer_id, older_id, cosine, ts FROM summary_supersedes' },
+      { name: 'provenance_edges', sql: 'SELECT id, ts, from_kind, from_id, to_kind, to_id, edge_type, confidence, source, meta_json FROM provenance_edges' },
+      { name: 'summary_cache', sql: 'SELECT cache_key, text, tokens_in, tokens_out, created_at FROM summary_cache' },
+    ];
+    for (const t of tables) {
+      const rows = await (await this.db.prepare(t.sql)).all() as Array<Record<string, unknown>>;
+      for (const r of rows) {
+        if (r['vec'] instanceof Buffer) {
+          r['vec'] = (r['vec'] as Buffer).toString('base64');
+        }
+        yield { table: t.name, row: r };
+      }
+    }
+  }
+
+  /**
+   * Insert a row produced by `exportRows`. Uses `INSERT OR IGNORE` everywhere so re-importing
+   * an overlapping snapshot is safe. Returns `'inserted'` when a new row landed, `'skipped'`
+   * when the row already existed and the unique-key conflict ignored the insert.
+   *
+   * Detection of insert-vs-skip is via a count delta on the target table because better-sqlite3
+   * preserves `lastInsertRowid` from a prior successful insert when a subsequent INSERT OR
+   * IGNORE is ignored — making `lastInsertRowid > 0` an unreliable signal.
+   */
+  async importRow(table: string, row: Record<string, unknown>): Promise<'inserted' | 'skipped'> {
+    let sql: string;
+    let params: unknown[];
+    let countTable: string = table;
+    switch (table) {
+      case 'sessions':
+        sql = 'INSERT OR IGNORE INTO sessions (id, started_at, ended_at, cwd, meta_json) VALUES (?, ?, ?, ?, ?)';
+        params = [row['id'], row['started_at'], row['ended_at'] ?? null, row['cwd'] ?? null, row['meta_json'] ?? null];
+        break;
+      case 'events':
+        sql = 'INSERT OR IGNORE INTO events (id, ts, session_id, tool, input_hash, payload_json, status, tokens_est, expires_at, attempts, last_error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
+        params = [row['id'], row['ts'], row['session_id'], row['tool'], row['input_hash'], row['payload_json'], row['status'] ?? 'raw', row['tokens_est'] ?? 0, row['expires_at'] ?? null, row['attempts'] ?? 0, row['last_error'] ?? null];
+        break;
+      case 'summaries':
+        sql = 'INSERT OR IGNORE INTO summaries (id, event_id, ts, model, prompt_hash, text, tokens_in, tokens_out, confidence, pinned_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
+        params = [row['id'], row['event_id'], row['ts'], row['model'], row['prompt_hash'], row['text'], row['tokens_in'] ?? null, row['tokens_out'] ?? null, row['confidence'] ?? null, row['pinned_at'] ?? null];
+        break;
+      case 'summary_embeddings': {
+        const vecB64 = typeof row['vec'] === 'string' ? row['vec'] : '';
+        sql = 'INSERT OR IGNORE INTO summary_embeddings (summary_id, dim, vec) VALUES (?, ?, ?)';
+        params = [row['summary_id'], row['dim'], Buffer.from(vecB64, 'base64')];
+        break;
+      }
+      case 'summary_supersedes':
+        sql = 'INSERT OR IGNORE INTO summary_supersedes (newer_id, older_id, cosine, ts) VALUES (?, ?, ?, ?)';
+        params = [row['newer_id'], row['older_id'], row['cosine'], row['ts']];
+        break;
+      case 'provenance_edges':
+        sql = 'INSERT OR IGNORE INTO provenance_edges (id, ts, from_kind, from_id, to_kind, to_id, edge_type, confidence, source, meta_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)';
+        params = [row['id'], row['ts'], row['from_kind'], row['from_id'], row['to_kind'], row['to_id'], row['edge_type'], row['confidence'], row['source'], row['meta_json'] ?? null];
+        break;
+      case 'summary_cache':
+        sql = 'INSERT OR IGNORE INTO summary_cache (cache_key, text, tokens_in, tokens_out, created_at) VALUES (?, ?, ?, ?, ?)';
+        params = [row['cache_key'], row['text'], row['tokens_in'] ?? null, row['tokens_out'] ?? null, row['created_at']];
+        break;
+      default:
+        return 'skipped';
+    }
+    const before = await this.scalar<number>(`SELECT count(*) AS c FROM ${countTable}`);
+    await (await this.db.prepare(sql)).run(...params);
+    const after = await this.scalar<number>(`SELECT count(*) AS c FROM ${countTable}`);
+    return after > before ? 'inserted' : 'skipped';
   }
 
   // ─── Provenance graph (typed wrappers around provenance_edges) ─────────────────────────

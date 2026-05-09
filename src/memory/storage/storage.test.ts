@@ -47,7 +47,7 @@ class FakeDB implements DBHandle {
         all: () => Promise.resolve([]),
       });
     }
-    if (stmt.startsWith('INSERT INTO events')) {
+    if (stmt.startsWith('INSERT INTO events') || stmt.startsWith('INSERT OR IGNORE INTO events')) {
       return Promise.resolve({
         run: (ts, sid, tool, hash, payload) => {
           const id = this.nextEventId++;

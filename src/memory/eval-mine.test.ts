@@ -13,7 +13,9 @@ let storage: Storage;
 const e = new DeterministicEmbedder(128);
 
 async function seed(text: string): Promise<number> {
-  const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: {} });
+  // payload must be unique per call — UNIQUE(session_id, input_hash) on events would otherwise
+  // coalesce identical-payload calls and break tests that expect distinct rows.
+  const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: { text } });
   const sid = await storage.recordSummary({
     eventId: eid, ts: 0, model: 'm', promptHash: 'p', text,
     tokensIn: null, tokensOut: null, confidence: null,

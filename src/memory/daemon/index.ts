@@ -262,6 +262,26 @@ async function main() {
     : null;
   counterTimer?.unref();
 
+  // Expired-event sweeper. Runs every 5 min by default; tunable via SIFTCODER_SWEEP_MS=0
+  // to disable. Cheap: a single indexed DELETE plus cascade.
+  const sweepCadenceMs = (() => {
+    const raw = process.env['SIFTCODER_SWEEP_MS'];
+    if (raw === undefined) return 5 * 60 * 1000;
+    const n = Number.parseInt(raw, 10);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  })();
+  const sweepTimer = sweepCadenceMs > 0
+    ? setInterval(async () => {
+        try {
+          const removed = await storage.sweepExpired();
+          if (removed > 0) logger.info('sweep_expired', { removed });
+        } catch (e) {
+          logger.warn('sweep_expired failed', { error: (e as Error).message });
+        }
+      }, sweepCadenceMs)
+    : null;
+  sweepTimer?.unref();
+
   // Last-resort error capture — without these, a silent crash leaves no log entry and the
   // operator is left wondering why the socket vanished. uncaughtException gets the stack flushed
   // before the process exits; unhandledRejection is logged but not fatal.
@@ -278,6 +298,7 @@ async function main() {
   function shutdown() {
     consolidator.stop();
     if (counterTimer) clearInterval(counterTimer);
+    if (sweepTimer) clearInterval(sweepTimer);
     logger.info('daemon stopping');
     try { httpServer?.close(); } catch { /* ignore */ }
     try { server.close(); } catch { /* ignore */ }

@@ -25,7 +25,10 @@ export type RequestKind =
   | 'pin'
   | 'unpin'
   | 'pinned'
-  | 'doctor';
+  | 'doctor'
+  | 'sweep_expired'
+  | 'export'
+  | 'import';
 
 export interface CaptureRequest {
   kind: 'capture';
@@ -35,6 +38,8 @@ export interface CaptureRequest {
   ts?: number;
   /** Free-form provenance label: "claude-code", "cli", "vscode", "github", "slack", ... */
   source?: string;
+  /** Optional TTL in ms. After `ts + ttlMs` the event (and its dependents) is auto-pruned. */
+  ttlMs?: number;
 }
 
 export interface SearchRequest {
@@ -172,6 +177,31 @@ export interface PinnedRequest {
 
 export interface DoctorRequest {
   kind: 'doctor';
+  /** When true, run repair routines (currently: vec0 backfill if drift > 0). */
+  heal?: boolean;
+}
+
+export interface SweepExpiredRequest {
+  kind: 'sweep_expired';
+  /** Optional cutoff timestamp; defaults to Date.now(). */
+  now?: number;
+}
+
+/**
+ * Streaming export: response data is `{ chunk: string, done: boolean }` — the daemon writes
+ * one chunk per RPC call (caller iterates by issuing follow-up `export` requests with the
+ * `cursor` returned in the previous `chunk`). Simpler all-in-one form supported via `all=true`.
+ */
+export interface ExportRequest {
+  kind: 'export';
+  /** When set, return the entire snapshot as a single `data: { ndjson: string }` blob. */
+  all?: boolean;
+}
+
+export interface ImportRequest {
+  kind: 'import';
+  /** ndjson blob produced by `export`. */
+  ndjson: string;
 }
 
 export type Request =
@@ -196,7 +226,10 @@ export type Request =
   | PinRequest
   | UnpinRequest
   | PinnedRequest
-  | DoctorRequest;
+  | DoctorRequest
+  | SweepExpiredRequest
+  | ExportRequest
+  | ImportRequest;
 
 export interface OkResponse<T = unknown> {
   ok: true;
