@@ -616,6 +616,15 @@ describe('buildHandler with real Storage (cross-platform)', () => {
     expect(r.data.captured).toBe(0);
   });
 
+  it('replay RPC returns events with summaries joined', async () => {
+    const eid = await realStorage.recordEvent({ ts: 1, sessionId: 'rep', tool: 'Edit', payload: { p: 1 } });
+    await realStorage.recordSummary({ eventId: eid, ts: 1, model: 'm', promptHash: 'p', text: 'edited', tokensIn: null, tokensOut: null, confidence: 0.9 });
+    const h = buildHandler({ storage: realStorage, wal: realWal, cwd: '/x' });
+    const r = await h({ kind: 'replay', sessionId: 'rep' }) as { ok: true; data: { events: Array<{ summary: { text: string } | null }> } };
+    expect(r.data.events).toHaveLength(1);
+    expect(r.data.events[0]!.summary?.text).toBe('edited');
+  });
+
   it('symbol_search RPC returns events matching a symbol', async () => {
     const eid = await realStorage.recordEvent({ ts: 1, sessionId: 's', tool: 'Edit', payload: { tool_input: { file_path: '/x.ts', content: 'x' } } });
     await realStorage.setEventSymbols(eid, ['function:login']);

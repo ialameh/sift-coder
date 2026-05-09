@@ -218,6 +218,32 @@ export const TOOLS = [
       required: [],
     },
   },
+  {
+    name: 'mem_replay',
+    description: 'Replay a session: events in chronological order with their summaries joined in. Use to reconstruct what the agent saw earlier, audit a prior decision, or feed long-context recall.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        session_id: { type: 'string' },
+        limit: { type: 'number', default: 200 },
+      },
+      required: ['session_id'],
+    },
+  },
+  {
+    name: 'mem_capture',
+    description: 'Push a fact into the memory store directly. Use when the agent has a durable observation it wants to keep (a decision, a confirmed fact, a gotcha). The payload is redacted then stored. Optional `ttl_ms` makes it ephemeral.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        session_id: { type: 'string' },
+        tool: { type: 'string', default: 'agent_capture' },
+        payload: {},
+        ttl_ms: { type: 'number' },
+      },
+      required: ['session_id', 'payload'],
+    },
+  },
 ];
 
 export interface DrainResult {
@@ -497,6 +523,25 @@ export async function dispatch(req: JsonRpcRequest, deps: HandlerDeps): Promise<
           const res = await deps.client.send({
             kind: 'stats',
             windowMs: args['window_ms'] !== undefined ? Number(args['window_ms']) : undefined,
+          });
+          return ok(req.id, res);
+        }
+        case 'mem_replay': {
+          const res = await deps.client.send({
+            kind: 'replay',
+            sessionId: String(args['session_id'] ?? ''),
+            limit: Number(args['limit'] ?? 200),
+          });
+          return ok(req.id, res);
+        }
+        case 'mem_capture': {
+          const res = await deps.client.send({
+            kind: 'capture',
+            sessionId: String(args['session_id'] ?? ''),
+            tool: typeof args['tool'] === 'string' ? args['tool'] : 'agent_capture',
+            payload: args['payload'] ?? {},
+            ttlMs: args['ttl_ms'] !== undefined ? Number(args['ttl_ms']) : undefined,
+            source: 'agent',
           });
           return ok(req.id, res);
         }

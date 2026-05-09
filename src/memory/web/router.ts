@@ -210,5 +210,50 @@ export async function route(req: WebRequest, deps: WebDeps): Promise<WebResponse
     return json(200, { ok: true, data: report });
   }
 
+  if (req.method === 'GET' && req.path === '/api/stats') {
+    const windowMs = parseInt(req.query['window_ms'] ?? '3600000', 10) || 3600000;
+    return json(200, { ok: true, data: await deps.storage.stats(windowMs) });
+  }
+
+  if (req.method === 'GET' && req.path === '/api/doctor') {
+    return json(200, { ok: true, data: await deps.storage.doctor() });
+  }
+
+  if (req.method === 'GET' && req.path === '/api/pinned') {
+    const limit = parseInt(req.query['limit'] ?? '100', 10) || 100;
+    return json(200, { ok: true, data: { pinned: await deps.storage.listPinned(limit) } });
+  }
+
+  if (req.method === 'POST' && req.path === '/api/symbol-search') {
+    const body = parseBody<{ query: string; k?: number }>(req.body);
+    if (!body || typeof body.query !== 'string') return badRequest('query required');
+    return json(200, { ok: true, data: { hits: await deps.storage.symbolSearch(body.query, body.k ?? 10) } });
+  }
+
+  if (req.method === 'POST' && req.path === '/api/thread') {
+    const body = parseBody<{ sessionId: string; limit?: number }>(req.body);
+    if (!body || typeof body.sessionId !== 'string') return badRequest('sessionId required');
+    return json(200, { ok: true, data: { sessions: await deps.storage.sessionThread(body.sessionId, body.limit ?? 20) } });
+  }
+
+  if (req.method === 'POST' && req.path === '/api/replay') {
+    const body = parseBody<{ sessionId: string; limit?: number }>(req.body);
+    if (!body || typeof body.sessionId !== 'string') return badRequest('sessionId required');
+    return json(200, { ok: true, data: { events: await deps.storage.replaySession(body.sessionId, body.limit ?? 200) } });
+  }
+
+  if (req.method === 'POST' && req.path === '/api/pin') {
+    const body = parseBody<{ summaryId: number }>(req.body);
+    if (!body || !Number.isFinite(body.summaryId)) return badRequest('summaryId required');
+    return json(200, { ok: true, data: { pinned: await deps.storage.pin(body.summaryId), summaryId: body.summaryId } });
+  }
+
+  if (req.method === 'POST' && req.path === '/api/unpin') {
+    const body = parseBody<{ summaryId: number }>(req.body);
+    if (!body || !Number.isFinite(body.summaryId)) return badRequest('summaryId required');
+    await deps.storage.unpin(body.summaryId);
+    return json(200, { ok: true, data: { pinned: false, summaryId: body.summaryId } });
+  }
+
   return json(404, { ok: false, error: 'not found' });
 }
