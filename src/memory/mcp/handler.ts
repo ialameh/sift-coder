@@ -493,6 +493,22 @@ export async function dispatch(req: JsonRpcRequest, deps: HandlerDeps): Promise<
     const params = req.params as { name?: string; arguments?: Record<string, unknown> } | undefined;
     const name = params?.name ?? '';
     const args = params?.arguments ?? {};
+    // Per-tool required-args validation. Without this, missing args coerce silently:
+    // Number(undefined) = NaN, String(undefined) = 'undefined', etc. The daemon then either
+    // SQL-binds garbage or returns empty results. Schema-correct callers are unaffected;
+    // sloppy callers get a real JSON-RPC error.
+    const tool = TOOLS.find(t => t.name === name);
+    if (tool) {
+      const required = (tool.inputSchema as { required?: string[] }).required ?? [];
+      const missing = required.filter(r => args[r] === undefined || args[r] === null);
+      if (missing.length > 0) {
+        return {
+          jsonrpc: '2.0',
+          ...(req.id !== undefined ? { id: req.id } : {}),
+          error: { code: -32602, message: `${name}: missing required argument(s): ${missing.join(', ')}` },
+        };
+      }
+    }
     try {
       switch (name) {
         case 'mem_search': {
