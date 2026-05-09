@@ -287,6 +287,87 @@ switch (cmd) {
     console.log(JSON.stringify({ ok: true, data: { requeued } }, null, 2));
     break;
   }
+  case 'pin': {
+    const id = parseInt(args[0] ?? '0', 10);
+    if (!id) { console.error('usage: siftcoder pin <summaryId>'); process.exit(1); }
+    try {
+      const r = await rpc({ kind: 'pin', summaryId: id }, 5000);
+      console.log(JSON.stringify(r, null, 2));
+      break;
+    } catch (e) {
+      if (e.message && !e.message.includes('ENOENT') && !e.message.includes('ECONNREFUSED')) throw e;
+    }
+    const { storage } = await openStorage();
+    const ok = await storage.pin(id);
+    await storage.close();
+    console.log(JSON.stringify({ ok: true, data: { pinned: ok, summaryId: id } }, null, 2));
+    break;
+  }
+  case 'unpin': {
+    const id = parseInt(args[0] ?? '0', 10);
+    if (!id) { console.error('usage: siftcoder unpin <summaryId>'); process.exit(1); }
+    try {
+      const r = await rpc({ kind: 'unpin', summaryId: id }, 5000);
+      console.log(JSON.stringify(r, null, 2));
+      break;
+    } catch (e) {
+      if (e.message && !e.message.includes('ENOENT') && !e.message.includes('ECONNREFUSED')) throw e;
+    }
+    const { storage } = await openStorage();
+    await storage.unpin(id);
+    await storage.close();
+    console.log(JSON.stringify({ ok: true, data: { pinned: false, summaryId: id } }, null, 2));
+    break;
+  }
+  case 'pinned': {
+    const limit = parseInt(args[0] ?? '100', 10);
+    try {
+      const r = await rpc({ kind: 'pinned', limit }, 5000);
+      console.log(JSON.stringify(r, null, 2));
+      break;
+    } catch (e) {
+      if (e.message && !e.message.includes('ENOENT') && !e.message.includes('ECONNREFUSED')) throw e;
+    }
+    const { storage } = await openStorage();
+    const rows = await storage.listPinned(limit);
+    await storage.close();
+    const pinned = rows.map(r => ({
+      id: r.id,
+      ts: new Date(r.ts).toISOString(),
+      text: r.text.length > 240 ? r.text.slice(0, 240) + '...' : r.text,
+    }));
+    console.log(JSON.stringify({ ok: true, data: { pinned } }, null, 2));
+    break;
+  }
+  case 'doctor': {
+    let report;
+    try {
+      const r = await rpc({ kind: 'doctor' }, 30000);
+      if (r.ok) report = r.data;
+    } catch (e) {
+      if (e.message && !e.message.includes('ENOENT') && !e.message.includes('ECONNREFUSED')) throw e;
+    }
+    if (!report) {
+      const { storage } = await openStorage();
+      report = await storage.doctor();
+      await storage.close();
+    }
+    // Render as a checklist; JSON via --json.
+    if (args.includes('--json')) {
+      console.log(JSON.stringify({ ok: true, data: report }, null, 2));
+    } else {
+      const tick = (b) => b ? '✓' : '✗';
+      const lines = [];
+      lines.push(`integrity   ${tick(report.integrity === 'ok')} ${report.integrity}`);
+      lines.push(`orphans     summaries=${report.orphanSummaries} embeddings=${report.orphanEmbeddings} provenance=${report.orphanProvenance}`);
+      lines.push(`vec0        embeddings=${report.vecCardinality.embeddings} vec=${report.vecCardinality.vec} drift=${report.vecCardinality.drift}`);
+      lines.push(`pinned      ${report.pinned}`);
+      const c = report.counts;
+      lines.push(`counts      events=${c.events} raw=${c.raw} summarized=${c.summarized} skipped=${c.skipped} summaries=${c.summaries} embeddings=${c.embeddings} superseded=${c.superseded}`);
+      console.log(lines.join('\n'));
+    }
+    break;
+  }
   case 'web': {
     const portFile = paths().httpPort;
     if (!fs.existsSync(portFile)) {
@@ -469,6 +550,10 @@ Usage:
   siftcoder backfill            backfill memory from past transcripts
   siftcoder prune [--days N] [--superseded]  drop skipped events older than N days; --superseded also drops dedup losers
   siftcoder retry [N]           re-queue skipped events for another drain pass (optionally first N)
+  siftcoder pin <summaryId>     mark a summary as user-curated (exempt from supersede, decay-resistant)
+  siftcoder unpin <summaryId>   remove the curation mark
+  siftcoder pinned [N]          list the most-recently pinned summaries (default 100)
+  siftcoder doctor [--json]     health check: integrity, orphans, vec0 drift, counts
   siftcoder web                 print web UI URL
 `);
 }

@@ -111,6 +111,10 @@ export const MIGRATIONS: ReadonlyArray<string> = [
   `DELETE FROM summary_supersedes WHERE newer_id NOT IN (SELECT MAX(id) FROM summaries GROUP BY event_id) OR older_id NOT IN (SELECT MAX(id) FROM summaries GROUP BY event_id)`,
   `DELETE FROM summaries WHERE id NOT IN (SELECT MAX(id) FROM summaries GROUP BY event_id)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_summaries_event_unique ON summaries(event_id)`,
+  // pinned_at: NULL means not pinned. Non-null timestamps survive supersede + decay so the
+  // user (or an agent) can curate long-term memories that the consolidator won't kill.
+  `ALTER TABLE summaries ADD COLUMN pinned_at INTEGER`,
+  `CREATE INDEX IF NOT EXISTS idx_summaries_pinned ON summaries(pinned_at) WHERE pinned_at IS NOT NULL`,
 ];
 
 /**

@@ -21,7 +21,11 @@ export type RequestKind =
   | 'cache_get'
   | 'cache_put'
   | 'prune'
-  | 'retry_skipped';
+  | 'retry_skipped'
+  | 'pin'
+  | 'unpin'
+  | 'pinned'
+  | 'doctor';
 
 export interface CaptureRequest {
   kind: 'capture';
@@ -151,6 +155,25 @@ export interface RetrySkippedRequest {
   limit?: number;
 }
 
+export interface PinRequest {
+  kind: 'pin';
+  summaryId: number;
+}
+
+export interface UnpinRequest {
+  kind: 'unpin';
+  summaryId: number;
+}
+
+export interface PinnedRequest {
+  kind: 'pinned';
+  limit?: number;
+}
+
+export interface DoctorRequest {
+  kind: 'doctor';
+}
+
 export type Request =
   | CaptureRequest
   | SearchRequest
@@ -169,7 +192,11 @@ export type Request =
   | CacheGetRequest
   | CachePutRequest
   | PruneRequest
-  | RetrySkippedRequest;
+  | RetrySkippedRequest
+  | PinRequest
+  | UnpinRequest
+  | PinnedRequest
+  | DoctorRequest;
 
 export interface OkResponse<T = unknown> {
   ok: true;

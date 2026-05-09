@@ -557,6 +557,118 @@ export class Storage {
     };
   }
 
+  // ─── Pinning (curated long-term memory) ──────────────────────────────────────────────
+
+  async pin(summaryId: number, ts: number = Date.now()): Promise<boolean> {
+    await (await this.db.prepare(
+      'UPDATE summaries SET pinned_at = ? WHERE id = ?'
+    )).run(ts, summaryId);
+    const row = await (await this.db.prepare(
+      'SELECT pinned_at FROM summaries WHERE id = ?'
+    )).get(summaryId) as { pinned_at?: number | null } | undefined;
+    return !!row?.pinned_at;
+  }
+
+  async unpin(summaryId: number): Promise<boolean> {
+    await (await this.db.prepare(
+      'UPDATE summaries SET pinned_at = NULL WHERE id = ?'
+    )).run(summaryId);
+    return true;
+  }
+
+  async listPinned(limit = 100): Promise<SummaryRow[]> {
+    const rows = await (await this.db.prepare(
+      `SELECT id, event_id, ts, model, prompt_hash, text, tokens_in, tokens_out, confidence
+       FROM summaries
+       WHERE pinned_at IS NOT NULL
+       ORDER BY pinned_at DESC
+       LIMIT ?`
+    )).all(limit) as Record<string, unknown>[];
+    return rows.map(r => ({
+      id: r['id'] as number,
+      eventId: r['event_id'] as number,
+      ts: r['ts'] as number,
+      model: r['model'] as string,
+      promptHash: r['prompt_hash'] as string,
+      text: r['text'] as string,
+      tokensIn: (r['tokens_in'] as number | null) ?? null,
+      tokensOut: (r['tokens_out'] as number | null) ?? null,
+      confidence: (r['confidence'] as number | null) ?? null,
+    }));
+  }
+
+  async pinnedIds(): Promise<Set<number>> {
+    const rows = await (await this.db.prepare(
+      'SELECT id FROM summaries WHERE pinned_at IS NOT NULL'
+    )).all() as Array<{ id: number }>;
+    return new Set(rows.map(r => r.id));
+  }
+
+  // ─── Health check (mem doctor) ───────────────────────────────────────────────────────
+
+  /**
+   * Assemble a structured health report covering schema integrity, orphaned rows, vec0
+   * cardinality drift, and counts. The CLI / MCP server renders this into a checklist;
+   * the structured shape stays stable for programmatic consumers.
+   */
+  async doctor(): Promise<{
+    integrity: 'ok' | string;
+    orphanSummaries: number;
+    orphanEmbeddings: number;
+    orphanProvenance: number;
+    vecCardinality: { embeddings: number; vec: number; drift: number };
+    counts: StorageCounts;
+    pinned: number;
+  }> {
+    let integrity: 'ok' | string = 'ok';
+    try {
+      const row = await (await this.db.prepare('PRAGMA integrity_check')).get() as { integrity_check?: string } | undefined;
+      const v = row?.integrity_check ?? 'ok';
+      integrity = v === 'ok' ? 'ok' : v;
+    } catch (e) {
+      integrity = (e as Error).message;
+    }
+
+    const orphanSummaries = await this.scalar<number>(
+      'SELECT count(*) AS c FROM summaries s WHERE NOT EXISTS (SELECT 1 FROM events e WHERE e.id = s.event_id)'
+    );
+    const orphanEmbeddings = await this.scalar<number>(
+      'SELECT count(*) AS c FROM summary_embeddings se WHERE NOT EXISTS (SELECT 1 FROM summaries s WHERE s.id = se.summary_id)'
+    );
+    const orphanProvenance = await this.scalar<number>(
+      `SELECT count(*) AS c FROM provenance_edges p
+        WHERE (p.from_kind = 'summary' AND NOT EXISTS (SELECT 1 FROM summaries s WHERE s.id = CAST(p.from_id AS INTEGER)))
+           OR (p.to_kind   = 'summary' AND NOT EXISTS (SELECT 1 FROM summaries s WHERE s.id = CAST(p.to_id   AS INTEGER)))`
+    );
+    const embeddingsCount = await this.countAll('summary_embeddings');
+    let vecCount = 0;
+    if (this.vecEnabled) {
+      try {
+        vecCount = await this.scalar<number>('SELECT count(*) AS c FROM summaries_vec');
+      } catch { /* table missing */ }
+    }
+    const drift = embeddingsCount - vecCount;
+    const counts = await this.counts();
+    const pinned = await this.scalar<number>(
+      'SELECT count(*) AS c FROM summaries WHERE pinned_at IS NOT NULL'
+    );
+    return {
+      integrity,
+      orphanSummaries,
+      orphanEmbeddings,
+      orphanProvenance,
+      vecCardinality: { embeddings: embeddingsCount, vec: vecCount, drift },
+      counts,
+      pinned,
+    };
+  }
+
+  /** Internal helper: run a `SELECT count(*) AS c …` style query and return the count. */
+  private async scalar<T extends number>(sql: string): Promise<T> {
+    const row = await (await this.db.prepare(sql)).get() as { c?: number } | undefined;
+    return (row?.c ?? 0) as T;
+  }
+
   async putCachedSummary(
     cacheKey: string,
     text: string,
