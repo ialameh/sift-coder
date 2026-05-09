@@ -1,52 +1,26 @@
 /**
  * Worker thread for PostgreSQL storage.
  *
- * This module runs in a separate thread, owns the pg Pool, and handles
- * SQL commands from the main thread via worker.on('message').
+ * Runs in a separate thread, owns the pg Pool, and handles SQL commands from the main thread
+ * via worker.on('message'). Replies via parentPort.postMessage().
  *
- * The worker replies using parentPort.postMessage().
+ * Message shapes (kept as JSDoc since this file is plain JS for lint compatibility):
+ *
+ *   InitMessage    = { op: 'init', id, opts: { host, port, user, password, database, maxConnections? } }
+ *   RequestMessage = { id, op: 'exec'|'run'|'get'|'all', sql, params }
+ *   ResponseMessage = { id, ok, result?, error?, lastInsertRowid? }
  */
 import { parentPort } from 'node:worker_threads';
 import pg from 'pg';
 
 const { Pool } = pg;
 
-interface InitMessage {
-  op: 'init';
-  id: number;
-  opts: {
-    host: string;
-    port: number;
-    user: string;
-    password: string;
-    database: string;
-    maxConnections?: number;
-  };
-}
+let pool = null;
+let fullDbName = null;
 
-interface RequestMessage {
-  id: number;
-  op: 'exec' | 'run' | 'get' | 'all';
-  sql: string;
-  params: unknown[];
-}
-
-type WorkerMessage = InitMessage | RequestMessage;
-
-interface ResponseMessage {
-  id: number;
-  ok: boolean;
-  result?: unknown;
-  error?: string;
-  lastInsertRowid?: number;
-}
-
-let pool: Pool | null = null;
-let fullDbName: string | null = null;
-
-parentPort!.on('message', async (msg: WorkerMessage) => {
+parentPort.on('message', async (msg) => {
   if (msg.op === 'init') {
-    const opts = (msg as InitMessage).opts;
+    const opts = msg.opts;
     fullDbName = `${opts.database}`;
     // Create workspace database if not exists
     const adminPool = new Pool({
@@ -59,9 +33,9 @@ parentPort!.on('message', async (msg: WorkerMessage) => {
     });
     try {
       await adminPool.query(`CREATE DATABASE "${fullDbName}"`);
-    } catch (e: unknown) {
+    } catch (e) {
       if (!String(e).includes('already exists')) {
-        parentPort!.postMessage({ id: -1, ok: false, error: String(e) } satisfies ResponseMessage);
+        parentPort.postMessage({ id: -1, ok: false, error: String(e) });
         return;
       }
     }
@@ -79,16 +53,16 @@ parentPort!.on('message', async (msg: WorkerMessage) => {
     // Enable pg_vector
     try { await pool.query('CREATE EXTENSION IF NOT EXISTS vector'); } catch { /* ignore */ }
 
-    parentPort!.postMessage({ id: -1, ok: true } satisfies ResponseMessage);
+    parentPort.postMessage({ id: -1, ok: true });
     return;
   }
 
   if (!pool) {
-    parentPort!.postMessage({ id: (msg as RequestMessage).id, ok: false, error: 'not initialized' } satisfies ResponseMessage);
+    parentPort.postMessage({ id: msg.id, ok: false, error: 'not initialized' });
     return;
   }
 
-  const { id, op, sql, params } = msg as RequestMessage;
+  const { id, op, sql, params } = msg;
 
   try {
     if (op === 'exec') {
@@ -96,39 +70,39 @@ parentPort!.on('message', async (msg: WorkerMessage) => {
       for (const s of stmts) {
         try { await pool.query(s); } catch { /* ignore DDL errors */ }
       }
-      parentPort!.postMessage({ id, ok: true } satisfies ResponseMessage);
+      parentPort.postMessage({ id, ok: true });
       return;
     }
 
     if (op === 'run') {
       const isInsert = /^\s*INSERT/i.test(sql) && !sql.includes('RETURNING');
       if (isInsert) {
-        const result = await pool.query(sql, params as (string | number | null)[]);
+        await pool.query(sql, params);
         let lastId = 0;
         try {
           const lv = await pool.query('SELECT lastval() as id');
           if (lv.rows[0]) lastId = Number(lv.rows[0]['id']);
         } catch { /* ignore if lastval not available */ }
-        parentPort!.postMessage({ id, ok: true, lastInsertRowid: lastId } satisfies ResponseMessage);
+        parentPort.postMessage({ id, ok: true, lastInsertRowid: lastId });
       } else {
-        await pool.query(sql, params as (string | number | null)[]);
-        parentPort!.postMessage({ id, ok: true } satisfies ResponseMessage);
+        await pool.query(sql, params);
+        parentPort.postMessage({ id, ok: true });
       }
       return;
     }
 
     if (op === 'get') {
-      const result = await pool.query(sql, params as (string | number | null)[]);
-      parentPort!.postMessage({ id, ok: true, result: result.rows[0] ?? null } satisfies ResponseMessage);
+      const result = await pool.query(sql, params);
+      parentPort.postMessage({ id, ok: true, result: result.rows[0] ?? null });
       return;
     }
 
     if (op === 'all') {
-      const result = await pool.query(sql, params as (string | number | null)[]);
-      parentPort!.postMessage({ id, ok: true, result: result.rows } satisfies ResponseMessage);
+      const result = await pool.query(sql, params);
+      parentPort.postMessage({ id, ok: true, result: result.rows });
       return;
     }
-  } catch (e: unknown) {
-    parentPort!.postMessage({ id, ok: false, error: String(e) } satisfies ResponseMessage);
+  } catch (e) {
+    parentPort.postMessage({ id, ok: false, error: String(e) });
   }
 });
