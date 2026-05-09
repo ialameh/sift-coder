@@ -358,6 +358,26 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
           return { ok: true, data: r };
         }
 
+        case 'context_budget': {
+          const k = req.candidatePool ?? 50;
+          const hits = await hybridSearch(deps.storage, deps.embedder ?? null, req.query, Date.now(), { k, candidatePool: k });
+          // Greedy fill: take in score order until cumulative tokens exceed budget.
+          const out: Array<{ id: number; eventId: number; text: string; ts: number; score: number; tool?: string; tokens: number }> = [];
+          let used = 0;
+          for (const h of hits) {
+            const tokens = approximate(h.text);
+            if (used + tokens > req.maxTokens) continue;
+            out.push({
+              id: h.id, eventId: h.eventId, text: h.text, ts: h.ts, score: h.score,
+              ...(h.tool ? { tool: h.tool } : {}),
+              tokens,
+            });
+            used += tokens;
+            if (used >= req.maxTokens) break;
+          }
+          return { ok: true, data: { hits: out, tokensUsed: used, tokensBudget: req.maxTokens } };
+        }
+
         case 'replay': {
           const rows = await deps.storage.replaySession(req.sessionId, req.limit ?? 200);
           return {

@@ -33,7 +33,8 @@ export type RequestKind =
   | 'federate_search'
   | 'symbol_search'
   | 'stats'
-  | 'replay';
+  | 'replay'
+  | 'context_budget';
 
 export interface CaptureRequest {
   kind: 'capture';
@@ -267,6 +268,19 @@ export interface ReplayRequest {
   limit?: number;
 }
 
+/**
+ * Context-budget retrieval. Greedy fill: ranks by hybrid search relevance, returns the
+ * top-scoring summaries that fit under `maxTokens`. Use to construct a memory-context
+ * block sized to a model's input budget.
+ */
+export interface ContextBudgetRequest {
+  kind: 'context_budget';
+  query: string;
+  maxTokens: number;
+  /** Pin candidate pool size for the underlying hybrid search. */
+  candidatePool?: number;
+}
+
 export type Request =
   | CaptureRequest
   | SearchRequest
@@ -297,7 +311,8 @@ export type Request =
   | FederateSearchRequest
   | SymbolSearchRequest
   | StatsRequest
-  | ReplayRequest;
+  | ReplayRequest
+  | ContextBudgetRequest;
 
 export interface OkResponse<T = unknown> {
   ok: true;
