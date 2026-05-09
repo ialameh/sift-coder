@@ -15,6 +15,7 @@ import { writeFileSync, readFileSync, unlinkSync, existsSync } from 'node:fs';
 import { workspacePaths, ensureWorkspaceDirs } from '../workspace.js';
 import { Storage } from '../storage/storage.js';
 import { openStorage } from '../storage/open.js';
+import { buildVecDdl } from '../storage/schema.js';
 import { WAL } from './wal.js';
 import { startServer } from './server.js';
 import { Consolidator } from './consolidator.js';
@@ -72,10 +73,42 @@ async function main() {
   // through any PG-specific DDL so Storage.init runs the right schema.
   const opened = await openStorage({ dbPath: paths.db });
   const { db, backend } = opened;
+
+  // Embedder selection cascade: CDG (remote) -> Ollama (local) -> Deterministic (hash-bucket).
+  // Resolved BEFORE Storage.init so the vec0 virtual-table dim matches the active embedder.
+  const embedderChoice = (process.env['SIFTCODER_EMBEDDER'] ?? 'auto').toLowerCase();
+  const localEmbedder = new DeterministicEmbedder(384);
+  const cdgEmbedder = CdgEmbedder.fromEnv(process.env, localEmbedder);
+  let embedder: typeof localEmbedder = localEmbedder;
+  let embedderName = 'deterministic-hash';
+  if ((embedderChoice === 'cdg' || embedderChoice === 'auto') && cdgEmbedder) {
+    embedder = cdgEmbedder;
+    embedderName = 'cdg';
+  } else if (embedderChoice === 'ollama' || embedderChoice === 'auto') {
+    const { OllamaEmbedder } = await import('../ollama-embedder.js');
+    if (await OllamaEmbedder.available()) {
+      embedder = new OllamaEmbedder();
+      embedderName = `ollama (model=${process.env['SIFTCODER_OLLAMA_EMBED_MODEL'] ?? 'nomic-embed-text'})`;
+    }
+  }
+
+  // Auto-detect sqlite-vec for indexed vector search. Falls back to JS-side cosine when the
+  // optional dependency is missing or the loaded extension is incompatible.
+  let vecExtensionPath: string | undefined;
+  if (process.env['SIFTCODER_VEC_EXTENSION_PATH']) {
+    vecExtensionPath = process.env['SIFTCODER_VEC_EXTENSION_PATH'];
+  } else if (process.env['SIFTCODER_DISABLE_VEC'] !== '1') {
+    try {
+      const sqliteVec = await import('sqlite-vec' as string) as { getLoadablePath?: () => string };
+      vecExtensionPath = sqliteVec.getLoadablePath?.();
+    } catch { /* optional dep absent */ }
+  }
+
   const storage = await Storage.init(db, {
     coreDdl: opened.coreDdl,
-    vecDdl: opened.vecDdl,
+    vecDdl: opened.vecDdl ?? buildVecDdl(embedder.dim),
     migrations: opened.migrations,
+    vecExtensionPath,
   });
 
   // Crash recovery: replay any WAL frames whose events were lost from SQLite.
@@ -111,24 +144,18 @@ async function main() {
     logger.info('wal replayed', { found: walEntries.length, recovered: walReplayed });
   }
 
-  // Embedder selection cascade: CDG (remote) -> Ollama (local) -> Deterministic (hash-bucket).
-  // SIFTCODER_EMBEDDER=deterministic|ollama|cdg overrides; default is auto-detect.
-  const embedderChoice = (process.env['SIFTCODER_EMBEDDER'] ?? 'auto').toLowerCase();
-  const localEmbedder = new DeterministicEmbedder(384);
-  const cdgEmbedder = CdgEmbedder.fromEnv(process.env, localEmbedder);
-  let embedder: typeof localEmbedder = localEmbedder;
-  let embedderName = 'deterministic-hash';
-  if ((embedderChoice === 'cdg' || embedderChoice === 'auto') && cdgEmbedder) {
-    embedder = cdgEmbedder;
-    embedderName = 'cdg';
-  } else if (embedderChoice === 'ollama' || embedderChoice === 'auto') {
-    const { OllamaEmbedder } = await import('../ollama-embedder.js');
-    if (await OllamaEmbedder.available()) {
-      embedder = new OllamaEmbedder();
-      embedderName = `ollama (model=${process.env['SIFTCODER_OLLAMA_EMBED_MODEL'] ?? 'nomic-embed-text'})`;
+  logger.info('embedder selected', { name: embedderName, dim: embedder.dim });
+  if (storage.vecEnabled) {
+    logger.info('sqlite-vec loaded', { dim: embedder.dim });
+    // Backfill the vec0 table from prior `summary_embeddings` rows so vec-side search works
+    // immediately on existing DBs (rather than only for new summaries written from now on).
+    try {
+      const copied = await storage.backfillVec();
+      if (copied > 0) logger.info('vec backfilled', { copied });
+    } catch (e) {
+      logger.warn('vec backfill failed', { error: (e as Error).message });
     }
   }
-  logger.info('embedder selected', { name: embedderName, dim: embedder.dim });
   const consolidator = new Consolidator(storage);
   consolidator.start();
 

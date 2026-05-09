@@ -351,4 +351,38 @@ describe.each(BACKENDS)('storage backend parity ($name)', backend => {
     const miss = await storage.getCachedSummary('nope');
     expect(miss).toBeNull();
   });
+
+  it('searchFts returns the tool joined from the originating event', async () => {
+    const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'Edit', payload: { p: 1 } });
+    await storage.recordSummary({
+      eventId: eid, ts: 1, model: 'm', promptHash: 'p', text: 'auth refactor',
+      tokensIn: null, tokensOut: null, confidence: null,
+    });
+    const hits = await storage.searchFts('auth', 5);
+    expect(hits).toHaveLength(1);
+    expect(hits[0]!.tool).toBe('Edit');
+  });
+
+  it('allEmbeddings returns the originating tool per row', async () => {
+    const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'Bash', payload: { p: 1 } });
+    const sid = await storage.recordSummary({
+      eventId: eid, ts: 1, model: 'm', promptHash: 'p', text: 'output',
+      tokensIn: null, tokensOut: null, confidence: null,
+    });
+    await storage.putEmbedding(sid, new Float32Array(3));
+    const all = await storage.allEmbeddings();
+    expect(all).toHaveLength(1);
+    expect(all[0]!.tool).toBe('Bash');
+  });
+
+  it('toolsForSummaries returns a sparse map keyed by summary id', async () => {
+    const e1 = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'Edit', payload: { p: 1 } });
+    const e2 = await storage.recordEvent({ ts: 2, sessionId: 's', tool: 'Read', payload: { p: 2 } });
+    const s1 = await storage.recordSummary({ eventId: e1, ts: 1, model: 'm', promptHash: 'p', text: 'a', tokensIn: null, tokensOut: null, confidence: null });
+    const s2 = await storage.recordSummary({ eventId: e2, ts: 2, model: 'm', promptHash: 'p', text: 'b', tokensIn: null, tokensOut: null, confidence: null });
+    const map = await storage.toolsForSummaries([s1, s2, 9999]);
+    expect(map.get(s1)).toBe('Edit');
+    expect(map.get(s2)).toBe('Read');
+    expect(map.has(9999)).toBe(false);
+  });
 });

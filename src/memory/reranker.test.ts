@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { rerank, tokenize } from './reranker.js';
+import { rerank, tokenize, buildRerankCorpus } from './reranker.js';
 import type { HybridHit } from './retrieval.js';
 
 function hit(id: number, text: string, score = 0.05): HybridHit {
@@ -88,5 +88,43 @@ describe('rerank', () => {
     const hs = [hit(1, 'alpha beta gamma')];
     const out = rerank('zzz', hs);
     expect(out[0]!.score).toBeLessThanOrEqual(hs[0]!.score);
+  });
+});
+
+describe('buildRerankCorpus + rerank with corpus IDF', () => {
+  it('builds a df map counting each term once per document', () => {
+    const corpus = buildRerankCorpus([
+      'auth login session',
+      'auth logout session',
+      'logout cleanup',
+    ]);
+    expect(corpus.n).toBe(3);
+    expect(corpus.df.get('auth')).toBe(2);
+    expect(corpus.df.get('session')).toBe(2);
+    expect(corpus.df.get('logout')).toBe(2);
+    expect(corpus.df.get('cleanup')).toBe(1);
+  });
+
+  it('rare corpus terms outscore common ones at equal in-doc tf', () => {
+    const corpus = buildRerankCorpus([
+      'auth login session',
+      'auth logout session',
+      'auth password reset',
+      'auth checkpoint baseline',
+      'auth handoff persists',
+      'singleton-rare-token appears once here',
+    ]);
+    const hs = [
+      hit(1, 'singleton-rare-token appears once here'),
+      hit(2, 'auth login session'),
+    ];
+    const out = rerank('auth singleton-rare-token', hs, { corpus });
+    expect(out[0]!.id).toBe(1);
+  });
+
+  it('falls back to within-pool IDF when no corpus is supplied', () => {
+    const hs = [hit(1, 'auth login'), hit(2, 'logout cleanup')];
+    const out = rerank('auth', hs);
+    expect(out[0]!.id).toBe(1);
   });
 });
