@@ -189,7 +189,7 @@ async function runLocal(args: ParsedArgs, dbPath: string, workspaceKey: string, 
   if (args.command === 'watch') {
     const { renderWatchSnapshot } = await import('./tui.js');
     const limit = parseIntFlag(args.flags['limit'], 20);
-    process.stdout.write(renderWatchSnapshot(storage, { limit }));
+    process.stdout.write(await renderWatchSnapshot(storage, { limit }));
     process.exit(0);
   }
   if (args.command === 'ab') {

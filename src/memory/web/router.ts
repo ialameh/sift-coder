@@ -22,6 +22,7 @@
  * Auth: every /api route requires a Bearer token. Static assets (/, /app.js, /style.css) are
  * also gated so a browser opened with `?token=...` can pass the token through fetch headers.
  */
+import { timingSafeEqual } from 'node:crypto';
 import type { Storage } from '../storage/storage.js';
 import type { Embedder } from '../embedder.js';
 import type { ProvenanceStore, NodeRef } from '../provenance.js';
@@ -84,7 +85,8 @@ function isAuthorized(req: WebRequest, token: string): boolean {
     (req.authorization ?? '').replace(/^Bearer\s+/i, '') ||
     req.query['token'] ||
     '';
-  return presented === token && presented.length > 0;
+  if (presented.length === 0 || presented.length !== token.length) return false;
+  return timingSafeEqual(Buffer.from(presented), Buffer.from(token));
 }
 
 function parseBody<T>(raw: string): T | null {

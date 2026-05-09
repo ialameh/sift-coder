@@ -53,6 +53,26 @@ async function main() {
   const { db, backend } = await openStorage({ dbPath: paths.db });
   const storage = await Storage.init(db);
 
+  // Crash recovery: replay any WAL frames whose events were lost from SQLite.
+  // Dedupe via (session_id, input_hash) so already-persisted frames are no-ops.
+  let walReplayed = 0;
+  const walEntries = WAL.replay(paths.wal);
+  for (const entry of walEntries) {
+    try {
+      await storage.ensureSession(entry.sessionId, cwd, entry.ts);
+      if (await storage.hasEvent(entry.sessionId, entry.inputHash)) continue;
+      await storage.recordEvent({
+        ts: entry.ts,
+        sessionId: entry.sessionId,
+        tool: entry.tool,
+        payload: entry.payload,
+      });
+      walReplayed++;
+    } catch { /* skip malformed entries */ }
+  }
+  // Truncate the WAL once everything has been folded in. New writes start fresh.
+  WAL.truncate(paths.wal);
+
   const wal = new WAL(paths.wal);
   wal.open();
 
@@ -62,6 +82,9 @@ async function main() {
   const sink = new FileSink(paths.log);
   const logger = new Logger('siftcoder-mem', sink);
   logger.info('daemon booting', { pid: process.pid, key: paths.key, backend });
+  if (walEntries.length > 0) {
+    logger.info('wal replayed', { found: walEntries.length, recovered: walReplayed });
+  }
 
   // Embedder selection cascade: CDG (remote) -> Ollama (local) -> Deterministic (hash-bucket).
   // SIFTCODER_EMBEDDER=deterministic|ollama|cdg overrides; default is auto-detect.

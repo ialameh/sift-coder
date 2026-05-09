@@ -26,6 +26,8 @@ interface WasmStatement {
   run(args?: unknown[]): { lastInsertRowid: number | bigint };
   get(args?: unknown[]): unknown;
   all(args?: unknown[]): unknown[];
+  /** node-sqlite3-wasm exposes finalize() to release the underlying SQLite statement handle. */
+  finalize?: () => void;
 }
 
 /**
@@ -63,17 +65,34 @@ export function wrap(inner: WasmDatabase): DBHandle & { close(): void } {
       return inner.exec(sql);
     },
     async prepare(sql: string) {
-      const stmt = inner.prepare(sql);
+      // node-sqlite3-wasm leaks SQLite statement handles unless finalize() is called. Each
+      // run/get/all invocation here is one-shot, so finalize after every call. This trades
+      // re-prepare cost for memory safety on the long-lived daemon.
       return {
         async run(...params: unknown[]) {
-          const r = stmt.run(params.length > 0 ? params : undefined);
-          return { lastInsertRowid: r.lastInsertRowid };
+          const stmt = inner.prepare(sql);
+          try {
+            const r = stmt.run(params.length > 0 ? params : undefined);
+            return { lastInsertRowid: r.lastInsertRowid };
+          } finally {
+            stmt.finalize?.();
+          }
         },
         async get(...params: unknown[]) {
-          return stmt.get(params.length > 0 ? params : undefined);
+          const stmt = inner.prepare(sql);
+          try {
+            return stmt.get(params.length > 0 ? params : undefined);
+          } finally {
+            stmt.finalize?.();
+          }
         },
         async all(...params: unknown[]) {
-          return stmt.all(params.length > 0 ? params : undefined) as unknown[];
+          const stmt = inner.prepare(sql);
+          try {
+            return stmt.all(params.length > 0 ? params : undefined) as unknown[];
+          } finally {
+            stmt.finalize?.();
+          }
         },
       };
     },

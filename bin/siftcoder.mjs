@@ -218,16 +218,24 @@ switch (cmd) {
     if (!modelClient) throw new Error('no drain backend: set GLM_API_KEY, GEMINI_API_KEY, start Ollama, or set ANTHROPIC_API_KEY');
     const summarizer = new Summarizer(storage, modelClient);
     const embedder = new DeterministicEmbedder(384);
-    const events = await storage.pendingEvents(batch);
+    const events = await storage.claimPending(batch);
+    const isRetryable = (msg) => {
+      const m = msg.toLowerCase();
+      return /(quota|rate.?limit|429|502|503|504|timeout|etimedout|econnreset|econnrefused|enotfound|socket hang up|overloaded)/.test(m);
+    };
     let processed = 0, errors = 0, firstError;
     for (const ev of events) {
       try {
         const r = await summarizer.summarize(ev.id, ev.inputHash, ev.payloadJson, Date.now());
-        await storage.putEmbedding(r.id, await embedder.embed(r.text));
+        if (r.id > 0) await storage.putEmbedding(r.id, await embedder.embed(r.text));
         await storage.markEventStatus(ev.id, 'summarized');
         processed++;
       } catch (e) {
-        await storage.markEventStatus(ev.id, 'skipped');
+        if (isRetryable(e.message)) {
+          await storage.releaseClaimed(ev.id, e.message);
+        } else {
+          await storage.markEventStatus(ev.id, 'skipped');
+        }
         errors++;
         firstError ??= e.message;
       }
@@ -365,14 +373,16 @@ switch (cmd) {
     fs.writeFileSync(p.pid, String(child.pid));
     // Wait for socket
     const deadline = Date.now() + 3000;
+    let socketUp = false;
     while (Date.now() < deadline) {
-      if (fs.existsSync(p.sock)) {
-        console.log(JSON.stringify({ ok: true, daemon: 'started', pid: child.pid, socket: p.sock }, null, 2));
-        break;
-      }
+      if (fs.existsSync(p.sock)) { socketUp = true; break; }
       await new Promise(r => setTimeout(r, 100));
     }
-    console.log(JSON.stringify({ ok: false, daemon: 'spawned', pid: child.pid, socket: p.sock, error: 'socket did not appear within 3s' }, null, 2));
+    if (socketUp) {
+      console.log(JSON.stringify({ ok: true, daemon: 'started', pid: child.pid, socket: p.sock }, null, 2));
+    } else {
+      console.log(JSON.stringify({ ok: false, daemon: 'spawned', pid: child.pid, socket: p.sock, error: 'socket did not appear within 3s' }, null, 2));
+    }
     break;
   }
   case 'list': {
@@ -387,15 +397,14 @@ switch (cmd) {
     } catch { /* fall through to local */ }
     // Local fallback: open SQLite and query recent summaries directly
     try {
-      const p = paths();
       const { storage } = await openStorage();
-      const rows = await storage.timeline(999999999, limit);
+      const rows = await storage.recentSummaries(limit);
       await storage.close();
       const summaries = rows.map(row => ({
         id: row.id,
         ts: new Date(row.ts).toISOString(),
         model: row.model,
-        text: row.text.slice(0, 120) + (row.text.length > 120 ? '...' : ''),
+        text: row.text.length > 120 ? row.text.slice(0, 120) + '...' : row.text,
       }));
       console.log(JSON.stringify({ ok: true, summaries }, null, 2));
     } catch (e) {

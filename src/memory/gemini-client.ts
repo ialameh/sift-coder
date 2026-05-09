@@ -66,7 +66,9 @@ export class GeminiClient implements ModelClient {
 
   async generate(req: ModelRequest): Promise<ModelResult> {
     const model = this.model;
-    const url = `${this.apiBase}/${model}:generateContent?key=${this.apiKey}`;
+    // Pass the API key via header rather than `?key=` query string to keep it out of proxy
+    // logs, browser history, and exception stacks.
+    const url = `${this.apiBase}/${model}:generateContent`;
 
     const body = JSON.stringify({
       systemInstruction: req.system ? { parts: [{ text: req.system }] } : undefined,
@@ -84,7 +86,10 @@ export class GeminiClient implements ModelClient {
       try {
         const res = await this.fetchImpl(url, {
           method: 'POST',
-          headers: { 'content-type': 'application/json' },
+          headers: {
+            'content-type': 'application/json',
+            'x-goog-api-key': this.apiKey,
+          },
           body,
         });
         if (res.status >= 500) {

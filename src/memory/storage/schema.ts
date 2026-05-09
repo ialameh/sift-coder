@@ -98,13 +98,32 @@ CREATE TABLE IF NOT EXISTS summary_cache (
 /**
  * Idempotent migrations applied after CORE_DDL. Each statement is wrapped in try/catch by Storage
  * so re-runs are safe on existing databases.
+ *
+ * The summaries(event_id) UNIQUE INDEX is preceded by a dedupe step because the pre-fix
+ * drain race could insert multiple summaries per event_id; without dedupe the index creation
+ * would fail on existing DBs.
  */
 export const MIGRATIONS: ReadonlyArray<string> = [
   `ALTER TABLE events ADD COLUMN tokens_est INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE events ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0`,
+  `ALTER TABLE events ADD COLUMN last_error TEXT`,
+  `DELETE FROM summary_embeddings WHERE summary_id NOT IN (SELECT MAX(id) FROM summaries GROUP BY event_id)`,
+  `DELETE FROM summary_supersedes WHERE newer_id NOT IN (SELECT MAX(id) FROM summaries GROUP BY event_id) OR older_id NOT IN (SELECT MAX(id) FROM summaries GROUP BY event_id)`,
+  `DELETE FROM summaries WHERE id NOT IN (SELECT MAX(id) FROM summaries GROUP BY event_id)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_summaries_event_unique ON summaries(event_id)`,
 ];
 
-export const VEC_DDL = `
+/**
+ * Build the vec0 DDL with a runtime-resolved dimension. The default of 384 matches the
+ * `DeterministicEmbedder`; daemon boot calls this with the active embedder's `dim` so the
+ * virtual table matches whatever embedder was selected (e.g., 768 for Ollama nomic-embed-text).
+ */
+export function buildVecDdl(dim: number): string {
+  return `
 CREATE VIRTUAL TABLE IF NOT EXISTS summaries_vec USING vec0(
-  embedding float[384]
+  embedding float[${dim}]
 );
 `;
+}
+
+export const VEC_DDL = buildVecDdl(384);

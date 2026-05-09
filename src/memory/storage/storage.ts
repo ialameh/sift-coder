@@ -99,12 +99,32 @@ export interface StorageOptions {
 export class Storage {
   /** @internal */
   readonly vecEnabled: boolean;
+  /**
+   * In-process serialization for write-locked transactions (e.g. claimPending). A single Node
+   * process holds one DB connection, so concurrent `BEGIN IMMEDIATE` on that connection collide
+   * with SQLite's "cannot start a transaction within a transaction" error. This mutex chains
+   * those callers so they execute one at a time. Cross-process concurrency is still serialized
+   * by SQLite's own file locks.
+   */
+  private writeLock: Promise<void> = Promise.resolve();
   /** @internal */
   private constructor(
     private readonly db: DBHandle,
     vecEnabled: boolean
   ) {
     this.vecEnabled = vecEnabled;
+  }
+
+  private async withWriteLock<T>(fn: () => Promise<T>): Promise<T> {
+    const previous = this.writeLock;
+    let release!: () => void;
+    this.writeLock = new Promise<void>(resolve => { release = resolve; });
+    try {
+      await previous;
+      return await fn();
+    } finally {
+      release();
+    }
   }
 
   /**
@@ -188,7 +208,7 @@ export class Storage {
     };
   }
 
-  async markEventStatus(id: number, status: 'raw' | 'summarized' | 'skipped'): Promise<void> {
+  async markEventStatus(id: number, status: 'raw' | 'claimed' | 'summarized' | 'skipped'): Promise<void> {
     await (await this.db.prepare('UPDATE events SET status = ? WHERE id = ?')).run(status, id);
   }
 
@@ -208,6 +228,69 @@ export class Storage {
     }));
   }
 
+  /**
+   * Atomically claim up to `limit` raw events, flipping their status to `claimed`. Concurrent
+   * claimers will not see overlapping rows. Use `releaseClaimed` on retryable failure or
+   * `markEventStatus` on success/terminal failure.
+   *
+   * Implemented as a write-locked transaction (BEGIN IMMEDIATE) so it works on every backend
+   * regardless of UPDATE … RETURNING support.
+   */
+  async claimPending(limit = 32): Promise<EventRow[]> {
+    return this.withWriteLock(async () => {
+      await this.db.exec('BEGIN IMMEDIATE');
+      try {
+        const rows = await (await this.db.prepare(
+          "SELECT id, ts, session_id, tool, input_hash, payload_json, status, tokens_est FROM events WHERE status = 'raw' ORDER BY id ASC LIMIT ?"
+        )).all(limit) as Record<string, unknown>[];
+        if (rows.length === 0) {
+          await this.db.exec('COMMIT');
+          return [];
+        }
+        const placeholders = rows.map(() => '?').join(',');
+        const ids = rows.map(r => r['id'] as number);
+        await (await this.db.prepare(
+          `UPDATE events SET status = 'claimed' WHERE id IN (${placeholders})`
+        )).run(...ids);
+        await this.db.exec('COMMIT');
+        return rows.map(r => ({
+          id: r['id'] as number,
+          ts: r['ts'] as number,
+          sessionId: r['session_id'] as string,
+          tool: r['tool'] as string,
+          inputHash: r['input_hash'] as string,
+          payloadJson: r['payload_json'] as string,
+          status: 'claimed',
+          tokensEst: (r['tokens_est'] as number | undefined) ?? 0,
+        }));
+      } catch (e) {
+        try { await this.db.exec('ROLLBACK'); } catch { /* ignore */ }
+        throw e;
+      }
+    });
+  }
+
+  /**
+   * Return a claimed event to `raw` for retry. Increments attempts and stores the last error.
+   * If `maxAttempts` is reached, mark as `skipped` instead so the queue doesn't loop forever.
+   */
+  async releaseClaimed(id: number, error: string, maxAttempts = 3): Promise<'released' | 'skipped'> {
+    const row = await (await this.db.prepare(
+      'SELECT attempts FROM events WHERE id = ?'
+    )).get(id) as { attempts?: number } | undefined;
+    const attempts = (row?.attempts ?? 0) + 1;
+    if (attempts >= maxAttempts) {
+      await (await this.db.prepare(
+        "UPDATE events SET status = 'skipped', attempts = ?, last_error = ? WHERE id = ?"
+      )).run(attempts, error, id);
+      return 'skipped';
+    }
+    await (await this.db.prepare(
+      "UPDATE events SET status = 'raw', attempts = ?, last_error = ? WHERE id = ?"
+    )).run(attempts, error, id);
+    return 'released';
+  }
+
   async counts(): Promise<StorageCounts> {
     const c = async (sql: string): Promise<number> => {
       const row = await (await this.db.prepare(sql)).get() as { c?: number } | undefined;
@@ -224,9 +307,16 @@ export class Storage {
     };
   }
 
+  /**
+   * Insert one summary per event_id. If a summary already exists for this event_id (e.g. due to
+   * a retried drain or a cache-hit re-run), return the existing id and leave the row untouched.
+   * The UNIQUE INDEX on summaries(event_id) is the source of truth.
+   */
   async recordSummary(s: Omit<SummaryRow, 'id'>): Promise<number> {
     const result = await (await this.db.prepare(
-      'INSERT INTO summaries (event_id, ts, model, prompt_hash, text, tokens_in, tokens_out, confidence) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+      `INSERT INTO summaries (event_id, ts, model, prompt_hash, text, tokens_in, tokens_out, confidence)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(event_id) DO NOTHING`
     )).run(
       s.eventId,
       s.ts,
@@ -237,7 +327,12 @@ export class Storage {
       s.tokensOut,
       s.confidence
     );
-    return Number(result.lastInsertRowid);
+    const inserted = Number(result.lastInsertRowid);
+    if (inserted > 0) return inserted;
+    const existing = await (await this.db.prepare(
+      'SELECT id FROM summaries WHERE event_id = ?'
+    )).get(s.eventId) as { id?: number } | undefined;
+    return existing?.id ?? 0;
   }
 
   async getSummariesByIds(ids: number[]): Promise<SummaryRow[]> {
@@ -275,6 +370,26 @@ export class Storage {
       text: r['text'] as string,
       ts: r['ts'] as number,
       score: r['score'] as number,
+    }));
+  }
+
+  async recentSummaries(limit = 20): Promise<SummaryRow[]> {
+    const rows = await (await this.db.prepare(
+      `SELECT id, event_id, ts, model, prompt_hash, text, tokens_in, tokens_out, confidence
+       FROM summaries
+       ORDER BY id DESC
+       LIMIT ?`
+    )).all(limit) as Record<string, unknown>[];
+    return rows.map(r => ({
+      id: r['id'] as number,
+      eventId: r['event_id'] as number,
+      ts: r['ts'] as number,
+      model: r['model'] as string,
+      promptHash: r['prompt_hash'] as string,
+      text: r['text'] as string,
+      tokensIn: (r['tokens_in'] as number | null) ?? null,
+      tokensOut: (r['tokens_out'] as number | null) ?? null,
+      confidence: (r['confidence'] as number | null) ?? null,
     }));
   }
 

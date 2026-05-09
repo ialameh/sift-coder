@@ -72,15 +72,23 @@ export async function federatedSearch(
   const results: FederatedHit[] = [];
   for (const ws of workspaces) {
     let storage: Storage | null = null;
+    let db: { close(): Promise<void> } | null = null;
     try {
-      const { db } = await openStorage({ dbPath: ws.db });
-      storage = await Storage.init(db);
+      const opened = await openStorage({ dbPath: ws.db });
+      db = opened.db;
+      storage = await Storage.init(opened.db);
       const hits = await hybridSearch(storage, embedder, query, Date.now(), { ...opts, k: k * 2 });
       for (const h of hits) results.push({ ...h, workspace: ws.key });
     } catch {
       /* skip unreadable workspace */
     } finally {
+      // Close storage if it constructed; otherwise close the underlying DB handle so file
+      // descriptors aren't held open. On Windows, leaking the handle blocks rmdir of the
+      // workspace dir during test cleanup (EBUSY).
       try { await storage?.close(); } catch { /* ignore */ }
+      if (!storage) {
+        try { await db?.close(); } catch { /* ignore */ }
+      }
     }
   }
 

@@ -121,8 +121,8 @@ describe.each(BACKENDS)('storage backend parity ($name)', backend => {
   });
 
   it('timeline returns ordered window around an id', async () => {
-    const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: {} });
     for (let i = 0; i < 5; i++) {
+      const eid = await storage.recordEvent({ ts: i, sessionId: 's', tool: 'R', payload: { i } });
       await storage.recordSummary({
         eventId: eid, ts: i, model: 'm', promptHash: 'p', text: `s${i}`,
         tokensIn: null, tokensOut: null, confidence: null,
@@ -141,5 +141,74 @@ describe.each(BACKENDS)('storage backend parity ($name)', backend => {
     await Storage.init(db);
     const after = await storage.getSummariesByIds([sid]);
     expect(after).toHaveLength(1);
+  });
+
+  it('UNIQUE(event_id) on summaries: a second insert returns the existing id', async () => {
+    const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: {} });
+    const first = await storage.recordSummary({
+      eventId: eid, ts: 1, model: 'haiku', promptHash: 'p', text: 'first',
+      tokensIn: 1, tokensOut: 1, confidence: 0.9,
+    });
+    expect(first).toBeGreaterThan(0);
+    const second = await storage.recordSummary({
+      eventId: eid, ts: 2, model: 'haiku', promptHash: 'p', text: 'second',
+      tokensIn: 1, tokensOut: 1, confidence: 0.9,
+    });
+    expect(second).toBe(first);
+    const counts = await storage.counts();
+    expect(counts.summaries).toBe(1);
+  });
+
+  it('claimPending atomically flips raw → claimed and returns the rows', async () => {
+    for (let i = 0; i < 3; i++) {
+      await storage.recordEvent({ ts: i, sessionId: 's', tool: 'R', payload: { i } });
+    }
+    const claimed = await storage.claimPending(2);
+    expect(claimed).toHaveLength(2);
+    expect(claimed.every(r => r.status === 'claimed')).toBe(true);
+    const stillRaw = await storage.pendingEvents(10);
+    expect(stillRaw).toHaveLength(1);
+  });
+
+  it('concurrent claimPending callers do not see overlapping rows', async () => {
+    for (let i = 0; i < 6; i++) {
+      await storage.recordEvent({ ts: i, sessionId: 's', tool: 'R', payload: { i } });
+    }
+    const [a, b] = await Promise.all([storage.claimPending(4), storage.claimPending(4)]);
+    const aIds = new Set(a.map(r => r.id));
+    const bIds = new Set(b.map(r => r.id));
+    for (const id of aIds) expect(bIds.has(id)).toBe(false);
+    expect(aIds.size + bIds.size).toBe(6);
+  });
+
+  it('releaseClaimed returns event to raw and increments attempts; eventually skips', async () => {
+    const eid = await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: {} });
+    await storage.claimPending(1);
+    const r1 = await storage.releaseClaimed(eid, 'rate limit');
+    expect(r1).toBe('released');
+    expect((await storage.pendingEvents(1))[0]!.id).toBe(eid);
+    await storage.claimPending(1);
+    const r2 = await storage.releaseClaimed(eid, 'rate limit');
+    expect(r2).toBe('released');
+    await storage.claimPending(1);
+    const r3 = await storage.releaseClaimed(eid, 'rate limit');
+    expect(r3).toBe('skipped');
+    const counts = await storage.counts();
+    expect(counts.skipped).toBe(1);
+  });
+
+  it('recentSummaries returns latest summaries ordered by id descending', async () => {
+    for (let i = 0; i < 5; i++) {
+      const eid = await storage.recordEvent({ ts: i, sessionId: 's', tool: 'R', payload: { i } });
+      await storage.recordSummary({
+        eventId: eid, ts: i, model: 'm', promptHash: 'p', text: `s${i}`,
+        tokensIn: null, tokensOut: null, confidence: null,
+      });
+    }
+    const rows = await storage.recentSummaries(3);
+    expect(rows).toHaveLength(3);
+    expect(rows[0]!.id).toBeGreaterThan(rows[1]!.id);
+    expect(rows[1]!.id).toBeGreaterThan(rows[2]!.id);
+    expect(rows[0]!.text).toBe('s4');
   });
 });
