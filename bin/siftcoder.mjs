@@ -240,7 +240,7 @@ switch (cmd) {
         firstError ??= e.message;
       }
     }
-    const pending = (await storage.pendingEvents(1)).length;
+    const pending = await storage.countByStatus('raw');
     await storage.close();
     console.log(JSON.stringify({ backend: drainBackend, processed, errors, pending, ...(firstError ? { firstError } : {}) }, null, 2));
     break;
