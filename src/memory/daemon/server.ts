@@ -380,6 +380,23 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
           };
         }
 
+        case 'session_digest': {
+          const r = await deps.storage.sessionDigest(req.sessionId, req.limit ?? 50);
+          return {
+            ok: true,
+            data: {
+              ...r,
+              firstTs: r.firstTs == null ? null : new Date(r.firstTs).toISOString(),
+              lastTs: r.lastTs == null ? null : new Date(r.lastTs).toISOString(),
+            },
+          };
+        }
+
+        case 'auto_pin_patterns': {
+          const r = await deps.storage.autoPinPatterns(req.minRepeats ?? 3);
+          return { ok: true, data: r };
+        }
+
         case 'context_budget': {
           const k = req.candidatePool ?? 50;
           const hits = await hybridSearch(deps.storage, deps.embedder ?? null, req.query, Date.now(), { k, candidatePool: k });

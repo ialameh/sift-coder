@@ -445,6 +445,27 @@ describe('ops MCP tools', () => {
     expect(call.limit).toBe(20);
   });
 
+  it('mem_session_digest forwards a session_digest RPC', async () => {
+    mem.scripted.push({ ok: true, data: { text: '' } });
+    await dispatch(
+      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'mem_session_digest', arguments: { session_id: 'abc', limit: 25 } } },
+      { client: mem as unknown as MemoryClient },
+    );
+    const call = mem.calls.find(c => c.kind === 'session_digest') as { sessionId: string; limit: number };
+    expect(call.sessionId).toBe('abc');
+    expect(call.limit).toBe(25);
+  });
+
+  it('mem_auto_pin_patterns forwards an auto_pin_patterns RPC', async () => {
+    mem.scripted.push({ ok: true, data: { pinned: 0, patternsConsidered: 0 } });
+    await dispatch(
+      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'mem_auto_pin_patterns', arguments: { min_repeats: 5 } } },
+      { client: mem as unknown as MemoryClient },
+    );
+    const call = mem.calls.find(c => c.kind === 'auto_pin_patterns') as { minRepeats: number };
+    expect(call.minRepeats).toBe(5);
+  });
+
   it('mem_context_budget forwards a context_budget RPC with maxTokens', async () => {
     mem.scripted.push({ ok: true, data: { hits: [], tokensUsed: 0, tokensBudget: 4000 } });
     await dispatch(

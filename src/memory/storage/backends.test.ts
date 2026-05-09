@@ -535,6 +535,64 @@ describe.each(BACKENDS)('storage backend parity ($name)', backend => {
     expect(await storage.patterns(2)).toHaveLength(1);
   });
 
+  it('sessionDigest concats summaries chronologically with [tool] (conf) prefix', async () => {
+    const e1 = await storage.recordEvent({ ts: 1, sessionId: 'sd', tool: 'Edit', payload: { i: 1 } });
+    const e2 = await storage.recordEvent({ ts: 2, sessionId: 'sd', tool: 'Bash', payload: { i: 2 } });
+    await storage.recordSummary({ eventId: e1, ts: 1, model: 'm', promptHash: 'p', text: 'edited auth.ts', tokensIn: null, tokensOut: null, confidence: 0.9 });
+    await storage.recordSummary({ eventId: e2, ts: 2, model: 'm', promptHash: 'p', text: 'ran tests', tokensIn: null, tokensOut: null, confidence: 0.7 });
+    const r = await storage.sessionDigest('sd');
+    expect(r.summaryCount).toBe(2);
+    expect(r.eventCount).toBe(2);
+    expect(r.text).toContain('[Edit]');
+    expect(r.text).toContain('edited auth.ts');
+    expect(r.text).toContain('[Bash]');
+    expect(r.text).toContain('ran tests');
+    expect(r.text.indexOf('edited auth.ts')).toBeLessThan(r.text.indexOf('ran tests'));
+  });
+
+  it('sessionDigest returns empty text when session has no summaries', async () => {
+    await storage.recordEvent({ ts: 1, sessionId: 'empty', tool: 'R', payload: { i: 1 } });
+    const r = await storage.sessionDigest('empty');
+    expect(r.text).toBe('');
+    expect(r.summaryCount).toBe(0);
+    expect(r.eventCount).toBe(1);
+  });
+
+  it('autoPinPatterns pins summaries linked to recurring input hashes', async () => {
+    const ids: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      const eid = await storage.recordEvent({ ts: i, sessionId: `s${i}`, tool: 'Bash', payload: { cmd: 'ls' } });
+      const sid = await storage.recordSummary({ eventId: eid, ts: i, model: 'm', promptHash: 'p', text: `run ${i}`, tokensIn: null, tokensOut: null, confidence: 0.9 });
+      ids.push(sid);
+    }
+    const outlierEid = await storage.recordEvent({ ts: 99, sessionId: 'unique', tool: 'Edit', payload: { file: 'x' } });
+    const outlierSid = await storage.recordSummary({ eventId: outlierEid, ts: 99, model: 'm', promptHash: 'p', text: 'one-off', tokensIn: null, tokensOut: null, confidence: 0.9 });
+    const r = await storage.autoPinPatterns(3);
+    expect(r.pinned).toBe(3);
+    expect(r.patternsConsidered).toBe(1);
+    const pinned = await storage.pinnedIds();
+    for (const sid of ids) expect(pinned.has(sid)).toBe(true);
+    expect(pinned.has(outlierSid)).toBe(false);
+  });
+
+  it('autoPinPatterns returns zero when no patterns meet threshold', async () => {
+    await storage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: { i: 1 } });
+    const r = await storage.autoPinPatterns(5);
+    expect(r.pinned).toBe(0);
+    expect(r.patternsConsidered).toBe(0);
+  });
+
+  it('autoPinPatterns is idempotent (re-running does not double-pin)', async () => {
+    for (let i = 0; i < 3; i++) {
+      const eid = await storage.recordEvent({ ts: i, sessionId: `s${i}`, tool: 'Bash', payload: { cmd: 'ls' } });
+      await storage.recordSummary({ eventId: eid, ts: i, model: 'm', promptHash: 'p', text: 't', tokensIn: null, tokensOut: null, confidence: 0.9 });
+    }
+    const a = await storage.autoPinPatterns(3);
+    expect(a.pinned).toBe(3);
+    const b = await storage.autoPinPatterns(3);
+    expect(b.pinned).toBe(0);
+  });
+
   it('replaySession returns events in id order with summaries when present', async () => {
     const e1 = await storage.recordEvent({ ts: 1, sessionId: 'rep', tool: 'Edit', payload: { i: 1 } });
     const e2 = await storage.recordEvent({ ts: 2, sessionId: 'rep', tool: 'Bash', payload: { i: 2 } });

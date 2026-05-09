@@ -356,6 +356,79 @@ export class Storage {
   }
 
   /**
+   * Concat a session's summaries into a single digest text. Returns the joined body plus
+   * counts. Doesn't call a model — pure database materialization. Caller can re-summarize via
+   * the model client if a tighter digest is wanted.
+   */
+  async sessionDigest(sessionId: string, limit = 50): Promise<{
+    sessionId: string;
+    summaryCount: number;
+    eventCount: number;
+    text: string;
+    firstTs: number | null;
+    lastTs: number | null;
+  }> {
+    const rows = await (await this.db.prepare(
+      `SELECT s.id AS sid, s.text AS text, s.ts AS ts, s.confidence AS conf, e.tool AS tool
+         FROM events e
+         LEFT JOIN summaries s ON s.event_id = e.id
+        WHERE e.session_id = ? AND s.id IS NOT NULL
+        ORDER BY e.id DESC
+        LIMIT ?`
+    )).all(sessionId, limit) as Array<{ sid: number; text: string; ts: number; conf: number | null; tool: string }>;
+    const eventCount = await this.scalar<number>(
+      'SELECT count(*) AS c FROM events WHERE session_id = ?',
+      sessionId,
+    );
+    if (rows.length === 0) {
+      return { sessionId, summaryCount: 0, eventCount, text: '', firstTs: null, lastTs: null };
+    }
+    // Newest first per ORDER BY id DESC; reverse for chronological narration.
+    const ordered = rows.slice().reverse();
+    const lines = ordered.map(r => {
+      const conf = r.conf == null ? '' : ` (${(r.conf * 100).toFixed(0)}%)`;
+      return `[${r.tool}]${conf} ${r.text}`;
+    });
+    return {
+      sessionId,
+      summaryCount: rows.length,
+      eventCount,
+      text: lines.join('\n'),
+      firstTs: ordered[0]!.ts,
+      lastTs: ordered[ordered.length - 1]!.ts,
+    };
+  }
+
+  /**
+   * Auto-pin every summary whose event_id is part of a recurring input_hash bucket. One-shot
+   * curation that follows from `mem_patterns`: "lock in everything I do habitually."
+   * Returns the count pinned. Already-pinned summaries are unchanged.
+   */
+  async autoPinPatterns(minRepeats = 3): Promise<{ pinned: number; patternsConsidered: number }> {
+    const patterns = await this.patterns(minRepeats, 1000);
+    if (patterns.length === 0) return { pinned: 0, patternsConsidered: 0 };
+    const hashes = patterns.map(p => p.inputHash);
+    const placeholders = hashes.map(() => '?').join(',');
+    // One UPDATE: pin every summary whose event's input_hash is in the pattern set, where
+    // pinned_at is currently NULL (don't reset existing pin timestamps).
+    const before = await this.scalar<number>(
+      'SELECT count(*) AS c FROM summaries WHERE pinned_at IS NOT NULL'
+    );
+    await (await this.db.prepare(
+      `UPDATE summaries
+          SET pinned_at = ?
+        WHERE pinned_at IS NULL
+          AND event_id IN (
+            SELECT id FROM events WHERE input_hash IN (${placeholders})
+          )`
+    )).run(Date.now(), ...hashes);
+    const after = await this.scalar<number>(
+      'SELECT count(*) AS c FROM summaries WHERE pinned_at IS NOT NULL'
+    );
+    return { pinned: Math.max(0, after - before), patternsConsidered: patterns.length };
+  }
+
+  /**
    * Replay a session's chronology: events in `id` order with their summaries (if any) joined
    * in. Used by `mem_replay` to reconstruct prior conversation context for an agent or human.
    */

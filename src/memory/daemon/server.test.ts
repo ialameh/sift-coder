@@ -635,6 +635,26 @@ describe('buildHandler with real Storage (cross-platform)', () => {
     expect(r.data.patterns[0]!.firstTs).toMatch(/T/); // ISO format includes 'T'
   });
 
+  it('session_digest RPC concats summaries with iso timestamps', async () => {
+    const eid = await realStorage.recordEvent({ ts: 1, sessionId: 'sd', tool: 'Edit', payload: { i: 1 } });
+    await realStorage.recordSummary({ eventId: eid, ts: 1, model: 'm', promptHash: 'p', text: 'edited', tokensIn: null, tokensOut: null, confidence: 0.9 });
+    const h = buildHandler({ storage: realStorage, wal: realWal, cwd: '/x' });
+    const r = await h({ kind: 'session_digest', sessionId: 'sd' }) as { ok: true; data: { text: string; firstTs: string | null } };
+    expect(r.data.text).toContain('edited');
+    expect(r.data.firstTs).toMatch(/T/);
+  });
+
+  it('auto_pin_patterns RPC reports pinned + patternsConsidered counts', async () => {
+    for (let i = 0; i < 3; i++) {
+      const eid = await realStorage.recordEvent({ ts: i, sessionId: `s${i}`, tool: 'Bash', payload: { cmd: 'ls' } });
+      await realStorage.recordSummary({ eventId: eid, ts: i, model: 'm', promptHash: 'p', text: 't', tokensIn: null, tokensOut: null, confidence: 0.9 });
+    }
+    const h = buildHandler({ storage: realStorage, wal: realWal, cwd: '/x' });
+    const r = await h({ kind: 'auto_pin_patterns', minRepeats: 3 }) as { ok: true; data: { pinned: number; patternsConsidered: number } };
+    expect(r.data.pinned).toBe(3);
+    expect(r.data.patternsConsidered).toBe(1);
+  });
+
   it('context_budget RPC fills under the token cap and stops past it', async () => {
     for (let i = 0; i < 5; i++) {
       const eid = await realStorage.recordEvent({ ts: i, sessionId: 's', tool: 'Edit', payload: { i } });

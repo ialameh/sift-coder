@@ -278,6 +278,27 @@ export const TOOLS = [
       required: [],
     },
   },
+  {
+    name: 'mem_session_digest',
+    description: 'Concat a session\'s summaries into a single text digest with `[tool] (confidence%) summary` lines in chronological order. Use to feed long-running conversation context back into a model.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        session_id: { type: 'string' },
+        limit: { type: 'number', default: 50 },
+      },
+      required: ['session_id'],
+    },
+  },
+  {
+    name: 'mem_auto_pin_patterns',
+    description: 'One-shot curation: pin every summary whose source event sits in a recurring input_hash bucket (>= min_repeats occurrences). Idempotent — already-pinned summaries are unchanged.',
+    inputSchema: {
+      type: 'object',
+      properties: { min_repeats: { type: 'number', default: 3 } },
+      required: [],
+    },
+  },
 ];
 
 export interface DrainResult {
@@ -615,6 +636,21 @@ export async function dispatch(req: JsonRpcRequest, deps: HandlerDeps): Promise<
             kind: 'patterns',
             minRepeats: args['min_repeats'] !== undefined ? Number(args['min_repeats']) : undefined,
             limit: args['limit'] !== undefined ? Number(args['limit']) : undefined,
+          });
+          return ok(req.id, res);
+        }
+        case 'mem_session_digest': {
+          const res = await deps.client.send({
+            kind: 'session_digest',
+            sessionId: String(args['session_id'] ?? ''),
+            limit: args['limit'] !== undefined ? Number(args['limit']) : undefined,
+          });
+          return ok(req.id, res);
+        }
+        case 'mem_auto_pin_patterns': {
+          const res = await deps.client.send({
+            kind: 'auto_pin_patterns',
+            minRepeats: args['min_repeats'] !== undefined ? Number(args['min_repeats']) : undefined,
           });
           return ok(req.id, res);
         }
