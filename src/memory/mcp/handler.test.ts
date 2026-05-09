@@ -106,13 +106,22 @@ describe('dispatch', () => {
     expect(body.data.edges).toHaveLength(1);
   });
 
-  it('mem_why uses defaults when kind/id/depth are not given', async () => {
-    mem.scripted.push({ ok: true, data: { edges: [] } });
-    await dispatch(
+  it('mem_why missing required kind/id returns -32602 Invalid params', async () => {
+    const r = await dispatch(
       { jsonrpc: '2.0', id: 52, method: 'tools/call', params: { name: 'mem_why', arguments: {} } },
       { client: mem as unknown as MemoryClient }
     );
-    expect(mem.calls[0]).toMatchObject({ kind: 'why', nodeKind: '', nodeId: '', depth: 4 });
+    expect(r.error?.code).toBe(-32602);
+    expect(r.error?.message).toMatch(/missing required argument/);
+  });
+
+  it('mem_why with kind+id but no depth uses default depth=4', async () => {
+    mem.scripted.push({ ok: true, data: { edges: [] } });
+    await dispatch(
+      { jsonrpc: '2.0', id: 52, method: 'tools/call', params: { name: 'mem_why', arguments: { kind: 'summary', id: '1' } } },
+      { client: mem as unknown as MemoryClient }
+    );
+    expect(mem.calls[0]).toMatchObject({ kind: 'why', nodeKind: 'summary', nodeId: '1', depth: 4 });
   });
 
   it('mem_drain sends drain RPC to daemon', async () => {
@@ -128,15 +137,23 @@ describe('dispatch', () => {
     expect(body.data.processed).toBe(1);
   });
 
-  it('uses defaults when search args omit query/k and deps omit drainBatch', async () => {
-    mem.scripted.push({ ok: true, data: { counts: { raw: 0 } } }); // status probe
-    mem.scripted.push({ ok: true, data: { processed: 0, errors: 0, pending: 0 } }); // drain
-    mem.scripted.push({ ok: true, data: { hits: [] } }); // search
-    await dispatch(
+  it('mem_search missing required query returns -32602', async () => {
+    const r = await dispatch(
       { jsonrpc: '2.0', id: 100, method: 'tools/call', params: { name: 'mem_search', arguments: {} } },
       { client: mem as unknown as MemoryClient }
     );
-    expect(mem.calls.find(c => c.kind === 'search')).toMatchObject({ kind: 'search', query: '', k: 5 });
+    expect(r.error?.code).toBe(-32602);
+  });
+
+  it('mem_search with query but no k uses default k=5 and base drainBatch', async () => {
+    mem.scripted.push({ ok: true, data: { counts: { raw: 0 } } });
+    mem.scripted.push({ ok: true, data: { processed: 0, errors: 0, pending: 0 } });
+    mem.scripted.push({ ok: true, data: { hits: [] } });
+    await dispatch(
+      { jsonrpc: '2.0', id: 100, method: 'tools/call', params: { name: 'mem_search', arguments: { query: 'x' } } },
+      { client: mem as unknown as MemoryClient }
+    );
+    expect(mem.calls.find(c => c.kind === 'search')).toMatchObject({ kind: 'search', query: 'x', k: 5 });
   });
 
   it('mem_search ramps drain batch when backlog is high', async () => {
@@ -151,13 +168,12 @@ describe('dispatch', () => {
     expect(drainCall.batch).toBe(32);
   });
 
-  it('uses defaults when mem_get omits ids and mem_drain omits batch', async () => {
-    mem.scripted.push({ ok: true, data: { rows: [] } });
-    await dispatch(
+  it('mem_get missing required ids returns -32602; mem_drain (no required) uses defaults', async () => {
+    const errR = await dispatch(
       { jsonrpc: '2.0', id: 101, method: 'tools/call', params: { name: 'mem_get', arguments: {} } },
       { client: mem as unknown as MemoryClient }
     );
-    expect(mem.calls[0]).toMatchObject({ kind: 'get', ids: [] });
+    expect(errR.error?.code).toBe(-32602);
 
     mem.scripted.push({ ok: true, data: { processed: 0, errors: 0, pending: 0 } });
     const r = await dispatch(
@@ -165,7 +181,7 @@ describe('dispatch', () => {
       { client: mem as unknown as MemoryClient }
     );
     expect(r.error).toBeUndefined();
-    expect(mem.calls[1]).toMatchObject({ kind: 'drain', batch: 16 });
+    expect(mem.calls[0]).toMatchObject({ kind: 'drain', batch: 16 });
   });
 
   it('returns an error for unknown tools', async () => {
@@ -547,6 +563,23 @@ describe('ops MCP tools', () => {
     );
     const call = mem.calls.find(c => c.kind === 'stats') as { windowMs: number };
     expect(call.windowMs).toBe(60000);
+  });
+
+  it('mem_pin missing required summary_id returns -32602', async () => {
+    const r = await dispatch(
+      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'mem_pin', arguments: {} } },
+      { client: mem as unknown as MemoryClient },
+    );
+    expect(r.error?.code).toBe(-32602);
+    expect(r.error?.message).toMatch(/summary_id/);
+  });
+
+  it('mem_capture missing required session_id + payload returns -32602', async () => {
+    const r = await dispatch(
+      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'mem_capture', arguments: {} } },
+      { client: mem as unknown as MemoryClient },
+    );
+    expect(r.error?.code).toBe(-32602);
   });
 
   it('mem_thread forwards a thread RPC with the session id', async () => {
