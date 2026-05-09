@@ -9,6 +9,8 @@
  * stdio plumbing lives in server.ts; this file exposes a pure async dispatch function for unit tests.
  */
 import type { MemoryClient } from '../client.js';
+import type { SamplingTransport } from './sampling-client.js';
+import { createHash } from 'node:crypto';
 
 export interface JsonRpcRequest {
   jsonrpc: '2.0';
@@ -35,6 +37,12 @@ export interface HandlerDeps {
   drainBatch?: number;
   /** Called once on `initialize` so the MCP server can log host capability advertisement. */
   onInitialize?: (info: InitializeInfo) => void;
+  /**
+   * When the host advertises `sampling`, MCP-side drain orchestrates summarization via
+   * `sampling/createMessage` rather than asking the daemon to call an external API. The host
+   * pays for the LLM call under its own credentials, so the plugin needs no API key.
+   */
+  samplingTransport?: SamplingTransport | null;
 }
 
 export const TOOLS = [
@@ -110,6 +118,121 @@ export async function drain(client: MemoryClient, batch: number): Promise<DrainR
   }
 }
 
+const MCP_DRAIN_SYSTEM = `You compress tool-call observations into one-sentence durable memories for a coding assistant.
+Output JSON only: {"text": string, "confidence": number 0..1}.
+- text: <= 240 chars, concrete, contains the key fact (file path, function name, decision, error message).
+- confidence: how useful this will be to recall later. 0 = trivial/no signal, 1 = critical decision or unique knowledge.
+Skip fluff. No pronouns. No hedging.`;
+
+const MCP_DRAIN_PROMPT_HASH = createHash('sha256').update(MCP_DRAIN_SYSTEM).digest('hex');
+const MCP_DRAIN_MODEL = 'mcp-sampling';
+
+function parseSamplingOutput(raw: string): { text: string; confidence: number } {
+  const stripped = raw.replace(/^\s*```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
+  const start = stripped.indexOf('{');
+  const end = stripped.lastIndexOf('}');
+  if (start >= 0 && end > start) {
+    try {
+      const obj = JSON.parse(stripped.slice(start, end + 1)) as { text?: unknown; confidence?: unknown };
+      const text = typeof obj.text === 'string' ? obj.text : stripped;
+      const conf = typeof obj.confidence === 'number' ? Math.max(0, Math.min(1, obj.confidence)) : 0.5;
+      return { text, confidence: conf };
+    } catch { /* fall through */ }
+  }
+  return { text: stripped, confidence: 0.5 };
+}
+
+function isRetryableHostError(message: string): boolean {
+  const m = message.toLowerCase();
+  return /(rate.?limit|429|5\d\d|timeout|overloaded|temporarily|unavailable)/.test(m);
+}
+
+interface ClaimedEvent {
+  id: number;
+  inputHash: string;
+  payloadJson: string;
+}
+
+/**
+ * MCP-side drain: claim events from the daemon, summarize via host `sampling/createMessage`,
+ * write summaries back. Returns counts compatible with the daemon-side drain shape so callers
+ * (mem_search, mem_drain) can swap implementations without caring which path ran.
+ */
+export async function drainViaSampling(
+  client: MemoryClient,
+  transport: SamplingTransport,
+  batch: number,
+): Promise<DrainResult> {
+  let processed = 0;
+  let errors = 0;
+  let firstError: string | undefined;
+  const claim = await client.send<{ events: ClaimedEvent[] }>({ kind: 'claim_for_summary', batch });
+  if (!claim.ok || claim.data.events.length === 0) {
+    return { processed, errors, pending: 0, backend: 'mcp-sampling' };
+  }
+  for (const ev of claim.data.events) {
+    const cacheKey = createHash('sha256')
+      .update(MCP_DRAIN_MODEL).update('|')
+      .update(MCP_DRAIN_PROMPT_HASH).update('|')
+      .update(ev.inputHash)
+      .digest('hex');
+    let text: string;
+    let confidence: number;
+    let tokensIn: number | null = null;
+    let tokensOut: number | null = null;
+    try {
+      const cached = await client.send<{ cached: { text: string; tokensIn: number | null; tokensOut: number | null } | null }>({
+        kind: 'cache_get', cacheKey,
+      });
+      if (cached.ok && cached.data.cached) {
+        const parsed = parseSamplingOutput(cached.data.cached.text);
+        text = parsed.text;
+        confidence = parsed.confidence;
+        tokensIn = cached.data.cached.tokensIn;
+        tokensOut = cached.data.cached.tokensOut;
+      } else {
+        const res = await transport.requestSampling({
+          messages: [{ role: 'user', content: { type: 'text', text: ev.payloadJson } }],
+          systemPrompt: MCP_DRAIN_SYSTEM,
+          maxTokens: 512,
+          temperature: 0,
+        });
+        const raw = res.content?.text ?? '';
+        const parsed = parseSamplingOutput(raw);
+        text = parsed.text;
+        confidence = parsed.confidence;
+        await client.send({
+          kind: 'cache_put', cacheKey, text: raw, tokensIn: null, tokensOut: null,
+        });
+      }
+      await client.send({
+        kind: 'record_summary',
+        eventId: ev.id,
+        model: MCP_DRAIN_MODEL,
+        promptHash: MCP_DRAIN_PROMPT_HASH,
+        text,
+        confidence,
+        tokensIn,
+        tokensOut,
+      });
+      processed++;
+    } catch (e) {
+      const msg = (e as Error).message;
+      if (firstError === undefined) firstError = msg;
+      await client.send({
+        kind: 'release_summary',
+        eventId: ev.id,
+        error: msg,
+        terminal: !isRetryableHostError(msg),
+      });
+      errors++;
+    }
+  }
+  return firstError
+    ? { processed, errors, pending: 0, backend: 'mcp-sampling', firstError }
+    : { processed, errors, pending: 0, backend: 'mcp-sampling' };
+}
+
 export async function dispatch(req: JsonRpcRequest, deps: HandlerDeps): Promise<JsonRpcResponse> {
   if (req.method === 'initialize') {
     const params = (req.params ?? {}) as { capabilities?: Record<string, unknown>; clientInfo?: { name?: string; version?: string } };
@@ -136,7 +259,11 @@ export async function dispatch(req: JsonRpcRequest, deps: HandlerDeps): Promise<
     try {
       switch (name) {
         case 'mem_search': {
-          await drain(deps.client, deps.drainBatch ?? 4);
+          if (deps.samplingTransport) {
+            await drainViaSampling(deps.client, deps.samplingTransport, deps.drainBatch ?? 4);
+          } else {
+            await drain(deps.client, deps.drainBatch ?? 4);
+          }
           const res = await deps.client.send({
             kind: 'search',
             query: String(args['query'] ?? ''),
@@ -160,7 +287,10 @@ export async function dispatch(req: JsonRpcRequest, deps: HandlerDeps): Promise<
           return ok(req.id, res);
         }
         case 'mem_drain': {
-          const r = await drain(deps.client, Number(args['batch'] ?? 16));
+          const batch = Number(args['batch'] ?? 16);
+          const r = deps.samplingTransport
+            ? await drainViaSampling(deps.client, deps.samplingTransport, batch)
+            : await drain(deps.client, batch);
           return ok(req.id, { ok: true, data: r });
         }
         case 'mem_why': {

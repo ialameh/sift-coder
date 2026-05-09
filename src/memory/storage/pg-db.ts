@@ -52,7 +52,9 @@ interface PgStmt {
 
 // ─── Worker thread bootstrap ──────────────────────────────────────────────────
 
-const WORKER_MODULE = /* @__PURE__ */ join(dirname(fileURLToPath(import.meta.url)), 'pg-worker.cjs');
+// Worker file ships as `.mjs` (it uses ESM imports). The path was previously `.cjs`, which
+// resolved to a non-existent file and silently broke the Postgres backend at boot.
+const WORKER_MODULE = /* @__PURE__ */ join(dirname(fileURLToPath(import.meta.url)), 'pg-worker.mjs');
 
 interface WorkerRequest {
   id: number;

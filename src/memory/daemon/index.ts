@@ -11,7 +11,7 @@
  */
 /* istanbul ignore file */
 /* c8 ignore start */
-import { writeFileSync, unlinkSync, existsSync } from 'node:fs';
+import { writeFileSync, readFileSync, unlinkSync, existsSync } from 'node:fs';
 import { workspacePaths, ensureWorkspaceDirs } from '../workspace.js';
 import { Storage } from '../storage/storage.js';
 import { openStorage } from '../storage/open.js';
@@ -39,19 +39,44 @@ const IDLE_SHUTDOWN_MS = (() => {
   return Number.isFinite(n) && n > 0 ? n : 0;
 })();
 
+/**
+ * Returns true if the given pid is alive and reachable. `process.kill(pid, 0)` is the standard
+ * Unix idiom for liveness probing without delivering a signal.
+ */
+function isPidAlive(pid: number): boolean {
+  if (!Number.isFinite(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); return true; } catch { return false; }
+}
+
 async function main() {
   const cwd = process.env.SIFTCODER_WORKSPACE_CWD || process.cwd();
   const paths = workspacePaths(cwd);
   ensureWorkspaceDirs(paths);
 
+  // Pid-aliveness handshake. If a previous daemon for THIS workspace is still alive, refuse
+  // to start a second one rather than racing on the same SQLite file. If the pidfile names a
+  // dead process, clean it up and continue.
   if (existsSync(paths.pid)) {
+    try {
+      const prior = parseInt(readFileSync(paths.pid, 'utf8').trim(), 10);
+      if (isPidAlive(prior) && prior !== process.pid) {
+        process.stderr.write(`siftcoder-mem: daemon already running for this workspace (pid=${prior}); refusing to start a second instance\n`);
+        process.exit(0);
+      }
+    } catch { /* unreadable pidfile — fall through */ }
     try { unlinkSync(paths.pid); } catch { /* ignore */ }
   }
   writeFileSync(paths.pid, String(process.pid));
 
-  // Open storage backend: SQLite by default, PostgreSQL opt-in only
-  const { db, backend } = await openStorage({ dbPath: paths.db });
-  const storage = await Storage.init(db);
+  // Open storage backend: SQLite by default, PostgreSQL opt-in only. The resolver passes
+  // through any PG-specific DDL so Storage.init runs the right schema.
+  const opened = await openStorage({ dbPath: paths.db });
+  const { db, backend } = opened;
+  const storage = await Storage.init(db, {
+    coreDdl: opened.coreDdl,
+    vecDdl: opened.vecDdl,
+    migrations: opened.migrations,
+  });
 
   // Crash recovery: replay any WAL frames whose events were lost from SQLite.
   // Dedupe via (session_id, input_hash) so already-persisted frames are no-ops.
@@ -190,8 +215,42 @@ async function main() {
         }
       }, 60_000);
 
+  // Periodic counter snapshot — gives operational visibility without spamming the log on every
+  // capture. Default cadence 5 min; tunable via SIFTCODER_COUNTER_LOG_MS=0 to disable.
+  const counterCadenceMs = (() => {
+    const raw = process.env['SIFTCODER_COUNTER_LOG_MS'];
+    if (raw === undefined) return 5 * 60 * 1000;
+    const n = Number.parseInt(raw, 10);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  })();
+  const counterTimer = counterCadenceMs > 0
+    ? setInterval(async () => {
+        try {
+          const c = await storage.counts();
+          logger.info('counters', { ...c });
+        } catch (e) {
+          logger.warn('counters failed', { error: (e as Error).message });
+        }
+      }, counterCadenceMs)
+    : null;
+  counterTimer?.unref();
+
+  // Last-resort error capture — without these, a silent crash leaves no log entry and the
+  // operator is left wondering why the socket vanished. uncaughtException gets the stack flushed
+  // before the process exits; unhandledRejection is logged but not fatal.
+  process.on('uncaughtException', err => {
+    try { logger.error('uncaughtException', { error: err.message, stack: err.stack }); } catch { /* ignore */ }
+    process.stderr.write(`siftcoder-mem daemon uncaught: ${err.stack ?? err.message}\n`);
+    setTimeout(() => process.exit(1), 50).unref();
+  });
+  process.on('unhandledRejection', reason => {
+    const err = reason instanceof Error ? reason : new Error(String(reason));
+    try { logger.error('unhandledRejection', { error: err.message, stack: err.stack }); } catch { /* ignore */ }
+  });
+
   function shutdown() {
     consolidator.stop();
+    if (counterTimer) clearInterval(counterTimer);
     logger.info('daemon stopping');
     try { httpServer?.close(); } catch { /* ignore */ }
     try { server.close(); } catch { /* ignore */ }
@@ -199,6 +258,9 @@ async function main() {
     try { db.close(); } catch { /* ignore */ }
     try { unlinkSync(paths.pid); } catch { /* ignore */ }
     try { unlinkSync(paths.socket); } catch { /* ignore */ }
+    // Clear the http.port file too — `siftcoder web` reads it and would otherwise return a
+    // stale port that no daemon is listening on after shutdown.
+    try { unlinkSync(paths.root + '/http.port'); } catch { /* ignore */ }
     process.exit(0);
   }
 

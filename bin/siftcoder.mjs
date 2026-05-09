@@ -250,6 +250,43 @@ switch (cmd) {
     console.log(JSON.stringify(r, null, 2));
     break;
   }
+  case 'prune': {
+    // Optional --days N or --superseded flags. Default: drop skipped events older than 7 days.
+    let days = 7;
+    let superseded = false;
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--days') days = parseInt(args[++i] ?? '7', 10);
+      else if (args[i] === '--superseded') superseded = true;
+    }
+    const maxAgeMs = days * 24 * 60 * 60 * 1000;
+    try {
+      const r = await rpc({ kind: 'prune', maxAgeMs, superseded }, 60000);
+      console.log(JSON.stringify(r, null, 2));
+      break;
+    } catch (e) {
+      if (e.message && !e.message.includes('ENOENT') && !e.message.includes('ECONNREFUSED')) throw e;
+    }
+    const { storage } = await openStorage();
+    const r = await storage.prune({ maxAgeMs, superseded });
+    await storage.close();
+    console.log(JSON.stringify({ ok: true, data: r }, null, 2));
+    break;
+  }
+  case 'retry': {
+    const limit = args[0] ? parseInt(args[0], 10) : undefined;
+    try {
+      const r = await rpc({ kind: 'retry_skipped', limit }, 30000);
+      console.log(JSON.stringify(r, null, 2));
+      break;
+    } catch (e) {
+      if (e.message && !e.message.includes('ENOENT') && !e.message.includes('ECONNREFUSED')) throw e;
+    }
+    const { storage } = await openStorage();
+    const requeued = await storage.retrySkipped(limit);
+    await storage.close();
+    console.log(JSON.stringify({ ok: true, data: { requeued } }, null, 2));
+    break;
+  }
   case 'web': {
     const portFile = paths().httpPort;
     if (!fs.existsSync(portFile)) {
@@ -430,6 +467,8 @@ Usage:
   siftcoder status              daemon health + counts
   siftcoder drain [batch]       force-drain pending events
   siftcoder backfill            backfill memory from past transcripts
+  siftcoder prune [--days N] [--superseded]  drop skipped events older than N days; --superseded also drops dedup losers
+  siftcoder retry [N]           re-queue skipped events for another drain pass (optionally first N)
   siftcoder web                 print web UI URL
 `);
 }

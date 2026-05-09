@@ -55,50 +55,30 @@ export interface AddEdgeInput {
   ts?: number;
 }
 
-interface DBHandleProvenance {
-  prepare(sql: string): Promise<{
-    run(...p: unknown[]): Promise<{ lastInsertRowid: number | bigint }>;
-    get(...p: unknown[]): Promise<unknown>;
-    all(...p: unknown[]): Promise<unknown[]>;
-  }>;
-}
-
 export class ProvenanceStore {
   constructor(private readonly storage: Storage) {}
 
-  private get db(): DBHandleProvenance {
-    return (this.storage as unknown as { ['db']: DBHandleProvenance })['db'];
-  }
-
   async addEdge(input: AddEdgeInput): Promise<number> {
-    const ts = input.ts ?? Date.now();
-    const conf = input.confidence ?? 1.0;
-    const source = input.source ?? 'siftcoder';
-    const meta = input.meta ? JSON.stringify(input.meta) : null;
-    const result = await (await this.db.prepare(
-      `INSERT INTO provenance_edges (ts, from_kind, from_id, to_kind, to_id, edge_type, confidence, source, meta_json)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    )).run(ts, input.from.kind, input.from.id, input.to.kind, input.to.id, input.edgeType, conf, source, meta);
-    return Number(result.lastInsertRowid);
+    return this.storage.addProvenanceEdge({
+      ts: input.ts ?? Date.now(),
+      fromKind: input.from.kind,
+      fromId: input.from.id,
+      toKind: input.to.kind,
+      toId: input.to.id,
+      edgeType: input.edgeType,
+      confidence: input.confidence ?? 1.0,
+      source: input.source ?? 'siftcoder',
+      metaJson: input.meta ? JSON.stringify(input.meta) : null,
+    });
   }
 
   async outgoing(node: NodeRef, edgeType?: EdgeType): Promise<Edge[]> {
-    const sql = edgeType
-      ? `SELECT * FROM provenance_edges WHERE from_kind = ? AND from_id = ? AND edge_type = ? ORDER BY ts DESC`
-      : `SELECT * FROM provenance_edges WHERE from_kind = ? AND from_id = ? ORDER BY ts DESC`;
-    const rows = edgeType
-      ? await (await this.db.prepare(sql)).all(node.kind, node.id, edgeType) as Array<Record<string, unknown>>
-      : await (await this.db.prepare(sql)).all(node.kind, node.id) as Array<Record<string, unknown>>;
+    const rows = await this.storage.outgoingProvenance(node.kind, node.id, edgeType);
     return rows.map(rowToEdge);
   }
 
   async incoming(node: NodeRef, edgeType?: EdgeType): Promise<Edge[]> {
-    const sql = edgeType
-      ? `SELECT * FROM provenance_edges WHERE to_kind = ? AND to_id = ? AND edge_type = ? ORDER BY ts DESC`
-      : `SELECT * FROM provenance_edges WHERE to_kind = ? AND to_id = ? ORDER BY ts DESC`;
-    const rows = edgeType
-      ? await (await this.db.prepare(sql)).all(node.kind, node.id, edgeType) as Array<Record<string, unknown>>
-      : await (await this.db.prepare(sql)).all(node.kind, node.id) as Array<Record<string, unknown>>;
+    const rows = await this.storage.incomingProvenance(node.kind, node.id, edgeType);
     return rows.map(rowToEdge);
   }
 

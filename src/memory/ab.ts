@@ -102,37 +102,12 @@ export class AbHarness {
   }
 }
 
-interface DBQuery {
-  prepare(sql: string): Promise<{ all(...p: unknown[]): Promise<unknown[]> }>;
-}
-
-interface RecentEventRow {
-  id: number;
-  ts: number;
-  session_id: string;
-  tool: string;
-  input_hash: string;
-  payload_json: string;
-  status: string;
-  tokens_est: number;
-}
-
 async function readRecentEvents(storage: Storage, limit: number): Promise<EventRow[]> {
-  const db = (storage as unknown as { ['db']: DBQuery })['db'];
-  const rows = await (await db.prepare(
-    `SELECT id, ts, session_id, tool, input_hash, payload_json, status, tokens_est
-     FROM events ORDER BY id DESC LIMIT ?`
-  )).all(limit) as RecentEventRow[];
+  const rows = await storage.recentEvents(limit);
   return rows
     .map(r => ({
-      id: r.id,
-      ts: r.ts,
-      sessionId: r.session_id,
-      tool: r.tool,
-      inputHash: r.input_hash,
-      payloadJson: r.payload_json,
-      status: r.status,
-      tokensEst: r.tokens_est > 0 ? r.tokens_est : approximate(r.payload_json),
+      ...r,
+      tokensEst: r.tokensEst > 0 ? r.tokensEst : approximate(r.payloadJson),
     }))
     .reverse();
 }

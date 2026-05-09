@@ -486,4 +486,210 @@ export class Storage {
       'INSERT OR REPLACE INTO summary_cache (cache_key, text, tokens_in, tokens_out, created_at) VALUES (?, ?, ?, ?, ?)'
     )).run(cacheKey, text, tokensIn, tokensOut, ts);
   }
+
+  /**
+   * Drop skipped events older than `maxAgeMs`. Returns the number of rows removed. Cascades to
+   * any summaries / embeddings that referenced those events via FOREIGN KEY ON DELETE CASCADE.
+   * Optionally also drops summaries that were marked superseded by the consolidator.
+   */
+  async prune(opts: { maxAgeMs?: number; superseded?: boolean } = {}): Promise<{ removedEvents: number; removedSummaries: number }> {
+    const cutoff = Date.now() - (opts.maxAgeMs ?? 7 * 24 * 60 * 60 * 1000);
+    const beforeEv = await this.countByStatus('skipped');
+    await (await this.db.prepare(
+      "DELETE FROM events WHERE status = 'skipped' AND ts < ?"
+    )).run(cutoff);
+    const afterEv = await this.countByStatus('skipped');
+    const removedEvents = Math.max(0, beforeEv - afterEv);
+
+    let removedSummaries = 0;
+    if (opts.superseded) {
+      const beforeSum = await this.countAll('summaries');
+      await (await this.db.prepare(
+        'DELETE FROM summaries WHERE id IN (SELECT older_id FROM summary_supersedes)'
+      )).run();
+      const afterSum = await this.countAll('summaries');
+      removedSummaries = Math.max(0, beforeSum - afterSum);
+    }
+    return { removedEvents, removedSummaries };
+  }
+
+  /**
+   * Re-queue skipped events as `raw` so a healthier backend can take another pass. Resets
+   * the `attempts` counter. Returns the number of rows re-queued.
+   */
+  async retrySkipped(limit?: number): Promise<number> {
+    const before = await this.countByStatus('skipped');
+    if (limit !== undefined) {
+      await (await this.db.prepare(
+        "UPDATE events SET status = 'raw', attempts = 0, last_error = NULL WHERE id IN (SELECT id FROM events WHERE status = 'skipped' ORDER BY id ASC LIMIT ?)"
+      )).run(limit);
+    } else {
+      await (await this.db.prepare(
+        "UPDATE events SET status = 'raw', attempts = 0, last_error = NULL WHERE status = 'skipped'"
+      )).run();
+    }
+    const after = await this.countByStatus('skipped');
+    return Math.max(0, before - after);
+  }
+
+  /**
+   * Claim a single specific event for summarization. Used by the MCP-side drain loop where
+   * the MCP server iterates events one at a time around `sampling/createMessage`. Returns
+   * `null` if the event was already processed by another claimer.
+   */
+  async claimEvent(id: number): Promise<EventRow | null> {
+    return this.withWriteLock(async () => {
+      await this.db.exec('BEGIN IMMEDIATE');
+      try {
+        const row = await (await this.db.prepare(
+          "SELECT id, ts, session_id, tool, input_hash, payload_json, status, tokens_est FROM events WHERE id = ? AND status = 'raw'"
+        )).get(id) as Record<string, unknown> | undefined;
+        if (!row) {
+          await this.db.exec('COMMIT');
+          return null;
+        }
+        await (await this.db.prepare("UPDATE events SET status = 'claimed' WHERE id = ?")).run(id);
+        await this.db.exec('COMMIT');
+        return {
+          id: row['id'] as number,
+          ts: row['ts'] as number,
+          sessionId: row['session_id'] as string,
+          tool: row['tool'] as string,
+          inputHash: row['input_hash'] as string,
+          payloadJson: row['payload_json'] as string,
+          status: 'claimed',
+          tokensEst: (row['tokens_est'] as number | undefined) ?? 0,
+        };
+      } catch (e) {
+        try { await this.db.exec('ROLLBACK'); } catch { /* ignore */ }
+        throw e;
+      }
+    });
+  }
+
+  // ─── Typed read APIs (replace the legacy `(storage as unknown as {db}).db` hacks) ───────
+
+  async recentEvents(limit: number): Promise<EventRow[]> {
+    const rows = await (await this.db.prepare(
+      `SELECT id, ts, session_id, tool, input_hash, payload_json, status, tokens_est
+       FROM events ORDER BY id DESC LIMIT ?`
+    )).all(limit) as Record<string, unknown>[];
+    return rows.map(r => ({
+      id: r['id'] as number,
+      ts: r['ts'] as number,
+      sessionId: r['session_id'] as string,
+      tool: r['tool'] as string,
+      inputHash: r['input_hash'] as string,
+      payloadJson: r['payload_json'] as string,
+      status: r['status'] as string,
+      tokensEst: (r['tokens_est'] as number | undefined) ?? 0,
+    }));
+  }
+
+  async eventTail(limit: number): Promise<Array<{ id: number; ts: number; tool: string; status: string; sessionId: string }>> {
+    const rows = await (await this.db.prepare(
+      'SELECT id, ts, tool, status, session_id FROM events ORDER BY id DESC LIMIT ?'
+    )).all(limit) as Array<{ id: number; ts: number; tool: string; status: string; session_id: string }>;
+    return rows.map(r => ({ id: r.id, ts: r.ts, tool: r.tool, status: r.status, sessionId: r.session_id }));
+  }
+
+  async summaryTail(limit: number): Promise<Array<{ id: number; ts: number; model: string; text: string; confidence: number | null }>> {
+    return await (await this.db.prepare(
+      'SELECT id, ts, model, substr(text, 1, 240) AS text, confidence FROM summaries ORDER BY id DESC LIMIT ?'
+    )).all(limit) as Array<{ id: number; ts: number; model: string; text: string; confidence: number | null }>;
+  }
+
+  async countByStatus(status: string): Promise<number> {
+    const row = await (await this.db.prepare(
+      'SELECT count(*) AS c FROM events WHERE status = ?'
+    )).get(status) as { c?: number } | undefined;
+    return row?.c ?? 0;
+  }
+
+  async sumNumber(sql: string): Promise<number> {
+    const row = await (await this.db.prepare(sql)).get() as { n?: number | null } | undefined;
+    return row?.n ?? 0;
+  }
+
+  async countAll(table: 'events' | 'summaries' | 'summary_cache' | 'summary_embeddings'): Promise<number> {
+    const row = await (await this.db.prepare(`SELECT count(*) AS c FROM ${table}`)).get() as { c?: number } | undefined;
+    return row?.c ?? 0;
+  }
+
+  async perToolCounts(): Promise<Record<string, number>> {
+    const rows = await (await this.db.prepare(
+      'SELECT tool, count(*) AS c FROM events GROUP BY tool ORDER BY c DESC'
+    )).all() as Array<{ tool: string; c: number }>;
+    const out: Record<string, number> = {};
+    for (const r of rows) out[r.tool] = r.c;
+    return out;
+  }
+
+  async countRedacted(): Promise<number> {
+    const row = await (await this.db.prepare(
+      "SELECT count(*) AS c FROM events WHERE payload_json LIKE '%REDACTED:%'"
+    )).get() as { c?: number } | undefined;
+    return row?.c ?? 0;
+  }
+
+  async countSharedInputHashes(): Promise<number> {
+    const row = await (await this.db.prepare(
+      `SELECT COUNT(*) AS c FROM (
+         SELECT e.input_hash FROM events e
+         JOIN summaries s ON s.event_id = e.id
+         GROUP BY e.input_hash
+         HAVING COUNT(*) > 1
+       )`
+    )).get() as { c?: number } | undefined;
+    return row?.c ?? 0;
+  }
+
+  async countSupersededDistinct(): Promise<number> {
+    const row = await (await this.db.prepare(
+      'SELECT count(DISTINCT older_id) AS c FROM summary_supersedes'
+    )).get() as { c?: number } | undefined;
+    return row?.c ?? 0;
+  }
+
+  async sumSummaryTextChars(): Promise<number> {
+    const row = await (await this.db.prepare(
+      'SELECT sum(length(text) / 4) AS n FROM summaries'
+    )).get() as { n?: number | null } | undefined;
+    return row?.n ?? 0;
+  }
+
+  // ─── Provenance graph (typed wrappers around provenance_edges) ─────────────────────────
+
+  async addProvenanceEdge(input: {
+    ts: number; fromKind: string; fromId: string; toKind: string; toId: string;
+    edgeType: string; confidence: number; source: string; metaJson: string | null;
+  }): Promise<number> {
+    const result = await (await this.db.prepare(
+      `INSERT INTO provenance_edges (ts, from_kind, from_id, to_kind, to_id, edge_type, confidence, source, meta_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )).run(input.ts, input.fromKind, input.fromId, input.toKind, input.toId, input.edgeType, input.confidence, input.source, input.metaJson);
+    return Number(result.lastInsertRowid);
+  }
+
+  async outgoingProvenance(fromKind: string, fromId: string, edgeType?: string): Promise<Array<Record<string, unknown>>> {
+    if (edgeType) {
+      return await (await this.db.prepare(
+        `SELECT * FROM provenance_edges WHERE from_kind = ? AND from_id = ? AND edge_type = ? ORDER BY ts DESC`
+      )).all(fromKind, fromId, edgeType) as Array<Record<string, unknown>>;
+    }
+    return await (await this.db.prepare(
+      `SELECT * FROM provenance_edges WHERE from_kind = ? AND from_id = ? ORDER BY ts DESC`
+    )).all(fromKind, fromId) as Array<Record<string, unknown>>;
+  }
+
+  async incomingProvenance(toKind: string, toId: string, edgeType?: string): Promise<Array<Record<string, unknown>>> {
+    if (edgeType) {
+      return await (await this.db.prepare(
+        `SELECT * FROM provenance_edges WHERE to_kind = ? AND to_id = ? AND edge_type = ? ORDER BY ts DESC`
+      )).all(toKind, toId, edgeType) as Array<Record<string, unknown>>;
+    }
+    return await (await this.db.prepare(
+      `SELECT * FROM provenance_edges WHERE to_kind = ? AND to_id = ? ORDER BY ts DESC`
+    )).all(toKind, toId) as Array<Record<string, unknown>>;
+  }
 }

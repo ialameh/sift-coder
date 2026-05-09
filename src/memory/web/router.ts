@@ -94,25 +94,16 @@ function parseBody<T>(raw: string): T | null {
   try { return JSON.parse(raw) as T; } catch { return null; }
 }
 
-interface CountRow { c: number }
-
-async function countRows(storage: Storage, sql: string): Promise<number> {
-  const row = await (await (storage as unknown as { db: { prepare(sql: string): Promise<{ get(): Promise<CountRow | undefined> }> } }).db.prepare(sql)).get();
-  /* c8 ignore next -- count(*) always returns a row; ?? 0 is a defensive type guard */
-  return row?.c ?? 0;
-}
-
 interface EventTailRow { id: number; ts: number; tool: string; status: string; session_id: string }
 interface SummaryTailRow { id: number; ts: number; model: string; text: string; confidence: number | null }
 
 async function eventTail(storage: Storage, limit: number): Promise<EventTailRow[]> {
-  const db = (storage as unknown as { db: { prepare(sql: string): Promise<{ all(...p: unknown[]): Promise<unknown[]> }> } }).db;
-  return await (await db.prepare('SELECT id, ts, tool, status, session_id FROM events ORDER BY id DESC LIMIT ?')).all(limit) as EventTailRow[];
+  const rows = await storage.eventTail(limit);
+  return rows.map(r => ({ id: r.id, ts: r.ts, tool: r.tool, status: r.status, session_id: r.sessionId }));
 }
 
 async function summaryTail(storage: Storage, limit: number): Promise<SummaryTailRow[]> {
-  const db = (storage as unknown as { db: { prepare(sql: string): Promise<{ all(...p: unknown[]): Promise<unknown[]> }> } }).db;
-  return await (await db.prepare('SELECT id, ts, model, substr(text, 1, 240) AS text, confidence FROM summaries ORDER BY id DESC LIMIT ?')).all(limit) as SummaryTailRow[];
+  return await storage.summaryTail(limit) as SummaryTailRow[];
 }
 
 export async function route(req: WebRequest, deps: WebDeps): Promise<WebResponse> {
@@ -159,10 +150,10 @@ export async function route(req: WebRequest, deps: WebDeps): Promise<WebResponse
       data: {
         backend: deps.backend,
         workspace: deps.workspaceKey,
-        events: await countRows(deps.storage, 'SELECT count(*) AS c FROM events'),
-        summaries: await countRows(deps.storage, 'SELECT count(*) AS c FROM summaries'),
-        embeddings: await countRows(deps.storage, 'SELECT count(*) AS c FROM summary_embeddings'),
-        superseded: await countRows(deps.storage, 'SELECT count(DISTINCT older_id) AS c FROM summary_supersedes'),
+        events: await deps.storage.countAll('events'),
+        summaries: await deps.storage.countAll('summaries'),
+        embeddings: await deps.storage.countAll('summary_embeddings'),
+        superseded: await deps.storage.countSupersededDistinct(),
       },
     });
   }

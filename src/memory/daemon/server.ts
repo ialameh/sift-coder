@@ -209,6 +209,87 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
           return { ok: true, data: r };
         }
 
+        case 'claim_for_summary': {
+          const events = await deps.storage.claimPending(req.batch ?? 1);
+          return {
+            ok: true,
+            data: {
+              events: events.map(e => ({
+                id: e.id,
+                ts: e.ts,
+                sessionId: e.sessionId,
+                tool: e.tool,
+                inputHash: e.inputHash,
+                payloadJson: e.payloadJson,
+                tokensEst: e.tokensEst,
+              })),
+            },
+          };
+        }
+
+        case 'record_summary': {
+          const id = await deps.storage.recordSummary({
+            eventId: req.eventId,
+            ts: req.ts ?? Date.now(),
+            model: req.model,
+            promptHash: req.promptHash,
+            text: req.text,
+            tokensIn: req.tokensIn,
+            tokensOut: req.tokensOut,
+            confidence: req.confidence,
+          });
+          if (req.embedding && id > 0 && deps.embedder) {
+            const arr = new Float32Array(req.embedding);
+            if (arr.length === deps.embedder.dim) {
+              await deps.storage.putEmbedding(id, arr);
+            }
+          } else if (id > 0 && deps.embedder) {
+            // Compute server-side if MCP didn't provide one.
+            const v = await deps.embedder.embed(req.text);
+            await deps.storage.putEmbedding(id, v);
+          }
+          await deps.storage.markEventStatus(req.eventId, 'summarized');
+          return { ok: true, data: { id } };
+        }
+
+        case 'release_summary': {
+          if (req.terminal) {
+            await deps.storage.markEventStatus(req.eventId, 'skipped');
+            return { ok: true, data: { status: 'skipped' } };
+          }
+          const status = await deps.storage.releaseClaimed(req.eventId, req.error);
+          return { ok: true, data: { status } };
+        }
+
+        case 'cache_get': {
+          const cached = await deps.storage.getCachedSummary(req.cacheKey);
+          return { ok: true, data: { cached } };
+        }
+
+        case 'cache_put': {
+          await deps.storage.putCachedSummary(
+            req.cacheKey,
+            req.text,
+            req.tokensIn,
+            req.tokensOut,
+            req.ts ?? Date.now(),
+          );
+          return { ok: true, data: { ok: true } };
+        }
+
+        case 'prune': {
+          const r = await deps.storage.prune({
+            maxAgeMs: req.maxAgeMs,
+            superseded: req.superseded,
+          });
+          return { ok: true, data: r };
+        }
+
+        case 'retry_skipped': {
+          const requeued = await deps.storage.retrySkipped(req.limit);
+          return { ok: true, data: { requeued } };
+        }
+
         case 'summaries': {
           const limit = req.limit ?? 20;
           const rows = await deps.storage.recentSummaries(limit);
