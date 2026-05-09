@@ -5,7 +5,7 @@
  *
  * Writes to a path (filesystem-backed) or to a provided WritableStream-like target (stdout for daemons).
  */
-import { openSync, writeSync, fsyncSync, closeSync } from 'node:fs';
+import { openSync, writeSync, fsyncSync, closeSync, statSync, renameSync, existsSync, unlinkSync } from 'node:fs';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
@@ -22,13 +22,37 @@ export interface LogSink {
   close?(): void;
 }
 
+export interface FileSinkOptions {
+  fsync?: boolean;
+  /** Rotate when the file exceeds this many bytes. 0 disables rotation. Default 10 MiB. */
+  maxBytes?: number;
+  /** How many rotated generations to keep (`<path>.1` … `<path>.N`). Default 3. */
+  keepGenerations?: number;
+  /** Bytes-written sample rate. Stat-on-every-write would dominate, so check every N writes
+   *  (and at boot). Default 64. */
+  checkEveryWrites?: number;
+}
+
 export class FileSink implements LogSink {
   private fd: number | null;
   private readonly fsync: boolean;
+  private readonly path: string;
+  private readonly maxBytes: number;
+  private readonly keepGenerations: number;
+  private readonly checkEvery: number;
+  private writesSinceCheck = 0;
 
-  constructor(path: string, fsync = false) {
+  constructor(path: string, optsOrFsync: FileSinkOptions | boolean = {}) {
+    const opts: FileSinkOptions = typeof optsOrFsync === 'boolean' ? { fsync: optsOrFsync } : optsOrFsync;
+    this.path = path;
     this.fd = openSync(path, 'a');
-    this.fsync = fsync;
+    this.fsync = opts.fsync ?? false;
+    this.maxBytes = opts.maxBytes ?? 10 * 1024 * 1024;
+    this.keepGenerations = opts.keepGenerations ?? 3;
+    this.checkEvery = Math.max(1, opts.checkEveryWrites ?? 64);
+    // Rotate immediately at boot if the existing file already exceeds maxBytes (recover from
+    // a daemon restart on top of a huge log).
+    this.maybeRotate();
   }
 
   write(line: string): void {
@@ -36,12 +60,42 @@ export class FileSink implements LogSink {
     writeSync(this.fd, line);
     /* c8 ignore next -- fsync is opt-in; covered separately if enabled */
     if (this.fsync) fsyncSync(this.fd);
+    this.writesSinceCheck++;
+    if (this.writesSinceCheck >= this.checkEvery) {
+      this.writesSinceCheck = 0;
+      this.maybeRotate();
+    }
   }
 
   close(): void {
     if (this.fd === null) return;
     closeSync(this.fd);
     this.fd = null;
+  }
+
+  /**
+   * If the active file exceeds `maxBytes`, shift `<path>.N-1 → <path>.N`, current → `<path>.1`,
+   * drop the oldest, and reopen a fresh empty file. No-op when `maxBytes` is 0.
+   */
+  private maybeRotate(): void {
+    if (this.maxBytes <= 0 || this.fd === null) return;
+    let size: number;
+    try { size = statSync(this.path).size; } catch { return; }
+    if (size < this.maxBytes) return;
+    closeSync(this.fd);
+    this.fd = null;
+    // Drop the oldest generation, then shift each one up by one slot.
+    for (let i = this.keepGenerations; i >= 1; i--) {
+      const target = `${this.path}.${i}`;
+      const source = i === 1 ? this.path : `${this.path}.${i - 1}`;
+      try {
+        if (i === this.keepGenerations) {
+          if (existsSync(target)) unlinkSync(target);
+        }
+        if (existsSync(source)) renameSync(source, target);
+      } catch { /* best-effort; skip on rename failure */ }
+    }
+    this.fd = openSync(this.path, 'a');
   }
 }
 
