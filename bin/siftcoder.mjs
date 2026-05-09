@@ -547,6 +547,92 @@ switch (cmd) {
     console.log(JSON.stringify({ ok: true, data: { patterns: r } }, null, 2));
     break;
   }
+  case 'session-digest': case 'digest': {
+    const sessionId = args.find(a => !a.startsWith('--'));
+    if (!sessionId) { console.error('usage: siftcoder session-digest <session-id> [--limit N]'); process.exit(1); }
+    const lIdx = args.indexOf('--limit');
+    const limit = lIdx >= 0 ? parseInt(args[lIdx + 1] ?? '50', 10) : 50;
+    try {
+      const r = await rpc({ kind: 'session_digest', sessionId, limit }, 30000);
+      if (r.ok && !args.includes('--json')) {
+        const d = r.data;
+        console.log(`session ${d.sessionId}  summaries=${d.summaryCount}/${d.eventCount} events  ${d.firstTs ?? '?'} → ${d.lastTs ?? '?'}\n`);
+        console.log(d.text);
+      } else {
+        console.log(JSON.stringify(r, null, 2));
+      }
+      break;
+    } catch (e) {
+      if (e.message && !e.message.includes('ENOENT') && !e.message.includes('ECONNREFUSED')) throw e;
+    }
+    const { storage } = await openStorage();
+    const r = await storage.sessionDigest(sessionId, limit);
+    await storage.close();
+    console.log(JSON.stringify({ ok: true, data: r }, null, 2));
+    break;
+  }
+  case 'auto-pin-patterns': {
+    const minIdx = args.indexOf('--min');
+    const min = minIdx >= 0 ? parseInt(args[minIdx + 1] ?? '3', 10) : 3;
+    try {
+      const r = await rpc({ kind: 'auto_pin_patterns', minRepeats: min }, 30000);
+      console.log(JSON.stringify(r, null, 2));
+      break;
+    } catch (e) {
+      if (e.message && !e.message.includes('ENOENT') && !e.message.includes('ECONNREFUSED')) throw e;
+    }
+    const { storage } = await openStorage();
+    const r = await storage.autoPinPatterns(min);
+    await storage.close();
+    console.log(JSON.stringify({ ok: true, data: r }, null, 2));
+    break;
+  }
+  case 'hooks': {
+    // Bootstrap a settings.json snippet that hooks PostToolUse → mem_capture for each tool.
+    // Writes to .claude/settings.local.json under the current cwd.
+    const sub = args[0];
+    if (sub !== 'install' && sub !== 'show') {
+      console.error('usage: siftcoder hooks <install|show>');
+      process.exit(1);
+    }
+    const sessionEnv = '${CLAUDE_SESSION_ID:-cli}';
+    const captureCmd = `node ${path.join(ROOT, 'bin', 'siftcoder.mjs')} capture --session "${sessionEnv}" --tool "$CLAUDE_TOOL" --payload-stdin || true`;
+    const snippet = {
+      hooks: {
+        PostToolUse: [{
+          matcher: 'Write|Edit|Bash|Read|Grep|Glob',
+          hooks: [{
+            type: 'command',
+            command: `jq -c '{ tool_input, tool_response }' | ${captureCmd}`,
+          }],
+        }],
+      },
+    };
+    if (sub === 'show') {
+      console.log(JSON.stringify(snippet, null, 2));
+      break;
+    }
+    // install: merge into .claude/settings.local.json under cwd
+    const settingsPath = path.join(process.cwd(), '.claude', 'settings.local.json');
+    fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+    let existing = {};
+    if (fs.existsSync(settingsPath)) {
+      try { existing = JSON.parse(fs.readFileSync(settingsPath, 'utf8')); } catch { existing = {}; }
+    }
+    existing.hooks = existing.hooks ?? {};
+    existing.hooks.PostToolUse = existing.hooks.PostToolUse ?? [];
+    // Skip if already installed (matcher + command match)
+    const already = existing.hooks.PostToolUse.some(h =>
+      h.matcher === snippet.hooks.PostToolUse[0].matcher &&
+      h.hooks?.some(x => x.command === snippet.hooks.PostToolUse[0].hooks[0].command)
+    );
+    if (!already) {
+      existing.hooks.PostToolUse.push(snippet.hooks.PostToolUse[0]);
+    }
+    fs.writeFileSync(settingsPath, JSON.stringify(existing, null, 2));
+    console.log(JSON.stringify({ ok: true, file: settingsPath, alreadyInstalled: already }, null, 2));
+    break;
+  }
   case 'context-budget': case 'ctx': {
     const tokIdx = args.indexOf('--max-tokens');
     const maxTokens = tokIdx >= 0 ? parseInt(args[tokIdx + 1] ?? '4000', 10) : 4000;
@@ -817,6 +903,9 @@ Usage:
   siftcoder context-budget <query> [--max-tokens N]  greedy fill: top-ranked summaries under a token cap
   siftcoder compact [--cache-days N]  storage hygiene: VACUUM + cache prune + FTS rebuild
   siftcoder patterns [--min N]  recurring input_hash buckets across sessions
+  siftcoder session-digest <id> [--limit N]  concat session summaries into one text digest
+  siftcoder auto-pin-patterns [--min N]  pin every summary belonging to a recurring pattern
+  siftcoder hooks <install|show>  manage PostToolUse capture hook in .claude/settings.local.json
   siftcoder auth-token [--rotate]  print (or rotate) the web UI bearer token
   siftcoder web                 print web UI URL
 `);

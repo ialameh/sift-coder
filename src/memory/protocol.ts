@@ -36,7 +36,9 @@ export type RequestKind =
   | 'replay'
   | 'context_budget'
   | 'compact'
-  | 'patterns';
+  | 'patterns'
+  | 'session_digest'
+  | 'auto_pin_patterns';
 
 export interface CaptureRequest {
   kind: 'capture';
@@ -338,7 +340,30 @@ export type Request =
   | ReplayRequest
   | ContextBudgetRequest
   | CompactRequest
-  | PatternsRequest;
+  | PatternsRequest
+  | SessionDigestRequest
+  | AutoPinPatternsRequest;
+
+/**
+ * Build a single concat-text view of a session's summaries — a "digest" suitable to feed back
+ * into a model as long-term context for that conversation.
+ */
+export interface SessionDigestRequest {
+  kind: 'session_digest';
+  sessionId: string;
+  /** Cap on how many summaries to include (newest first). Default 50. */
+  limit?: number;
+}
+
+/**
+ * Auto-pin every summary whose originating event_id sits in a recurring `input_hash` bucket
+ * (i.e. shows up in `mem_patterns` at minRepeats+ occurrences). Useful one-shot curation
+ * pass: "lock in everything I do habitually."
+ */
+export interface AutoPinPatternsRequest {
+  kind: 'auto_pin_patterns';
+  minRepeats?: number;
+}
 
 export interface OkResponse<T = unknown> {
   ok: true;
