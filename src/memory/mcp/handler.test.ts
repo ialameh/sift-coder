@@ -386,6 +386,40 @@ describe('ops MCP tools', () => {
     expect(mem.calls.find(c => c.kind === 'doctor')).toBeTruthy();
   });
 
+  it('mem_federate_search forwards a federate_search RPC', async () => {
+    mem.scripted.push({ ok: true, data: { hits: [] } });
+    await dispatch(
+      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'mem_federate_search', arguments: { query: 'auth', k: 3, workspace_prefix: 'work', max_workspaces: 5 } } },
+      { client: mem as unknown as MemoryClient },
+    );
+    const call = mem.calls.find(c => c.kind === 'federate_search') as { query: string; k: number; workspacePrefix: string; maxWorkspaces: number };
+    expect(call.query).toBe('auth');
+    expect(call.k).toBe(3);
+    expect(call.workspacePrefix).toBe('work');
+    expect(call.maxWorkspaces).toBe(5);
+  });
+
+  it('mem_symbol_search forwards a symbol_search RPC', async () => {
+    mem.scripted.push({ ok: true, data: { hits: [] } });
+    await dispatch(
+      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'mem_symbol_search', arguments: { query: 'function:login', k: 7 } } },
+      { client: mem as unknown as MemoryClient },
+    );
+    const call = mem.calls.find(c => c.kind === 'symbol_search') as { query: string; k: number };
+    expect(call.query).toBe('function:login');
+    expect(call.k).toBe(7);
+  });
+
+  it('mem_stats forwards a stats RPC with windowMs', async () => {
+    mem.scripted.push({ ok: true, data: { counts: { events: 0 } } });
+    await dispatch(
+      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'mem_stats', arguments: { window_ms: 60000 } } },
+      { client: mem as unknown as MemoryClient },
+    );
+    const call = mem.calls.find(c => c.kind === 'stats') as { windowMs: number };
+    expect(call.windowMs).toBe(60000);
+  });
+
   it('mem_thread forwards a thread RPC with the session id', async () => {
     mem.scripted.push({ ok: true, data: { sessions: [] } });
     await dispatch(

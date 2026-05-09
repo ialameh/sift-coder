@@ -418,6 +418,77 @@ switch (cmd) {
     console.log(JSON.stringify({ ok: true, data: { inserted, skipped, errors } }, null, 2));
     break;
   }
+  case 'federate-search': case 'fsearch': {
+    const query = args.filter(a => !a.startsWith('--')).join(' ');
+    if (!query) { console.error('usage: siftcoder federate-search <query> [--k N] [--prefix X] [--max-ws N]'); process.exit(1); }
+    const kIdx = args.indexOf('--k');
+    const k = kIdx >= 0 ? parseInt(args[kIdx + 1] ?? '5', 10) : 5;
+    const pIdx = args.indexOf('--prefix');
+    const prefix = pIdx >= 0 ? args[pIdx + 1] : undefined;
+    const mIdx = args.indexOf('--max-ws');
+    const maxWs = mIdx >= 0 ? parseInt(args[mIdx + 1] ?? '0', 10) : undefined;
+    try {
+      const r = await rpc({ kind: 'federate_search', query, k, workspacePrefix: prefix, maxWorkspaces: maxWs }, 60000);
+      console.log(JSON.stringify(r, null, 2));
+      break;
+    } catch (e) {
+      if (e.message && !e.message.includes('ENOENT') && !e.message.includes('ECONNREFUSED')) throw e;
+    }
+    console.error('federate-search requires the daemon to be running');
+    process.exit(1);
+  }
+  case 'symbol-search': case 'sym': {
+    const query = args.filter(a => !a.startsWith('--')).join(' ');
+    if (!query) { console.error('usage: siftcoder symbol-search <kind:name | term> [--k N]'); process.exit(1); }
+    const kIdx = args.indexOf('--k');
+    const k = kIdx >= 0 ? parseInt(args[kIdx + 1] ?? '10', 10) : 10;
+    try {
+      const r = await rpc({ kind: 'symbol_search', query, k }, 30000);
+      if (r.ok && !args.includes('--json')) {
+        for (const h of r.data.hits ?? []) {
+          const text = h.text ? (h.text.length > 100 ? h.text.slice(0, 100) + '...' : h.text) : '(no summary yet)';
+          console.log(`#${h.eventId}  [${h.tool}]  ${h.symbols.join(', ')}  → ${text}`);
+        }
+      } else {
+        console.log(JSON.stringify(r, null, 2));
+      }
+      break;
+    } catch (e) {
+      if (e.message && !e.message.includes('ENOENT') && !e.message.includes('ECONNREFUSED')) throw e;
+    }
+    const { storage } = await openStorage();
+    const rows = await storage.symbolSearch(query, k);
+    await storage.close();
+    console.log(JSON.stringify({ ok: true, data: { hits: rows } }, null, 2));
+    break;
+  }
+  case 'stats': {
+    const w = args.includes('--day') ? 24 * 60 * 60 * 1000 : 60 * 60 * 1000;
+    try {
+      const r = await rpc({ kind: 'stats', windowMs: w }, 30000);
+      if (r.ok && !args.includes('--json')) {
+        const d = r.data;
+        const lines = [];
+        const c = d.counts;
+        lines.push(`counts      events=${c.events} raw=${c.raw} summarized=${c.summarized} skipped=${c.skipped} summaries=${c.summaries}`);
+        lines.push(`throughput  events/min=${d.throughput.eventsPerMin.toFixed(2)} summaries/min=${d.throughput.summariesPerMin.toFixed(2)} (window=${(d.throughput.windowMs/60000).toFixed(0)}m)`);
+        lines.push(`backlog     pending=${d.backlog.pending} eta=${d.backlog.etaSec ? d.backlog.etaSec + 's' : 'n/a (no drain throughput)'}`);
+        lines.push(`cache       hitRate=${(d.cacheHitRate * 100).toFixed(1)}%`);
+        lines.push(`top tools   ${d.topTools.slice(0,5).map(t => t.tool + '=' + t.count).join(', ')}`);
+        console.log(lines.join('\n'));
+      } else {
+        console.log(JSON.stringify(r, null, 2));
+      }
+      break;
+    } catch (e) {
+      if (e.message && !e.message.includes('ENOENT') && !e.message.includes('ECONNREFUSED')) throw e;
+    }
+    const { storage } = await openStorage();
+    const r = await storage.stats(w);
+    await storage.close();
+    console.log(JSON.stringify({ ok: true, data: r }, null, 2));
+    break;
+  }
   case 'search': {
     const query = args.filter(a => !a.startsWith('--')).join(' ');
     if (!query) { console.error('usage: siftcoder search <query> [--k N]'); process.exit(1); }
@@ -631,6 +702,9 @@ Usage:
   siftcoder export <file>       dump events + summaries + embeddings + provenance to ndjson
   siftcoder import <file>       load an ndjson snapshot (idempotent, INSERT OR IGNORE)
   siftcoder search <query> [--k N] [--json]  hybrid search via the daemon
+  siftcoder federate-search <query> [--k N] [--prefix X] [--max-ws N]  cross-workspace federated search
+  siftcoder symbol-search <kind:name | term> [--k N] [--json]  match events by extracted symbol
+  siftcoder stats [--day] [--json]  throughput + backlog ETA + cache hit rate + top tools
   siftcoder web                 print web UI URL
 `);
 }

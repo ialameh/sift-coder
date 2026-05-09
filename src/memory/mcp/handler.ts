@@ -183,6 +183,41 @@ export const TOOLS = [
       required: ['session_id'],
     },
   },
+  {
+    name: 'mem_federate_search',
+    description: 'Cross-workspace federated search: queries every consented workspace under ~/.siftcoder/workspaces (those with a federate.consent flag) and merges the hits. Each hit is tagged with the originating workspace key for provenance.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string' },
+        k: { type: 'number', default: 5 },
+        workspace_prefix: { type: 'string' },
+        max_workspaces: { type: 'number' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'mem_symbol_search',
+    description: 'Find events by extracted code symbol. Pass "kind:name" (e.g. "function:login") for an exact match, or just a bare term to substring-match any symbol name. Returns events along with the joined summary text when available.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string' },
+        k: { type: 'number', default: 10 },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'mem_stats',
+    description: 'Operational stats: capture/drain throughput over a window, pending backlog with drain ETA, cache hit rate, top tools, top sessions. Cheap to call; suitable for a status dashboard.',
+    inputSchema: {
+      type: 'object',
+      properties: { window_ms: { type: 'number', default: 3600000 } },
+      required: [],
+    },
+  },
 ];
 
 export interface DrainResult {
@@ -437,6 +472,31 @@ export async function dispatch(req: JsonRpcRequest, deps: HandlerDeps): Promise<
             kind: 'thread',
             sessionId: String(args['session_id'] ?? ''),
             limit: Number(args['limit'] ?? 20),
+          });
+          return ok(req.id, res);
+        }
+        case 'mem_federate_search': {
+          const res = await deps.client.send({
+            kind: 'federate_search',
+            query: String(args['query'] ?? ''),
+            k: Number(args['k'] ?? 5),
+            workspacePrefix: typeof args['workspace_prefix'] === 'string' ? args['workspace_prefix'] : undefined,
+            maxWorkspaces: args['max_workspaces'] !== undefined ? Number(args['max_workspaces']) : undefined,
+          });
+          return ok(req.id, res);
+        }
+        case 'mem_symbol_search': {
+          const res = await deps.client.send({
+            kind: 'symbol_search',
+            query: String(args['query'] ?? ''),
+            k: Number(args['k'] ?? 10),
+          });
+          return ok(req.id, res);
+        }
+        case 'mem_stats': {
+          const res = await deps.client.send({
+            kind: 'stats',
+            windowMs: args['window_ms'] !== undefined ? Number(args['window_ms']) : undefined,
           });
           return ok(req.id, res);
         }

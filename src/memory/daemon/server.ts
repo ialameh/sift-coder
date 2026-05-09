@@ -326,6 +326,38 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
           };
         }
 
+        case 'federate_search': {
+          const { federatedSearch } = await import('../federation.js');
+          const hits = await federatedSearch(req.query, deps.embedder ?? null, {
+            k: req.k ?? 5,
+            workspacePrefix: req.workspacePrefix,
+            maxWorkspaces: req.maxWorkspaces,
+          });
+          return { ok: true, data: { hits } };
+        }
+
+        case 'symbol_search': {
+          const rows = await deps.storage.symbolSearch(req.query, req.k ?? 10);
+          return {
+            ok: true,
+            data: {
+              hits: rows.map(r => ({
+                summaryId: r.summaryId,
+                eventId: r.eventId,
+                ts: new Date(r.ts).toISOString(),
+                tool: r.tool,
+                symbols: r.symbols,
+                text: r.text,
+              })),
+            },
+          };
+        }
+
+        case 'stats': {
+          const r = await deps.storage.stats(req.windowMs);
+          return { ok: true, data: r };
+        }
+
         case 'summaries': {
           const limit = req.limit ?? 20;
           const rows = await deps.storage.recentSummaries(limit);
