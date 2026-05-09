@@ -311,6 +311,15 @@ export const TOOLS = [
       required: ['ts'],
     },
   },
+  {
+    name: 'mem_dashboard',
+    description: 'One-shot combined view: stats + doctor health + pinned summaries + recent patterns. Single round-trip suitable for a status dashboard.',
+    inputSchema: {
+      type: 'object',
+      properties: { patterns_min: { type: 'number', default: 3 } },
+      required: [],
+    },
+  },
 ];
 
 export interface DrainResult {
@@ -671,6 +680,13 @@ export async function dispatch(req: JsonRpcRequest, deps: HandlerDeps): Promise<
             kind: 'as_of',
             ts: Number(args['ts'] ?? Date.now()),
             limit: args['limit'] !== undefined ? Number(args['limit']) : undefined,
+          });
+          return ok(req.id, res);
+        }
+        case 'mem_dashboard': {
+          const res = await deps.client.send({
+            kind: 'dashboard',
+            patternsMin: args['patterns_min'] !== undefined ? Number(args['patterns_min']) : undefined,
           });
           return ok(req.id, res);
         }

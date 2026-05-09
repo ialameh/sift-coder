@@ -39,7 +39,8 @@ export type RequestKind =
   | 'patterns'
   | 'session_digest'
   | 'auto_pin_patterns'
-  | 'as_of';
+  | 'as_of'
+  | 'dashboard';
 
 export interface CaptureRequest {
   kind: 'capture';
@@ -344,7 +345,8 @@ export type Request =
   | PatternsRequest
   | SessionDigestRequest
   | AutoPinPatternsRequest
-  | AsOfRequest;
+  | AsOfRequest
+  | DashboardRequest;
 
 /**
  * Build a single concat-text view of a session's summaries — a "digest" suitable to feed back
@@ -376,6 +378,15 @@ export interface AsOfRequest {
   ts: number;
   /** Cap on summaries returned (newest-as-of-ts first). */
   limit?: number;
+}
+
+/**
+ * Single-call combined view: stats + doctor + pinned + recent patterns. One round-trip
+ * suitable for a dashboard or status SPA — saves the caller from issuing four separate RPCs.
+ */
+export interface DashboardRequest {
+  kind: 'dashboard';
+  patternsMin?: number;
 }
 
 export interface OkResponse<T = unknown> {

@@ -547,6 +547,40 @@ switch (cmd) {
     console.log(JSON.stringify({ ok: true, data: { patterns: r } }, null, 2));
     break;
   }
+  case 'dashboard': {
+    try {
+      const r = await rpc({ kind: 'dashboard' }, 30000);
+      if (r.ok && !args.includes('--json')) {
+        const d = r.data;
+        const c = d.stats.counts;
+        const tp = d.stats.throughput;
+        console.log('siftcoder mem dashboard');
+        console.log('━'.repeat(50));
+        console.log(`counts      events=${c.events} raw=${c.raw} sum=${c.summarized} skip=${c.skipped}`);
+        console.log(`throughput  ${tp.eventsPerMin.toFixed(1)} ev/min  ${tp.summariesPerMin.toFixed(1)} sm/min`);
+        console.log(`backlog     ${d.stats.backlog.pending} pending  eta ${d.stats.backlog.etaSec ?? '-'}s`);
+        console.log(`cache       hitRate ${(d.stats.cacheHitRate*100).toFixed(0)}%`);
+        const dr = d.doctor;
+        console.log(`health      integrity=${dr.integrity}  orphans=${dr.orphanSummaries+dr.orphanEmbeddings+dr.orphanProvenance}  vec0 drift=${dr.vecCardinality.drift}  pinned=${dr.pinned}`);
+        console.log(`top tools   ${d.stats.topTools.slice(0,5).map(t => t.tool+'='+t.count).join(', ')}`);
+        if (d.pinned.length > 0) {
+          console.log('\npinned (top 5):');
+          for (const p of d.pinned.slice(0, 5)) console.log(`  #${p.id}  ${p.text.slice(0, 80)}`);
+        }
+        if (d.patterns.length > 0) {
+          console.log('\npatterns (recurring):');
+          for (const p of d.patterns.slice(0, 5)) console.log(`  x${p.occurrences}  sessions=${p.distinctSessions}  tools=${p.tools.join(',')}`);
+        }
+      } else {
+        console.log(JSON.stringify(r, null, 2));
+      }
+      break;
+    } catch (e) {
+      if (e.message && !e.message.includes('ENOENT') && !e.message.includes('ECONNREFUSED')) throw e;
+    }
+    console.error('dashboard requires the daemon');
+    process.exit(1);
+  }
   case 'capture': {
     // Used by `siftcoder hooks install` PostToolUse hook — receives JSON payload via stdin
     // and forwards to the daemon as a capture RPC. Falls back to direct Storage write when
@@ -979,6 +1013,7 @@ Usage:
   siftcoder hooks <install|show>  manage PostToolUse capture hook in .claude/settings.local.json
   siftcoder capture --session ID --tool T (--payload-stdin | --payload JSON)  push a capture into the daemon
   siftcoder maintenance [--auto-pin]  nightly: sweep_expired + compact (+ optional auto-pin patterns)
+  siftcoder dashboard [--json]  one-shot combined view (stats + doctor + pinned + patterns)
   siftcoder auth-token [--rotate]  print (or rotate) the web UI bearer token
   siftcoder web                 print web UI URL
 `);
