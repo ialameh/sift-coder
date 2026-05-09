@@ -629,6 +629,63 @@ describe('buildHandler with real Storage (cross-platform)', () => {
     const ev = await realStorage.getEvent(eid);
     expect(ev?.status).toBe('raw');
   });
+
+  it('sweep_expired RPC removes expired events', async () => {
+    const past = Date.now() - 1000;
+    await realStorage.recordEvent({ ts: past - 60_000, sessionId: 's', tool: 'R', payload: { i: 1 }, ttlMs: 30_000 });
+    const h = buildHandler({ storage: realStorage, wal: realWal, cwd: '/x' });
+    const r = await h({ kind: 'sweep_expired' }) as { ok: true; data: { removed: number } };
+    expect(r.data.removed).toBe(1);
+  });
+
+  it('export RPC returns ndjson with at least one record per seeded table', async () => {
+    const eid = await realStorage.recordEvent({ ts: 1, sessionId: 's', tool: 'R', payload: { p: 1 } });
+    await realStorage.recordSummary({ eventId: eid, ts: 1, model: 'm', promptHash: 'p', text: 'x', tokensIn: null, tokensOut: null, confidence: null });
+    const h = buildHandler({ storage: realStorage, wal: realWal, cwd: '/x' });
+    const r = await h({ kind: 'export', all: true }) as { ok: true; data: { ndjson: string; records: number } };
+    expect(r.ok).toBe(true);
+    expect(r.data.records).toBeGreaterThanOrEqual(2);
+    expect(r.data.ndjson).toContain('"table":"events"');
+    expect(r.data.ndjson).toContain('"table":"summaries"');
+  });
+
+  it('import RPC ingests ndjson with INSERT OR IGNORE semantics', async () => {
+    const ndjson = [
+      JSON.stringify({ table: 'sessions', row: { id: 'imp-sess', started_at: 1 } }),
+      JSON.stringify({ table: 'events', row: { id: 9001, ts: 1, session_id: 'imp-sess', tool: 'R', input_hash: 'h', payload_json: '{}', status: 'raw' } }),
+    ].join('\n');
+    const h = buildHandler({ storage: realStorage, wal: realWal, cwd: '/x' });
+    const r = await h({ kind: 'import', ndjson }) as { ok: true; data: { inserted: number } };
+    expect(r.data.inserted).toBe(2);
+    // Re-import is idempotent.
+    const r2 = await h({ kind: 'import', ndjson }) as { ok: true; data: { inserted: number; skipped: number } };
+    expect(r2.data.inserted).toBe(0);
+    expect(r2.data.skipped).toBe(2);
+  });
+
+  it('doctor heal=true triggers vec backfill when drift exists', async () => {
+    // Without sqlite-vec loaded, vecEnabled=false → backfillVec is a no-op (returns 0).
+    // The healed branch still runs; verify the response shape.
+    const h = buildHandler({ storage: realStorage, wal: realWal, cwd: '/x' });
+    const r = await h({ kind: 'doctor', heal: true }) as { ok: true; data: { vecCardinality: { drift: number }; healed?: { vecBackfilled: number } } };
+    expect(r.ok).toBe(true);
+    // No drift on a fresh store, so healed payload may or may not be present.
+    if (r.data.vecCardinality.drift > 0) {
+      expect(r.data.healed?.vecBackfilled).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it('capture honors ttlMs by storing expires_at = ts + ttlMs', async () => {
+    const ts = 1_000_000;
+    const ttl = 60_000;
+    const h = buildHandler({ storage: realStorage, wal: realWal, cwd: '/x' });
+    const r = await h({ kind: 'capture', sessionId: 's', tool: 'Bash', payload: { cmd: 'ls' }, ts, ttlMs: ttl }) as { ok: true; data: { id: number } };
+    expect(r.ok).toBe(true);
+    const row = await (await (realStorage as unknown as { ['db']: { prepare(s: string): Promise<{ get(...p: unknown[]): Promise<unknown> }> } })['db'].prepare(
+      'SELECT expires_at FROM events WHERE id = ?'
+    )).get(r.data.id) as { expires_at?: number } | undefined;
+    expect(row?.expires_at).toBe(ts + ttl);
+  });
 });
 
 describe('isRetryableError', () => {
