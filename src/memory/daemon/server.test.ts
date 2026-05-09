@@ -644,6 +644,19 @@ describe('buildHandler with real Storage (cross-platform)', () => {
     expect(r.data.firstTs).toMatch(/T/);
   });
 
+  it('dashboard RPC composes stats + doctor + pinned + patterns in one call', async () => {
+    const eid = await realStorage.recordEvent({ ts: Date.now(), sessionId: 's', tool: 'Edit', payload: { i: 1 } });
+    const sid = await realStorage.recordSummary({ eventId: eid, ts: Date.now(), model: 'm', promptHash: 'p', text: 't', tokensIn: null, tokensOut: null, confidence: 0.9 });
+    await realStorage.pin(sid);
+    const h = buildHandler({ storage: realStorage, wal: realWal, cwd: '/x' });
+    const r = await h({ kind: 'dashboard' }) as { ok: true; data: { stats: { counts: { events: number } }; doctor: { integrity: string }; pinned: unknown[]; patterns: unknown[] } };
+    expect(r.ok).toBe(true);
+    expect(r.data.stats.counts.events).toBe(1);
+    expect(r.data.doctor.integrity).toBe('ok');
+    expect(r.data.pinned).toHaveLength(1);
+    expect(Array.isArray(r.data.patterns)).toBe(true);
+  });
+
   it('as_of RPC returns counts + summaries filtered by ts cutoff', async () => {
     const t0 = 2_000_000;
     const eid = await realStorage.recordEvent({ ts: t0, sessionId: 's', tool: 'R', payload: { i: 1 } });

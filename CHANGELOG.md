@@ -2,6 +2,74 @@
 
 All notable changes to SiftCoder. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning is [SemVer](https://semver.org/).
 
+## [1.1.0] — 2026-05-09
+
+Major mem-subsystem expansion. 13 PRs (#8–#20) over a single audit-driven session, taking the memory system from a fragile capture-and-summarize pipeline to a self-maintaining knowledge graph with operator tooling and host-driven summarization. Test count 530 → 778, coverage 89.5 % → 92.6 %.
+
+### Added — capture & retrieval
+
+- **MCP host sampling drain** (PR #9) — when the host advertises `sampling`, the plugin delegates summarization to the host LLM via `sampling/createMessage`. No API key required inside Claude Code; GLM/Gemini/Ollama/Anthropic remain as direct-API fallbacks.
+- **vec0 indexed retrieval** (PR #10) — `sqlite-vec` auto-loaded as an optional dep; `Storage.searchVec` replaces JS-side cosine when enabled. Backfill restores the vec table from existing embeddings on first boot.
+- **Per-tool decay** (PR #10) — Edit/Write 30 d, Read 14 d, Bash 3 d, etc. Hits carry their originating tool through retrieval.
+- **Corpus-wide IDF reranker** (PR #10) — IDF computed over recent 2 k summaries, cached with 5 % drift invalidation.
+- **Async symbol annotation** (PR #13) — `events.symbols_json` populated by a background `SymbolWorker`; capture hot path no longer runs CDG / regex inline.
+- **Cross-session continuity (`mem_thread`)** (PR #13) — surface other sessions sharing an `input_hash`.
+- **Federation surface (`mem_federate_search`)** (PR #14) — cross-workspace consented search.
+- **Symbol search (`mem_symbol_search`)** (PR #14) — match by `kind:name` exact or substring on the name.
+- **Stats (`mem_stats`)** (PR #14) — throughput, backlog ETA, cache hit rate, top tools.
+- **Replay (`mem_replay`)** (PR #15) — session chronology with summaries joined.
+- **`mem_capture` MCP tool** (PR #15) — agents push facts directly with optional TTL.
+- **Eight web UI HTTP endpoints** (PR #15) — stats, doctor, pinned, symbol-search, thread, replay, pin, unpin.
+- **Live watch TUI** (PR #16) — `siftcoder watch` polling dashboard.
+- **Eager drain** (PR #16) — `mem_search` ramps drain batch with backlog (8/16/32 above 50/200/500 pending).
+- **`mem_context_budget`** (PR #16) — greedy fill: ranked summaries fitting under a token cap.
+- **`mem_compact`** (PR #17) — VACUUM + cache prune + dim-mismatched embedding cleanup + FTS rebuild.
+- **`mem_patterns`** (PR #17) — recurring `input_hash` buckets across sessions.
+- **`mem_session_digest`** (PR #18) — concat session summaries into one chronological text.
+- **`mem_auto_pin_patterns`** (PR #18) — one-shot curation: pin everything in a recurring pattern.
+- **`siftcoder hooks <install|show>`** (PR #18) — bootstrap PostToolUse capture into `.claude/settings.local.json`.
+- **`siftcoder capture` CLI** (PR #19) — closes the gap left by `hooks install`.
+- **`siftcoder maintenance`** (PR #19) — one-shot nightly: sweep + compact (+ optional auto-pin).
+- **`mem_as_of`** (PR #19) — point-in-time view: counts + summaries as they existed at a timestamp.
+- **`mem_dashboard`** (PR #20) — single round-trip combined view (stats + doctor + pinned + patterns).
+
+### Added — pinned summaries & schema
+
+- **`pinned_at` column** (PR #11) — user-curated long-term memory exempt from supersede + decay.
+- **`expires_at` column** (PR #12) — per-event TTL with automatic sweep.
+- **`symbols_json` column** (PR #13) — async-populated symbol annotations.
+- **`UNIQUE(session_id, input_hash)`** (PR #12) — kills the SELECT-then-INSERT TOCTOU race.
+- **`UNIQUE INDEX on summaries(event_id)`** (PR #8) — enforces one summary per event at the DB layer.
+
+### Added — operations
+
+- **`mem doctor`** (PR #11) — integrity, orphans, vec0 cardinality drift, counts, pinned. `--heal` (PR #12) repairs drift in place.
+- **`mem prune` / `mem retry`** (PR #9) — operational recovery for old skipped events and quota-poisoned queues.
+- **`mem export` / `mem import`** (PR #12) — ndjson snapshot for migration / cross-machine sync.
+- **`mem search` CLI** (PR #12) — one-shot hybrid search wrapper.
+- **`mem auth-token [--rotate]`** (PR #16) — print or rotate the web UI bearer.
+- **Daemon supervision** (PR #9) — pid-aliveness handshake, `uncaughtException` logging, `http.port` cleanup on shutdown, periodic counter snapshots.
+
+### Fixed — correctness
+
+- **Drain race + cache double-write** (PR #8) — `claimPending` with `BEGIN IMMEDIATE` + in-process write lock; `INSERT … ON CONFLICT DO NOTHING`.
+- **WAL replay actually runs on boot** (PR #8) — daemon folds leftover frames back into SQLite, then truncates.
+- **Retryable error policy** (PR #8) — quota / 429 / 5xx / network errors release back to `raw`; only `attempts ≥ 3` or terminal errors → `skipped`.
+- **`siftcoder list`** (PR #8) — was returning `[]`; new `summaries` RPC + `Storage.recentSummaries`.
+- **`siftcoder check`** (PR #8) — was emitting two contradictory JSON blobs.
+- **`parseModelOutput` truncation handling** (PR #8) — strips ` ```json ` fences, recovers truncated `text` field.
+- **vec0 dim now runtime-resolved** (PR #10) — was pinned at 384, mismatching nomic-embed-text's 768.
+- **Storage facade encapsulation** (PR #9) — six `(storage as unknown as {db}).db` leak sites collapsed into typed methods.
+- **Prepared-statement cache** (PR #9) — capture hot path no longer re-prepares identical SQL.
+- **UDS multi-frame fix** (PR #12) — server no longer closes the connection on partial frames; large requests (10 KB+) split across multiple `data` events succeed.
+- **`pg-worker.cjs` → `.mjs` filename mismatch** (PR #9) — was breaking PG bootstrap silently.
+- **Pre-existing CI lint error in `pg-worker.mjs`** (PR #8) — TS syntax in a `.mjs` file unblocked all CI runs after months of failures.
+
+### Security
+
+- **Web auth uses `crypto.timingSafeEqual`** (PR #8) — was `===` despite a comment claiming "constant-time comparison".
+- **Gemini API key in header, not URL query** (PR #8) — was leaking via proxy logs and exception stacks.
+
 ## [1.0.9] — 2026-05-02
 
 ### Fixed

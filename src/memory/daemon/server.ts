@@ -402,6 +402,28 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
           return { ok: true, data: r };
         }
 
+        case 'dashboard': {
+          const [stats, doctor, pinned, patterns] = await Promise.all([
+            deps.storage.stats(60 * 60 * 1000),
+            deps.storage.doctor(),
+            deps.storage.listPinned(20),
+            deps.storage.patterns(req.patternsMin ?? 3, 10),
+          ]);
+          return {
+            ok: true,
+            data: {
+              stats,
+              doctor,
+              pinned: pinned.map(p => ({ id: p.id, ts: new Date(p.ts).toISOString(), text: p.text.length > 200 ? p.text.slice(0, 200) + '...' : p.text })),
+              patterns: patterns.map(p => ({
+                ...p,
+                firstTs: new Date(p.firstTs).toISOString(),
+                lastTs: new Date(p.lastTs).toISOString(),
+              })),
+            },
+          };
+        }
+
         case 'context_budget': {
           const k = req.candidatePool ?? 50;
           const hits = await hybridSearch(deps.storage, deps.embedder ?? null, req.query, Date.now(), { k, candidatePool: k });
