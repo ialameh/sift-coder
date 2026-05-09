@@ -547,6 +547,29 @@ switch (cmd) {
     console.log(JSON.stringify({ ok: true, data: { patterns: r } }, null, 2));
     break;
   }
+  case 'sessions': {
+    const lIdx = args.indexOf('--limit');
+    const limit = lIdx >= 0 ? parseInt(args[lIdx + 1] ?? '20', 10) : 20;
+    try {
+      const r = await rpc({ kind: 'sessions', limit }, 30000);
+      if (r.ok && !args.includes('--json')) {
+        for (const s of r.data.sessions ?? []) {
+          const short = s.sessionId.length > 36 ? s.sessionId.slice(0, 8) : s.sessionId;
+          console.log(`${short}  events=${s.eventCount}  ${s.firstTs.slice(0,16)} → ${s.lastTs.slice(0,16)}  ${s.cwd ?? ''}`);
+        }
+      } else {
+        console.log(JSON.stringify(r, null, 2));
+      }
+      break;
+    } catch (e) {
+      if (e.message && !e.message.includes('ENOENT') && !e.message.includes('ECONNREFUSED')) throw e;
+    }
+    const { storage } = await openStorage();
+    const r = await storage.listSessions(limit);
+    await storage.close();
+    console.log(JSON.stringify({ ok: true, data: { sessions: r } }, null, 2));
+    break;
+  }
   case 'dashboard': {
     try {
       const r = await rpc({ kind: 'dashboard' }, 30000);
@@ -1014,6 +1037,7 @@ Usage:
   siftcoder capture --session ID --tool T (--payload-stdin | --payload JSON)  push a capture into the daemon
   siftcoder maintenance [--auto-pin]  nightly: sweep_expired + compact (+ optional auto-pin patterns)
   siftcoder dashboard [--json]  one-shot combined view (stats + doctor + pinned + patterns)
+  siftcoder sessions [--limit N] [--json]  list session ids with first/last ts + event count
   siftcoder auth-token [--rotate]  print (or rotate) the web UI bearer token
   siftcoder web                 print web UI URL
 `);

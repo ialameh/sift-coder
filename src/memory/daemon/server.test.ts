@@ -662,6 +662,16 @@ describe('buildHandler with real Storage (cross-platform)', () => {
     expect(r.data.firstTs).toMatch(/T/);
   });
 
+  it('sessions RPC returns session metadata with isoformat timestamps', async () => {
+    await realStorage.recordEvent({ ts: 1000, sessionId: 'session-a', tool: 'R', payload: { i: 1 } });
+    await realStorage.recordEvent({ ts: 2000, sessionId: 'session-b', tool: 'R', payload: { i: 1 } });
+    const h = buildHandler({ storage: realStorage, wal: realWal, cwd: '/x' });
+    const r = await h({ kind: 'sessions' }) as { ok: true; data: { sessions: Array<{ sessionId: string; firstTs: string; eventCount: number }> } };
+    expect(r.data.sessions).toHaveLength(2);
+    expect(r.data.sessions[0]!.sessionId).toBe('session-b'); // most recent first
+    expect(r.data.sessions[0]!.firstTs).toMatch(/T/);
+  });
+
   it('dashboard RPC composes stats + doctor + pinned + patterns in one call', async () => {
     const eid = await realStorage.recordEvent({ ts: Date.now(), sessionId: 's', tool: 'Edit', payload: { i: 1 } });
     const sid = await realStorage.recordSummary({ eventId: eid, ts: Date.now(), model: 'm', promptHash: 'p', text: 't', tokensIn: null, tokensOut: null, confidence: 0.9 });

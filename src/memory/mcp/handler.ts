@@ -320,6 +320,15 @@ export const TOOLS = [
       required: [],
     },
   },
+  {
+    name: 'mem_sessions',
+    description: 'List sessions with first/last timestamps and event counts. Use to discover session ids for mem_thread, mem_replay, or mem_session_digest.',
+    inputSchema: {
+      type: 'object',
+      properties: { limit: { type: 'number', default: 20 } },
+      required: [],
+    },
+  },
 ];
 
 export interface DrainResult {
@@ -715,6 +724,13 @@ export async function dispatch(req: JsonRpcRequest, deps: HandlerDeps): Promise<
           const res = await deps.client.send({
             kind: 'dashboard',
             patternsMin: args['patterns_min'] !== undefined ? Number(args['patterns_min']) : undefined,
+          });
+          return ok(req.id, res);
+        }
+        case 'mem_sessions': {
+          const res = await deps.client.send({
+            kind: 'sessions',
+            limit: args['limit'] !== undefined ? Number(args['limit']) : undefined,
           });
           return ok(req.id, res);
         }

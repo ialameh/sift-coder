@@ -605,6 +605,27 @@ describe.each(BACKENDS)('storage backend parity ($name)', backend => {
     expect(r.patternsConsidered).toBe(0);
   });
 
+  it('listSessions returns sessions ordered by last activity desc', async () => {
+    await storage.recordEvent({ ts: 100, sessionId: 'old', tool: 'R', payload: { i: 1 } });
+    await storage.recordEvent({ ts: 200, sessionId: 'middle', tool: 'R', payload: { i: 1 } });
+    await storage.recordEvent({ ts: 300, sessionId: 'middle', tool: 'R', payload: { i: 2 } });
+    await storage.recordEvent({ ts: 400, sessionId: 'recent', tool: 'R', payload: { i: 1 } });
+    const r = await storage.listSessions();
+    expect(r).toHaveLength(3);
+    expect(r[0]!.sessionId).toBe('recent');
+    expect(r[1]!.sessionId).toBe('middle');
+    expect(r[1]!.eventCount).toBe(2);
+    expect(r[2]!.sessionId).toBe('old');
+  });
+
+  it('listSessions honors limit and includes cwd from sessions table', async () => {
+    await storage.ensureSession('s1', '/some/cwd', 1);
+    await storage.recordEvent({ ts: 1, sessionId: 's1', tool: 'R', payload: { i: 1 } });
+    const r = await storage.listSessions(5);
+    expect(r).toHaveLength(1);
+    expect(r[0]!.cwd).toBe('/some/cwd');
+  });
+
   it('asOf filters by ts cutoff and returns counts + recent summaries', async () => {
     const t0 = 1_000_000;
     const e1 = await storage.recordEvent({ ts: t0, sessionId: 's', tool: 'R', payload: { i: 1 } });

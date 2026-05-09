@@ -452,6 +452,36 @@ export class Storage {
   }
 
   /**
+   * List sessions with their first/last event timestamps and event counts. Surfaces the
+   * session ids that the various session-scoped APIs (`mem_thread`, `mem_replay`,
+   * `mem_session_digest`) need as input — without this, callers must already know the id.
+   */
+  async listSessions(limit = 20): Promise<Array<{
+    sessionId: string;
+    firstTs: number;
+    lastTs: number;
+    eventCount: number;
+    cwd: string | null;
+  }>> {
+    const rows = await (await this.db.prepare(
+      `SELECT e.session_id AS sid, min(e.ts) AS first_ts, max(e.ts) AS last_ts,
+              count(*) AS c, max(s.cwd) AS cwd
+         FROM events e
+         LEFT JOIN sessions s ON s.id = e.session_id
+        GROUP BY e.session_id
+        ORDER BY last_ts DESC
+        LIMIT ?`
+    )).all(limit) as Array<{ sid: string; first_ts: number; last_ts: number; c: number; cwd: string | null }>;
+    return rows.map(r => ({
+      sessionId: r.sid,
+      firstTs: r.first_ts,
+      lastTs: r.last_ts,
+      eventCount: r.c,
+      cwd: r.cwd,
+    }));
+  }
+
+  /**
    * Point-in-time view: counts + recent summaries as they existed at `ts` (epoch ms).
    * Filters every table on `ts <= cutoff` so the result reflects the store state at that
    * instant, ignoring any rows added later.
