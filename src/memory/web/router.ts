@@ -11,6 +11,7 @@
  *   GET  /api/savings       full savings report
  *   GET  /api/events?limit  recent events tail
  *   GET  /api/summaries?limit  recent summaries tail
+ *   GET  /api/sessions?limit  list sessions with first/last/count
  *   POST /api/search        { query, k }
  *   POST /api/timeline      { nearId, window }
  *   POST /api/get           { ids: number[] }
@@ -228,6 +229,11 @@ export async function route(req: WebRequest, deps: WebDeps): Promise<WebResponse
     const body = parseBody<{ query: string; k?: number }>(req.body);
     if (!body || typeof body.query !== 'string') return badRequest('query required');
     return json(200, { ok: true, data: { hits: await deps.storage.symbolSearch(body.query, body.k ?? 10) } });
+  }
+
+  if (req.method === 'GET' && req.path === '/api/sessions') {
+    const limit = parseInt(req.query['limit'] ?? '50', 10) || 50;
+    return json(200, { ok: true, data: { sessions: await deps.storage.listSessions(limit) } });
   }
 
   if (req.method === 'POST' && req.path === '/api/thread') {

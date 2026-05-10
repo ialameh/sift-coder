@@ -75,3 +75,23 @@ ul#why-body { list-style: none; padding: 0; margin: 0; font-family: SF Mono, Men
 ul#why-body li { padding: 6px 0; border-bottom: 1px solid #1c1d20; font-size: 12px; }
 .arrow { color: #6a6e74; margin: 0 8px; }
 .bar { display: inline-block; height: 8px; background: #2a4dde; border-radius: 2px; margin-right: 8px; vertical-align: middle; }
+.muted { color: #6a6e74; }
+.tag.ok      { background: #1f3a2a; color: #57c785; }
+.tag.err     { background: #3a1f1f; color: #e07171; }
+.replay-list { list-style: none; padding: 0; margin: 8px 0 0; font-family: SF Mono, Menlo, monospace; font-size: 12px; }
+.replay-list li { padding: 6px 0; border-bottom: 1px solid #1c1d20; }
+.replay-sum { color: #b0b6bd; padding: 4px 0 0 24px; }
+#replay-panel { margin-top: 16px; padding: 12px 16px; background: #15171a; border-radius: 6px; }
+#replay-panel.empty { padding: 24px 16px; }
+#replay-panel h3 { margin: 0 0 8px; font-size: 12px; color: #9aa0a6; font-weight: 500; word-break: break-all; }
+button.unpin-btn, button.replay-btn {
+  background: transparent;
+  border: 1px solid #2a2e34;
+  color: #9aa0a6;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font: inherit;
+  cursor: pointer;
+}
+button.unpin-btn:hover, button.replay-btn:hover { background: #2a2e34; color: #e6e6e6; }
+button.unpin-btn:disabled { opacity: 0.5; cursor: default; }
