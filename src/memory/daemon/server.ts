@@ -642,6 +642,45 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
   };
 }
 
+/**
+ * Per-frame dispatcher used by the socket loop. Extracted from `startServer` so the streaming
+ * branch is unit-testable without spinning up a UDS server. `write` receives one or more
+ * encoded response frames; the streaming kinds emit several before terminating with `done`.
+ *
+ * Returns nothing — caller is responsible for socket lifecycle. All errors are caught locally
+ * and emitted as `{ ok: false, error }` frames so a single bad frame doesn't kill the socket.
+ */
+export async function processFrame(
+  frame: Request,
+  deps: Pick<ServerDeps, 'storage' | 'embedder' | 'reranker'>,
+  handler: Handler,
+  write: (frame: unknown) => void,
+): Promise<void> {
+  if (frame.kind === 'stream_search') {
+    const { streamingHybridSearch } = await import('../retrieval.js');
+    try {
+      await streamingHybridSearch(
+        deps.storage,
+        deps.embedder ?? null,
+        frame.query,
+        Date.now(),
+        (chunk) => { write({ ok: true, data: { partial: chunk } }); },
+        {
+          k: frame.k ?? 5,
+          candidatePool: frame.candidatePool,
+          asyncReranker: deps.reranker ?? null,
+        },
+      );
+      write({ ok: true, data: { done: true } });
+    } catch (err) {
+      write({ ok: false, error: (err as Error).message });
+    }
+    return;
+  }
+  const res = await handler(frame);
+  write(res);
+}
+
 /* c8 ignore start */
 export function startServer(deps: ServerDeps): Server {
   const handler = buildHandler(deps);
@@ -678,32 +717,12 @@ export function startServer(deps: ServerDeps): Server {
       for (const frame of frames) {
         pending++;
         try {
-          // Streaming kinds emit multiple frames before yielding their terminator. Branch on
-          // request kind to select the streaming path; everything else stays single-frame.
-          const reqFrame = frame as Request;
-          if (reqFrame.kind === 'stream_search') {
-            const { streamingHybridSearch } = await import('../retrieval.js');
-            try {
-              await streamingHybridSearch(
-                deps.storage,
-                deps.embedder ?? null,
-                reqFrame.query,
-                Date.now(),
-                (chunk) => { socket.write(encodeFrame({ ok: true, data: { partial: chunk } })); },
-                {
-                  k: reqFrame.k ?? 5,
-                  candidatePool: reqFrame.candidatePool,
-                  asyncReranker: deps.reranker ?? null,
-                },
-              );
-              socket.write(encodeFrame({ ok: true, data: { done: true } }));
-            } catch (err) {
-              socket.write(encodeFrame({ ok: false, error: (err as Error).message }));
-            }
-          } else {
-            const res = await handler(reqFrame);
-            socket.write(encodeFrame(res));
-          }
+          await processFrame(
+            frame as Request,
+            deps,
+            handler,
+            (out) => socket.write(encodeFrame(out)),
+          );
         } finally {
           pending--;
           maybeClose();

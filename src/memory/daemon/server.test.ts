@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { buildHandler, isRetryableError } from './server.js';
+import { buildHandler, isRetryableError, processFrame } from './server.js';
 import { Storage, type DBHandle } from '../storage/storage.js';
 import { WAL } from './wal.js';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -788,6 +788,78 @@ describe('buildHandler with real Storage (cross-platform)', () => {
       'SELECT expires_at FROM events WHERE id = ?'
     )).get(r.data.id) as { expires_at?: number } | undefined;
     expect(row?.expires_at).toBe(ts + ttl);
+  });
+});
+
+describe('processFrame', () => {
+  let dir: string;
+  let db: Database.Database;
+  let storage: Storage;
+  let wal: WAL;
+
+  beforeEach(async () => {
+    dir = mkdtempSync(join(tmpdir(), 'pf-'));
+    db = new Database(join(dir, 'd.sqlite'));
+    storage = await Storage.init(db);
+    wal = new WAL(join(dir, 'wal.ndjson'));
+  });
+  afterEach(() => {
+    wal.close();
+    db.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('routes non-streaming kinds through the handler in a single frame', async () => {
+    const handler = buildHandler({ storage, wal, cwd: dir });
+    const out: unknown[] = [];
+    await processFrame(
+      { kind: 'ping' },
+      { storage, embedder: null, reranker: null },
+      handler,
+      (f) => out.push(f),
+    );
+    expect(out).toHaveLength(1);
+    expect((out[0] as { ok: boolean }).ok).toBe(true);
+  });
+
+  it('emits BM25 / vector / final / done frames for stream_search', async () => {
+    const eid = await storage.recordEvent({ ts: Date.now(), sessionId: 's', tool: 'Edit', payload: { x: 1 } });
+    await storage.recordSummary({
+      eventId: eid, ts: Date.now(), model: 'm', promptHash: 'p',
+      text: 'auth login session', tokensIn: null, tokensOut: null, confidence: null,
+    });
+    const handler = buildHandler({ storage, wal, cwd: dir });
+    const out: Array<{ ok: boolean; data?: { partial?: { stage: string }; done?: boolean } }> = [];
+    await processFrame(
+      { kind: 'stream_search', query: 'auth', k: 5 },
+      { storage, embedder: null, reranker: null },
+      handler,
+      (f) => out.push(f as { ok: boolean; data?: { partial?: { stage: string }; done?: boolean } }),
+    );
+    const stages = out.filter(f => f.data?.partial).map(f => f.data!.partial!.stage);
+    expect(stages).toContain('bm25');
+    expect(stages).toContain('final');
+    expect(out.at(-1)!.data!.done).toBe(true);
+  });
+
+  it('emits an ok=false frame when stream_search throws', async () => {
+    // Embedder that throws guarantees streamingHybridSearch handles vector-stage failure
+    // gracefully, but stream-level failure happens when the BM25 stage itself crashes —
+    // simulate by passing a deliberately broken storage shim.
+    const handler = buildHandler({ storage, wal, cwd: dir });
+    const brokenStorage = {
+      ...storage,
+      searchFts: () => { throw new Error('forced fault'); },
+    } as unknown as Storage;
+    const out: Array<{ ok: boolean; error?: string }> = [];
+    await processFrame(
+      { kind: 'stream_search', query: 'x' },
+      { storage: brokenStorage, embedder: null, reranker: null },
+      handler,
+      (f) => out.push(f as { ok: boolean; error?: string }),
+    );
+    const errFrame = out.find(f => f.ok === false);
+    expect(errFrame?.error).toBe('forced fault');
   });
 });
 
