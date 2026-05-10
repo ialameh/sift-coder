@@ -2,6 +2,12 @@
 
 All notable changes to SiftCoder. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning is [SemVer](https://semver.org/).
 
+## [1.2.6] — 2026-05-10
+
+### Added
+- **`siftcoder savings` CLI verb** + `savings` RPC kind. The savings report (capture / drain / spend / compression / net token savings) was previously only reachable via `/api/savings` HTTP or the SPA Overview tab. Adds parity with the rest of the operator surface — `mem stats` shows throughput, `mem savings` shows tokens.
+- `/siftcoder:mem savings [--json]` slash command.
+
 ## [1.2.5] — 2026-05-10
 
 Audit pass on the v1.2 line. Three measured findings, three fixes.

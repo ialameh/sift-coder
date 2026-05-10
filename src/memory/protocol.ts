@@ -45,7 +45,8 @@ export type RequestKind =
   | 'graph_subgraph'
   | 'graph_hubs'
   | 'graph_path'
-  | 'stream_search';
+  | 'stream_search'
+  | 'savings';
 
 export interface CaptureRequest {
   kind: 'capture';
@@ -86,6 +87,14 @@ export interface StreamSearchRequest {
   query: string;
   k?: number;
   candidatePool?: number;
+}
+
+/**
+ * Savings report: capture vs drain vs spend totals and net token savings. Same shape as the
+ * /api/savings HTTP route. Cheap to compute — pure read-only aggregates.
+ */
+export interface SavingsRequest {
+  kind: 'savings';
 }
 
 export interface TimelineRequest {
@@ -379,7 +388,8 @@ export type Request =
   | GraphSubgraphRequest
   | GraphHubsRequest
   | GraphPathRequest
-  | StreamSearchRequest;
+  | StreamSearchRequest
+  | SavingsRequest;
 
 /**
  * Build a single concat-text view of a session's summaries — a "digest" suitable to feed back

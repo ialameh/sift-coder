@@ -401,6 +401,11 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
           };
         }
 
+        case 'savings': {
+          const { computeSavings } = await import('../metrics.js');
+          return { ok: true, data: await computeSavings(deps.storage) };
+        }
+
         case 'stats': {
           const r = await deps.storage.stats(req.windowMs);
           return { ok: true, data: r };

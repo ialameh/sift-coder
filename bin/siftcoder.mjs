@@ -957,6 +957,37 @@ switch (cmd) {
     console.error('context-budget requires the daemon');
     process.exit(1);
   }
+  case 'savings': {
+    // siftcoder savings [--json]
+    try {
+      const r = await rpc({ kind: 'savings' }, 30000);
+      if (r.ok && !args.includes('--json')) {
+        const d = r.data;
+        const useColor = process.stdout.isTTY && !process.env.NO_COLOR;
+        const c = useColor ? { dim: '\x1b[2m', bold: '\x1b[1m', ok: '\x1b[32m', reset: '\x1b[0m' } : { dim: '', bold: '', ok: '', reset: '' };
+        const fmtN = (n) => Number(n || 0).toLocaleString('en-US');
+        const lines = [];
+        lines.push(`${c.bold}capture${c.reset}     events=${fmtN(d.capture.events)} tokens=${fmtN(d.capture.tokensCaptured)} redacted=${fmtN(d.capture.redactedEvents)}`);
+        lines.push(`${c.bold}drain${c.reset}       summarized=${fmtN(d.drain.summarized)} skipped=${fmtN(d.drain.skipped)} raw=${fmtN(d.drain.raw)} coverage=${(d.drain.coverage*100).toFixed(1)}%`);
+        lines.push(`${c.bold}spend${c.reset}       tokensIn=${fmtN(d.spend.tokensIn)} tokensOut=${fmtN(d.spend.tokensOut)} cacheHits=${fmtN(d.spend.cacheHits)} (${(d.spend.cacheHitRate*100).toFixed(0)}%)`);
+        lines.push(`${c.bold}context${c.reset}     summaryTokens=${fmtN(d.context.summaryTokensStored)} compression=${(d.context.compressionRatio*100).toFixed(2)}%`);
+        lines.push(`${c.ok}${c.bold}net saved   ${fmtN(d.context.netSavedTokens)} tokens${c.reset}  ${c.dim}(captured − stored − spent)${c.reset}`);
+        console.log(lines.join('\n'));
+      } else {
+        console.log(JSON.stringify(r, null, 2));
+      }
+      break;
+    } catch (e) {
+      if (e.message && !e.message.includes('ENOENT') && !e.message.includes('ECONNREFUSED')) throw e;
+    }
+    // Daemon-down fallback: open storage directly.
+    const { storage } = await openStorage();
+    const { computeSavings } = await import(path.join(ROOT, 'dist', 'memory', 'metrics.js'));
+    const r = await computeSavings(storage);
+    await storage.close();
+    console.log(JSON.stringify({ ok: true, data: r }, null, 2));
+    break;
+  }
   case 'stats': {
     const w = args.includes('--day') ? 24 * 60 * 60 * 1000 : 60 * 60 * 1000;
     try {
