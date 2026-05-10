@@ -2,6 +2,16 @@
 
 All notable changes to SiftCoder. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning is [SemVer](https://semver.org/).
 
+## [1.2.3] — 2026-05-10
+
+Tail of the v1.2 cleanup wave.
+
+### Added
+- **SPA Federation tab + `/api/federate-search` route** — `mem_federate_search` had been daemon/CLI-only since 1.1.0. External callers no longer need the legacy `POST /` RPC frame. Tab provides query / k / prefix / max-workspaces controls; results tagged by workspace key.
+
+### Docs
+- **ARCHITECTURE.md refresh** — captures every shipped feature since the v1.1 doc-pass: knowledge-graph queries, auto-edge inference, MCP eager-drain, streaming hybrid search, cross-encoder reranker, 11 SPA tabs. Adds four new design decisions (D8–D11).
+
 ## [1.2.2] — 2026-05-10
 
 Operational hardening. Three issues that all surfaced during the v1.2.1 plugin-cache install:
