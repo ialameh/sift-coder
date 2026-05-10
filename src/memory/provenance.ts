@@ -153,6 +153,55 @@ export class ProvenanceStore {
   }
 
   /**
+   * Shortest path between two nodes using bidirectional BFS over the (treated-as-undirected)
+   * provenance graph. Returns the edges in source→target order, or null if no path exists
+   * within `maxDepth`. Each step picks the lowest-id matching edge to keep results
+   * deterministic.
+   *
+   * Why undirected: "how is X connected to Y" is rarely about edge direction; the user wants to
+   * know if a connection *exists*. Direction is preserved in the returned Edge records so the
+   * caller can render arrows correctly.
+   */
+  async shortestPath(from: NodeRef, to: NodeRef, maxDepth = 6): Promise<Edge[] | null> {
+    const fromKey = nodeKey(from);
+    const toKey = nodeKey(to);
+    if (fromKey === toKey) return [];
+    const parent = new Map<string, { prevKey: string; edge: Edge } | null>();
+    parent.set(fromKey, null);
+    let frontier: NodeRef[] = [from];
+    for (let depth = 0; depth < maxDepth && frontier.length > 0; depth++) {
+      const next: NodeRef[] = [];
+      for (const n of frontier) {
+        const adjacent: Edge[] = [
+          ...await this.outgoing(n),
+          ...await this.incoming(n),
+        ];
+        for (const e of adjacent) {
+          const otherKey = nodeKey(e.from) === nodeKey(n) ? nodeKey(e.to) : nodeKey(e.from);
+          if (parent.has(otherKey)) continue;
+          parent.set(otherKey, { prevKey: nodeKey(n), edge: e });
+          if (otherKey === toKey) {
+            // Walk parent chain from target back to source, then reverse.
+            const path: Edge[] = [];
+            let cursor = toKey;
+            while (cursor !== fromKey) {
+              const link = parent.get(cursor)!;
+              if (link === null) break;
+              path.push(link.edge);
+              cursor = link.prevKey;
+            }
+            return path.reverse();
+          }
+          const otherNode = nodeKey(e.from) === nodeKey(n) ? e.to : e.from;
+          next.push(otherNode);
+        }
+      }
+      frontier = next;
+    }
+    return null;
+  }
+
+  /**
    * Top hub nodes by total degree. `kind` filters to a single node kind ("file", "summary",
    * "symbol", etc.) — useful when you want "most-edited files" rather than mixed-kind hubs.
    */

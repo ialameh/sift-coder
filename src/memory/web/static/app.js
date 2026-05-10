@@ -491,6 +491,43 @@
     return s.slice(0, 18) + '…' + s.slice(-18);
   }
 
+  document.getElementById('path-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const fromKind = document.getElementById('path-from-kind').value.trim();
+    const fromId = document.getElementById('path-from-id').value.trim();
+    const toKind = document.getElementById('path-to-kind').value.trim();
+    const toId = document.getElementById('path-to-id').value.trim();
+    const maxDepth = parseInt(document.getElementById('path-depth').value, 10) || 6;
+    const out = document.getElementById('path-result');
+    if (!fromKind || !fromId || !toKind || !toId) {
+      out.className = 'empty';
+      out.textContent = 'all four fields are required.';
+      return;
+    }
+    out.className = '';
+    out.textContent = 'searching...';
+    try {
+      const { data } = await api('/api/graph/path', { method: 'POST', body: { fromKind, fromId, toKind, toId, maxDepth } });
+      if (data.path === null) {
+        out.className = 'empty';
+        out.textContent = `no path between ${fromKind}:${fromId} and ${toKind}:${toId} within depth ${maxDepth}`;
+        return;
+      }
+      if (data.path.length === 0) {
+        out.textContent = 'source equals target';
+        return;
+      }
+      out.innerHTML = '<ul class="replay-list">' + data.path.map((e) =>
+        `<li><span class="muted">${escape(e.from.kind)}:</span>${escape(shortId(e.from.id))} ` +
+        `<span class="arrow">—[<span class="tag">${escape(e.edgeType)}</span>]→</span> ` +
+        `<span class="muted">${escape(e.to.kind)}:</span>${escape(shortId(e.to.id))}</li>`
+      ).join('') + '</ul>';
+    } catch (e) {
+      out.className = 'empty';
+      out.textContent = 'failed: ' + e.message;
+    }
+  });
+
   refreshAll();
   setInterval(loadHealth, 15000);
 })();

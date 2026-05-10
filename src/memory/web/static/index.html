@@ -124,6 +124,17 @@
           <thead><tr><th>from</th><th>edge</th><th>to</th><th>conf</th></tr></thead>
           <tbody id="graph-body"></tbody>
         </table>
+        <h2>Path between two nodes</h2>
+        <form id="path-form">
+          <input id="path-from-kind" placeholder="from kind" />
+          <input id="path-from-id" placeholder="from id" />
+          <span class="muted">→</span>
+          <input id="path-to-kind" placeholder="to kind" />
+          <input id="path-to-id" placeholder="to id" />
+          <input id="path-depth" type="number" min="1" max="12" value="6" title="max depth" />
+          <button type="submit">Find path</button>
+        </form>
+        <div id="path-result" class="empty">Find the shortest connecting chain (treated as undirected).</div>
       </div>
       <aside class="graph-hubs">
         <h2>Top hubs</h2>
