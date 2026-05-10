@@ -2,6 +2,15 @@
 
 All notable changes to SiftCoder. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning is [SemVer](https://semver.org/).
 
+## [1.2.4] — 2026-05-10
+
+Loose-end polish.
+
+### Added
+- **`processFrame` extracted from `startServer` socket loop** — streaming branch now unit-testable in isolation. 3 new test cases (single-frame ping, full stream_search emit pattern, error-frame on stage failure). Closes the `c8 ignore` coverage gap on the streaming dispatch path.
+- **CLI `mem stream-search` ANSI colors + per-stage timing** — `[bm25]` blue, `[vector]` cyan, `[final]` green, `[done]` dim, plus elapsed-ms badge per stage and total. `NO_COLOR` env var and `--no-color` flag honored. Plain output preserved when stdout is not a TTY (pipes / scripts).
+- **`mem watch` upgraded** — adds backlog ETA, cache hit rate, pinned count, integrity status, reranker reachability badge. Doctor poll every 10 ticks (default 20s) layered on the per-tick stats RPC. Color-coded integrity / reranker state.
+
 ## [1.2.3] — 2026-05-10
 
 Tail of the v1.2 cleanup wave.

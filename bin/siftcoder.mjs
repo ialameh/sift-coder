@@ -531,18 +531,44 @@ switch (cmd) {
     break;
   }
   case 'watch': {
-    // Live TUI loop: poll stats every 2s, print compact one-line update. Ctrl+C to exit.
+    // Live TUI loop: poll stats every 2s + doctor every 10 ticks. Compact one-line update with
+    // backlog, throughput, cache hit rate, pinned count, integrity, reranker reachability.
+    // Ctrl+C to exit.
     const interval = parseInt(args[0] ?? '2', 10) * 1000;
     const tty = process.stdout.isTTY;
+    const useColor = tty && !process.env.NO_COLOR;
+    const ansi = useColor
+      ? { ok: '\x1b[32m', warn: '\x1b[33m', err: '\x1b[31m', dim: '\x1b[2m', reset: '\x1b[0m' }
+      : { ok: '', warn: '', err: '', dim: '', reset: '' };
+    let tickCount = 0;
+    let healthCache = { integrity: '?', pinned: 0, reranker: { configured: false } };
     const tick = async () => {
       try {
         const r = await rpc({ kind: 'stats', windowMs: 60_000 }, 5000);
-        if (r.ok) {
-          const d = r.data;
-          const c = d.counts;
-          const line = `[${new Date().toISOString().slice(11,19)}] events=${c.events} raw=${c.raw} sum=${c.summarized} skip=${c.skipped} | ev/m=${d.throughput.eventsPerMin.toFixed(1)} sm/m=${d.throughput.summariesPerMin.toFixed(1)} | eta=${d.backlog.etaSec ?? '-'}s | cache=${(d.cacheHitRate*100).toFixed(0)}%`;
-          if (tty) process.stdout.write('\r\x1b[K' + line); else console.log(line);
+        if (!r.ok) return;
+        // Refresh doctor every 10 ticks (cheap on small DBs but not free; 20s default cadence).
+        if (tickCount % 10 === 0) {
+          try {
+            const dr = await rpc({ kind: 'doctor' }, 5000);
+            if (dr.ok) healthCache = { integrity: dr.data.integrity, pinned: dr.data.pinned ?? 0, reranker: dr.data.reranker ?? { configured: false } };
+          } catch { /* keep cached */ }
         }
+        tickCount++;
+        const d = r.data;
+        const c = d.counts;
+        const integrityColor = healthCache.integrity === 'ok' ? ansi.ok : ansi.err;
+        const rerank = healthCache.reranker;
+        const rerankBadge = !rerank.configured
+          ? `${ansi.dim}rerank=off${ansi.reset}`
+          : rerank.ok
+            ? `${ansi.ok}rerank=ok${ansi.reset}${ansi.dim}(${rerank.latencyMs}ms)${ansi.reset}`
+            : `${ansi.err}rerank=down${ansi.reset}`;
+        const line = `${ansi.dim}[${new Date().toISOString().slice(11,19)}]${ansi.reset} ` +
+          `events=${c.events} raw=${c.raw} sum=${c.summarized} skip=${c.skipped} | ` +
+          `ev/m=${d.throughput.eventsPerMin.toFixed(1)} sm/m=${d.throughput.summariesPerMin.toFixed(1)} | ` +
+          `eta=${d.backlog.etaSec ?? '-'}s cache=${(d.cacheHitRate*100).toFixed(0)}% pinned=${healthCache.pinned} | ` +
+          `${integrityColor}integrity=${healthCache.integrity}${ansi.reset} ${rerankBadge}`;
+        if (tty) process.stdout.write('\r\x1b[K' + line); else console.log(line);
       } catch (e) {
         process.stderr.write(`\nwatch err: ${e.message}\n`);
       }
@@ -983,32 +1009,42 @@ switch (cmd) {
     process.exit(1);
   }
   case 'stream-search': {
-    // siftcoder stream-search <query> [--k N] [--json]
+    // siftcoder stream-search <query> [--k N] [--json] [--no-color]
     const query = args.filter(a => !a.startsWith('--')).slice(1).join(' ');
-    if (!query) { console.error('usage: siftcoder stream-search <query> [--k N] [--json]'); process.exit(1); }
+    if (!query) { console.error('usage: siftcoder stream-search <query> [--k N] [--json] [--no-color]'); process.exit(1); }
     const kIdx = args.indexOf('--k');
     const k = kIdx >= 0 ? parseInt(args[kIdx + 1] ?? '5', 10) : 5;
     const json = args.includes('--json');
+    // ANSI colors when stdout is a TTY and the user hasn't opted out. NO_COLOR env var honored
+    // per https://no-color.org. --no-color flag overrides for scripted callers piping to less.
+    const useColor = process.stdout.isTTY && !process.env.NO_COLOR && !args.includes('--no-color');
+    const c = useColor
+      ? { bm25: '\x1b[34m', vector: '\x1b[36m', final: '\x1b[32m', done: '\x1b[2m', tool: '\x1b[33m', muted: '\x1b[2m', reset: '\x1b[0m' }
+      : { bm25: '', vector: '', final: '', done: '', tool: '', muted: '', reset: '' };
+    const stageElapsed = { bm25: null, vector: null, final: null };
+    const t0 = Date.now();
     try {
       for await (const frame of rpcStream({ kind: 'stream_search', query, k }, 30000)) {
-        if (!frame.ok) { console.error('error:', frame.error); break; }
+        if (!frame.ok) { console.error(`${c.muted}error:${c.reset} ${frame.error}`); break; }
         if (json) {
           console.log(JSON.stringify(frame.data));
           continue;
         }
         if (frame.data?.partial) {
           const { stage, hits } = frame.data.partial;
-          console.log(`[${stage}]  ${hits.length} hits`);
+          stageElapsed[stage] = Date.now() - t0;
+          const tag = c[stage] || '';
+          console.log(`${tag}[${stage}]${c.reset} ${c.muted}${stageElapsed[stage]}ms${c.reset}  ${hits.length} hits`);
           for (const h of hits.slice(0, k)) {
             const snip = h.text && h.text.length > 100 ? h.text.slice(0, 100) + '...' : (h.text ?? '');
-            console.log(`  #${h.id}  [${h.tool ?? '?'}]  ${snip}`);
+            console.log(`  ${c.muted}#${h.id}${c.reset}  ${c.tool}[${h.tool ?? '?'}]${c.reset}  ${snip}`);
           }
         } else if (frame.data?.done) {
-          console.log('[done]');
+          console.log(`${c.done}[done] ${Date.now() - t0}ms total${c.reset}`);
         }
       }
     } catch (e) {
-      console.error('stream-search failed:', e.message);
+      console.error(`${c.muted}stream-search failed:${c.reset} ${e.message}`);
       process.exit(1);
     }
     break;
