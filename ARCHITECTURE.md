@@ -34,7 +34,7 @@ The unique additive value:
 │              │                                                       │
 │              ├─ Skills (siftcoder/*)        ─── markdown guidance    │
 │              ├─ Slash commands (siftcoder/*) ── thin wrappers        │
-│              ├─ MCP tools (siftcoder-memory) ── 26 mem_* tools (v1.1) │
+│              ├─ MCP tools (siftcoder-memory) ── 29 mem_* tools (v1.2) │
 │              └─ Hooks (PreTool / PostTool / PreCompact / Stop / …)   │
 │                          │                                           │
 └──────────────────────────┼───────────────────────────────────────────┘
@@ -46,13 +46,17 @@ The unique additive value:
 │   ┌─ MCP server (stdio)  ────────  exposes mem_* tools to CC         │
 │   ├─ UDS server  (~/.siftcoder/run/{wsHash}.sock)                    │
 │   │                                                                  │
-│   ├─ Storage (SQLite native + WASM parity)                           │
-│   ├─ Retrieval (BM25 + dense vector → RRF → Ebbinghaus decay)        │
-│   ├─ Provenance (typed edge graph: causes/derives_from/calls/…)      │
+│   ├─ Storage (SQLite native + WASM parity, vec0 indexed retrieval)   │
+│   ├─ Retrieval (BM25 + dense vector → RRF → decay → reranker)        │
+│   │   ├─ streamingHybridSearch — emits BM25/vector/final stages      │
+│   │   └─ optional cross-encoder via SIFTCODER_RERANKER_URL (HTTP)    │
+│   ├─ Provenance (typed edge graph + auto-edge inference)             │
+│   │   subgraph BFS, shortestPath, topHubs                            │
 │   ├─ Summariser (Haiku → confidence eval → Sonnet escalation)        │
 │   ├─ Embedder (Ollama → CDG → deterministic fallback)                │
 │   ├─ Consolidator (dedup, merge, prune)                              │
-│   └─ HTTP sidecar (optional read-only web UI)                        │
+│   ├─ MCP eager-drain loop (adaptive backoff, sampling-driven)        │
+│   └─ HTTP sidecar (read-only SPA: 11 tabs)                           │
 │                                                                      │
 └──────────────────────────────────────────────────────────────────────┘
                            │
@@ -151,15 +155,36 @@ High-value groups:
 Quality gates run via on-demand `/siftcoder:quality` skill. Checkpoint/handoff are explicit workflow skills, not hidden automation. Compression is a skill backed by companion plugin state.
 
 ### MCP server
-`siftcoder-memory` exposes 26 tools (v1.1.0). Declared inline in `plugin.json`.
+`siftcoder-memory` exposes 29 tools (v1.2.x). Declared inline in `plugin.json`.
 
 **Retrieval & state:** `mem_search`, `mem_get`, `mem_timeline`, `mem_why`, `mem_replay`, `mem_thread`, `mem_federate_search`, `mem_symbol_search`, `mem_context_budget`, `mem_as_of`, `mem_session_digest`, `mem_dashboard`, `mem_stats`.
 
 **Capture & curation:** `mem_capture`, `mem_pin`, `mem_unpin`, `mem_pinned`, `mem_auto_pin_patterns`, `mem_patterns`.
 
+**Knowledge graph (v1.2):** `mem_graph_subgraph`, `mem_graph_hubs`, `mem_graph_path`. Bidirectional BFS subgraph extraction, top-degree node ranking, undirected shortest path. Provenance graph seeded automatically by the auto-edges module on every capture.
+
 **Operations:** `mem_drain`, `mem_prune`, `mem_retry`, `mem_doctor`, `mem_compact`, `mem_sweep_expired`, `mem_export`, `mem_import`.
 
 **Drain backend:** when the host advertises `sampling`, the MCP server delegates summarization to the host LLM via `sampling/createMessage` — no API key required. Otherwise falls back to GLM → Gemini → Ollama → Anthropic-direct on the daemon. See `src/memory/mcp/handler.ts` (drainViaSampling) and `src/memory/mcp/server.ts` (bidirectional StdioBridge).
+
+**Eager-drain loop (v1.2):** `src/memory/mcp/drain-loop.ts` polls daemon backlog without waiting for `mem_search`. Adaptive backoff (2× per empty tick, capped) keeps idle workspaces quiet; resets to base cadence on a productive drain. `SIFTCODER_MCP_DRAIN_MS` (default 60s; 0 disables), `SIFTCODER_MCP_DRAIN_BATCH` (default 4).
+
+**Streaming search (v1.2):** `mem stream-search` and the `stream_search` RPC kind emit BM25 → vector → final stages as separate frames on one socket connection. `MemoryClient.sendStream` is an AsyncGenerator with per-frame progress timeout. Total wall-clock matches non-streaming; perceived latency improves.
+
+**Cross-encoder reranker (v1.2):** opt-in HTTP scoring via `SIFTCODER_RERANKER_URL`. Auto-detects Jina/TEI (`{scores}`) and Cohere (`{results}`) shapes. Fails open: any scoring error falls back to baseline RRF order. Reachability surfaced in `mem doctor` and the SPA Health tab.
+
+**Auto-edge inference (v1.2):** `src/memory/auto-edges.ts` writes provenance edges as events land:
+- File tools (Edit, Write, Read, MultiEdit, NotebookEdit) → `event:N --edits--> file:<path>`
+- Bash → `event:N --references--> file:<path>` for path-tokens (deduped)
+- Sequential events in same session → `event:N --derives_from--> event:N-1`
+
+All inferred edges tagged `source='auto'` to distinguish from CDG / human edges. `SIFTCODER_AUTO_EDGES=0` disables. Means `mem_graph_*` produce non-empty results on a fresh workspace.
+
+### HTTP API & web UI
+
+`/api/*` routes mirror RPC kinds 1:1 where useful. New in v1.2: `/api/sessions`, `/api/patterns`, `/api/session-digest`, `/api/as-of`, `/api/graph/subgraph`, `/api/graph/hubs`, `/api/graph/path`.
+
+SPA tabs (v1.2): Overview, Health, Events, Summaries, Pinned, Sessions (with replay), Search, Symbol, Provenance, Graph (subgraph + path-finder + hubs sidebar), Patterns, A/B savings.
 
 ### Monitors
 `memory-daemon-health.mjs` — pings UDS socket every 30s, logs and surfaces in `/siftcoder:mem status`.
@@ -178,13 +203,17 @@ tool result
   → PostToolUse capture-observation.mjs (250ms budget, fire-and-forget)
   → UDS frame → daemon
   → WAL append → events table
+  → auto-edges.ts inferEdgesForEvent (file edits, Bash references,
+    derives_from chain to prior event in session)
+  → provenance_edges INSERT (source='auto')
 ```
 
 **Drain path (background, MCP-side preferred):**
 ```
-mem_search (or mem_drain) on the host
+mem_search OR runPeriodicDrain tick (eager-drain loop, MCP-side)
   → MCP server checks samplingTransport availability
-    ├─ available  → claim_for_summary (atomic raw → claimed)
+    ├─ available  → status probe (raw count) — short-circuit if 0 (backoff)
+    │              → claim_for_summary (atomic raw → claimed)
     │              → for each: cache_get → host sampling/createMessage → record_summary
     │              → release_summary on retryable error (back to raw)
     └─ unavailable → daemon-side runDrain (GLM → Gemini → Ollama → Anthropic cascade)
@@ -200,8 +229,35 @@ MCP tool call mem_search(query, k=10)
   → embed query → vec0 MATCH if loaded, else JS-side cosine
   → RRF fuse → per-tool Ebbinghaus decay (Edit 30d, Bash 3d, etc.)
   → pinned summaries exempt from supersede sieve
-  → optional rerank (corpus-IDF cached or Claude cross-encoder)
+  → optional cross-encoder rerank (HTTP, fails open)
   → return top-k summaries + tool + provenance hints
+```
+
+**Streaming retrieval path (stream_search):**
+```
+mem stream-search "<query>"
+  → server.ts socket loop branches on kind === 'stream_search'
+  → streamingHybridSearch:
+      emit { stage: 'bm25',   hits: searchFts(...) }    (~5ms)
+      emit { stage: 'vector', hits: vec0 / cosine }      (after embed RT)
+      emit { stage: 'final',  hits: full hybridSearch }  (full pipeline)
+  → server writes terminator { done: true }
+  → MemoryClient.sendStream yields each frame as it lands
+```
+
+**Knowledge graph path (mem_graph_*):**
+```
+mem_graph_subgraph { kind, id, maxDepth, direction, edgeType, maxEdges }
+  → ProvenanceStore.subgraph BFS in either / both directions
+  → returns { nodes, edges } with maxEdges hub cap
+
+mem_graph_path { fromKind/Id, toKind/Id, maxDepth }
+  → bidirectional BFS treating edges as undirected for connectivity
+  → returns ordered Edge[] (directed) or null
+
+mem_graph_hubs { limit, kind? }
+  → Storage.topProvenanceDegree (UNION ALL on edges, group by node)
+  → returns { node, degree, outDegree, inDegree }
 ```
 
 **PreCompact path:**
@@ -225,10 +281,13 @@ Claude Code emits PreCompact
 
 - **New embedder backend:** implement `Embedder` interface in `src/memory/embedders/`, register in cascade.
 - **New summariser backend:** implement `LLMClient` in `src/llm/`, add to env-driven backend resolver.
+- **New cross-encoder backend:** implement `CrossEncoder.score(query, docs[])` in `src/memory/cross-encoder.ts`. Plug via `daemon/index.ts` boot block. Ping support via `crossEncoderToReranker`.
 - **New skill:** add `skills/<name>/SKILL.md` with frontmatter — auto-discovered.
 - **New agent:** add `agents/<name>.md` with frontmatter — auto-discovered.
 - **New slash command:** add `commands/<name>.md` — auto-discovered.
 - **New hook:** add `hooks/<event>/<name>.mjs` and register in `plugin.json` `hooks` block.
+- **New auto-edge rule:** extend `inferEdgesForEvent` in `src/memory/auto-edges.ts`. Tag `source='auto'` for distinguishability.
+- **New streaming kind:** add to `RequestKind` union, branch in `server.ts` socket loop with multi-frame writes ending in `{ done: true }`.
 
 ## 9. Design decisions
 
@@ -245,6 +304,14 @@ Claude Code emits PreCompact
 **D6. ESLint + Prettier + TS strict + Vitest + GitHub Actions CI** mandatory baseline.
 
 **D7. README stays under 250 lines.** Long-form docs go in `docs/`.
+
+**D8. Cross-encoder reranker is HTTP, not bundled.** Bundling onnxruntime would add ~50MB of native deps to a CLI plugin for a 5–15% NDCG lift. The HTTP boundary lets users opt into the cost (TEI, Jina, Cohere, local sentence-transformers) only when the lift matters. Failures fall back to the RRF baseline order — never break search.
+
+**D9. Streaming uses one-call-multi-frame, not request_id correlation.** Each `MemoryClient.send` opens its own UDS connection. Multi-frame on a single connection is sufficient for streaming; introducing request-id keying would complicate the protocol for no current consumer.
+
+**D10. Auto-edges run synchronously inside capture.** One INSERT per edge is cheap relative to FTS5 maintenance. A worker-queued model would add coordination overhead without latency wins. The provenance graph stays warm and useful from event 1.
+
+**D11. Auto-edge `source` tag is load-bearing.** The provenance graph mixes auto-inferred, CDG-imported, and human-curated edges. Filtering by `source` lets graph queries scope to a trust level when that matters.
 
 ## 10. Open risks
 
