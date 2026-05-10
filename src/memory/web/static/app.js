@@ -86,6 +86,7 @@
     if (name === 'search') return; // form-driven
     if (name === 'symbol') return; // form-driven
     if (name === 'why') return;
+    if (name === 'graph') return loadGraphTab();
     if (name === 'ab') return;
   }
 
@@ -396,6 +397,99 @@
       tbody.innerHTML = '<tr><td colspan="4" class="empty">failed: ' + escape(e.message) + '</td></tr>';
     }
   });
+
+  // ─── Graph tab: subgraph extraction + hub list ───────────────────────────────
+  let graphHubsLoaded = false;
+  async function loadGraphTab() {
+    if (!graphHubsLoaded) {
+      await loadHubs();
+      graphHubsLoaded = true;
+    }
+  }
+
+  async function loadHubs() {
+    const tbody = document.getElementById('hubs-body');
+    tbody.innerHTML = '<tr><td colspan="2" class="empty">loading...</td></tr>';
+    try {
+      const kind = document.getElementById('hubs-kind').value.trim();
+      const path = '/api/graph/hubs?limit=20' + (kind ? '&kind=' + encodeURIComponent(kind) : '');
+      const { data } = await api(path);
+      if (!data.hubs.length) {
+        tbody.innerHTML = '<tr><td colspan="2" class="empty">no edges yet — graph populates as provenance is recorded</td></tr>';
+        return;
+      }
+      tbody.innerHTML = data.hubs.map((h) => {
+        const idShort = h.node.id.length > 32 ? h.node.id.slice(0, 32) + '…' : h.node.id;
+        return `<tr class="hub-row" data-kind="${escape(h.node.kind)}" data-id="${escape(h.node.id)}">` +
+          `<td title="${escape(h.node.kind + ':' + h.node.id)}"><span class="muted">${escape(h.node.kind)}:</span>${escape(idShort)}</td>` +
+          `<td>${fmt.num(h.degree)}<span class="muted"> (${h.outDegree}/${h.inDegree})</span></td></tr>`;
+      }).join('');
+      tbody.querySelectorAll('.hub-row').forEach((tr) => {
+        tr.addEventListener('click', () => {
+          document.getElementById('graph-kind').value = tr.dataset.kind;
+          document.getElementById('graph-id').value = tr.dataset.id;
+          document.getElementById('graph-form').dispatchEvent(new Event('submit', { cancelable: true }));
+        });
+      });
+    } catch (e) {
+      tbody.innerHTML = '<tr><td colspan="2" class="empty">failed: ' + escape(e.message) + '</td></tr>';
+    }
+  }
+
+  document.getElementById('hubs-kind').addEventListener('change', loadHubs);
+
+  document.getElementById('graph-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const kind = document.getElementById('graph-kind').value.trim();
+    const id = document.getElementById('graph-id').value.trim();
+    const direction = document.getElementById('graph-direction').value;
+    const maxDepth = parseInt(document.getElementById('graph-depth').value, 10) || 2;
+    const edgeType = document.getElementById('graph-edge-type').value.trim();
+    const summary = document.getElementById('graph-summary');
+    const tbody = document.getElementById('graph-body');
+    if (!kind || !id) {
+      summary.className = 'empty';
+      summary.textContent = 'kind and id are required.';
+      return;
+    }
+    summary.className = '';
+    summary.textContent = 'loading subgraph...';
+    tbody.innerHTML = '';
+    try {
+      const body = { kind, id, direction, maxDepth, maxEdges: 200 };
+      if (edgeType) body.edgeType = edgeType;
+      const { data } = await api('/api/graph/subgraph', { method: 'POST', body });
+      summary.textContent = `${data.nodes.length} nodes, ${data.edges.length} edges around ${kind}:${id}`;
+      if (!data.edges.length) {
+        tbody.innerHTML = '<tr><td colspan="4" class="empty">no edges in this neighbourhood</td></tr>';
+        return;
+      }
+      tbody.innerHTML = data.edges.map((e) => {
+        const fromShort = shortId(e.from.id);
+        const toShort = shortId(e.to.id);
+        const fromCell = `<a class="node-link" data-kind="${escape(e.from.kind)}" data-id="${escape(e.from.id)}" title="${escape(e.from.id)}"><span class="muted">${escape(e.from.kind)}:</span>${escape(fromShort)}</a>`;
+        const toCell = `<a class="node-link" data-kind="${escape(e.to.kind)}" data-id="${escape(e.to.id)}" title="${escape(e.to.id)}"><span class="muted">${escape(e.to.kind)}:</span>${escape(toShort)}</a>`;
+        return `<tr><td>${fromCell}</td>` +
+          `<td><span class="tag">${escape(e.edgeType)}</span></td>` +
+          `<td>${toCell}</td>` +
+          `<td>${escape(Number(e.confidence).toFixed(2))}</td></tr>`;
+      }).join('');
+      tbody.querySelectorAll('.node-link').forEach((a) => {
+        a.addEventListener('click', () => {
+          document.getElementById('graph-kind').value = a.dataset.kind;
+          document.getElementById('graph-id').value = a.dataset.id;
+          document.getElementById('graph-form').dispatchEvent(new Event('submit', { cancelable: true }));
+        });
+      });
+    } catch (e) {
+      summary.textContent = 'failed: ' + e.message;
+    }
+  });
+
+  function shortId(s) {
+    if (s.length <= 40) return s;
+    return s.slice(0, 18) + '…' + s.slice(-18);
+  }
 
   refreshAll();
   setInterval(loadHealth, 15000);

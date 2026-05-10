@@ -95,3 +95,25 @@ button.unpin-btn, button.replay-btn {
 }
 button.unpin-btn:hover, button.replay-btn:hover { background: #2a2e34; color: #e6e6e6; }
 button.unpin-btn:disabled { opacity: 0.5; cursor: default; }
+.graph-layout { display: grid; grid-template-columns: 1fr 280px; gap: 24px; }
+.graph-main { min-width: 0; }
+.graph-hubs { background: #15171a; border-radius: 6px; padding: 12px 16px; }
+.graph-hubs h2 { margin-top: 0; }
+.graph-hubs table { font-size: 11px; }
+.graph-hubs td { padding: 4px 8px; }
+.hub-row { cursor: pointer; }
+.hub-row:hover td { background: #1f2226; }
+select {
+  background: #1c1d20;
+  border: 1px solid #2a2e34;
+  color: #e6e6e6;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font: inherit;
+}
+.node-link { color: #8ab4ff; cursor: pointer; text-decoration: none; }
+.node-link:hover { text-decoration: underline; }
+#graph-form { gap: 6px; }
+#graph-form input { max-width: 200px; }
+#graph-form input[type=number] { max-width: 80px; }
+#graph-summary { font-family: SF Mono, Menlo, monospace; font-size: 12px; color: #9aa0a6; padding: 8px 0 12px; font-style: normal; }
