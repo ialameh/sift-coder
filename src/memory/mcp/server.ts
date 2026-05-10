@@ -17,6 +17,7 @@ import { workspacePaths } from '../workspace.js';
 import { MemoryClient } from '../client.js';
 import { dispatch, type JsonRpcRequest, type JsonRpcResponse } from './handler.js';
 import type { SamplingTransport, SamplingRequestParams, SamplingResponse } from './sampling-client.js';
+import { runPeriodicDrain, type PeriodicDrainHandle } from './drain-loop.js';
 
 class StdioBridge implements SamplingTransport {
   private buf = '';
@@ -80,6 +81,8 @@ async function main() {
   const bridge = new StdioBridge();
   let samplingAvailable = false;
 
+  let drainHandle: PeriodicDrainHandle | null = null;
+
   bridge.start(async req => dispatch(req, {
     client: memClient,
     drainBatch: 4,
@@ -89,8 +92,35 @@ async function main() {
       const cap = samplingAvailable ? 'sampling=advertised' : 'sampling=NOT advertised';
       const ci = info.clientInfo ? `${info.clientInfo.name ?? '?'}@${info.clientInfo.version ?? '?'}` : '?';
       process.stderr.write(`siftcoder-mem mcp: host=${ci} ${cap}; caps=${JSON.stringify(info.clientCaps)}\n`);
+      // Boot the eager-drain loop now that we know whether sampling is available. Without this,
+      // backlog only drains when mem_search is called — sessions that capture-only stay full.
+      const intervalMs = (() => {
+        const raw = process.env['SIFTCODER_MCP_DRAIN_MS'];
+        if (raw === undefined) return 60_000;
+        const n = Number.parseInt(raw, 10);
+        return Number.isFinite(n) && n >= 0 ? n : 60_000;
+      })();
+      const batch = (() => {
+        const raw = process.env['SIFTCODER_MCP_DRAIN_BATCH'];
+        if (raw === undefined) return 4;
+        const n = Number.parseInt(raw, 10);
+        return Number.isFinite(n) && n > 0 ? n : 4;
+      })();
+      drainHandle?.stop();
+      drainHandle = runPeriodicDrain(memClient, samplingAvailable ? bridge : null, {
+        intervalMs, batch,
+        onTick: ({ ran, result, error }) => {
+          if (error) process.stderr.write(`siftcoder-mem mcp drain-loop: ${error.message}\n`);
+          else if (ran && result && result.processed > 0) {
+            process.stderr.write(`siftcoder-mem mcp drain-loop: processed=${result.processed} pending=${result.pending}\n`);
+          }
+        },
+      });
     },
   }));
+
+  process.on('SIGTERM', () => { drainHandle?.stop(); });
+  process.on('SIGINT', () => { drainHandle?.stop(); });
 
   // Last-resort error logging so a silent crash leaves a forensic trail.
   process.on('uncaughtException', err => {
