@@ -2,6 +2,21 @@
 
 All notable changes to SiftCoder. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning is [SemVer](https://semver.org/).
 
+## [1.2.5] — 2026-05-10
+
+Audit pass on the v1.2 line. Three measured findings, three fixes.
+
+### Fixed
+- **Streaming search ran every subquery twice** — `streamingHybridSearch` emitted BM25 + vector stages from one set of queries, then called `hybridSearch` for the final stage which re-ran BM25 + embedding + vector. Verified by instrumented count: `{ searchFts: 2, embed: 2 }` per stream_search request. Refactored: extracted `runRetrievalStages` (BM25 + vector preflight) and `fuseAndRank` (RRF + decay + supersede + rerank) so both `hybridSearch` and `streamingHybridSearch` share the work. Now `{ searchFts: 1, embed: 1 }` per request, matching non-streaming. Comment claiming "guarantees parity" was rationalization for the duplication.
+- **Doctor reranker probe leaked money on idle workspaces** — `mem watch` polled doctor every 20s; doctor pinged the reranker server every call → 4320 paid Cohere/TEI/Jina API calls per idle day. Added 60s probe cache at the daemon level. `req.heal=true` bypasses the cache so an explicit `mem doctor --heal` always gets ground truth. Cached responses include a `cached: true` flag in the reply.
+
+### Verified (no fix needed)
+- **Auto-edge capture latency** — measured: 52µs/event baseline → 160µs with auto-edges (Edit) → 538µs worst case (Bash with 8 path tokens). Capture budget is 250ms; auto-edges uses ≤0.2% of it. Phantom concern.
+
+### Internals
+- `runRetrievalStages` and `fuseAndRank` are private helpers in `retrieval.ts`. Public surface (`hybridSearch`, `streamingHybridSearch`) unchanged.
+- `resetRerankerProbeCache` exported from `server.ts` for tests; module-level cache is a `let` so tests can isolate.
+
 ## [1.2.4] — 2026-05-10
 
 Loose-end polish.

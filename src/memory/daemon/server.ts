@@ -108,6 +108,17 @@ async function runDrain(
 
 export type Handler = (req: Request) => Promise<Response>;
 
+/**
+ * Module-level cache for the reranker reachability probe. Doctor pings the reranker server to
+ * report `ok | down`; without a cache, a `mem watch` poller would hit the scorer every 20s.
+ * 60s window = at most 1440 calls/day on an actively-watched session.
+ */
+let rerankerProbeCache: { ts: number; result: { ok: boolean; latencyMs: number; error?: string } } | null = null;
+
+export function resetRerankerProbeCache(): void {
+  rerankerProbeCache = null;
+}
+
 export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 'embedder' | 'symbols' | 'asyncSymbols' | 'onShutdown' | 'summarizer' | 'drainBatch' | 'drainBackend' | 'provenance' | 'reranker'>): Handler {
   return async (req: Request): Promise<Response> => {
     try {
@@ -294,14 +305,25 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
 
         case 'doctor': {
           const r = await deps.storage.doctor();
-          // Optional reranker probe: surfaces whether SIFTCODER_RERANKER_URL is reachable so a
-          // silently-broken reranker shows up in `mem doctor` rather than degrading search quality.
-          let reranker: { configured: boolean; ok?: boolean; latencyMs?: number; error?: string } = {
+          // Reranker probe: cached for 60s to avoid hammering the scoring service when callers
+          // poll doctor frequently (e.g. `mem watch` every 20s = 4320 paid Cohere calls/day on
+          // an idle session). A 60s window means at most ~1440 calls/day, only when watch or
+          // doctor is actively in use. Use req.heal as the cache-bypass: explicit heal runs do
+          // a fresh probe so the operator gets ground truth on demand.
+          let reranker: { configured: boolean; ok?: boolean; latencyMs?: number; error?: string; cached?: boolean } = {
             configured: !!deps.reranker,
           };
           if (deps.reranker?.ping) {
-            const probe = await deps.reranker.ping();
-            reranker = { configured: true, ok: probe.ok, latencyMs: probe.latencyMs, ...(probe.error ? { error: probe.error } : {}) };
+            const now = Date.now();
+            const cached = rerankerProbeCache;
+            const stale = req.heal === true || cached === null || (now - cached.ts) > 60_000;
+            if (stale) {
+              const probe = await deps.reranker.ping();
+              rerankerProbeCache = { ts: now, result: probe };
+              reranker = { configured: true, ok: probe.ok, latencyMs: probe.latencyMs, ...(probe.error ? { error: probe.error } : {}) };
+            } else {
+              reranker = { configured: true, ok: cached.result.ok, latencyMs: cached.result.latencyMs, ...(cached.result.error ? { error: cached.result.error } : {}), cached: true };
+            }
           }
           if (req.heal && r.vecCardinality.drift > 0) {
             const copied = await deps.storage.backfillVec();

@@ -613,6 +613,28 @@ describe('buildHandler with real Storage (cross-platform)', () => {
     expect(r2.data.skipped).toBe(2);
   });
 
+  it('doctor reranker probe is cached for 60s; heal=true bypasses cache', async () => {
+    const { resetRerankerProbeCache } = await import('./server.js');
+    resetRerankerProbeCache();
+    let pingCalls = 0;
+    const stubReranker = {
+      rerank: async (_q: string, hits: unknown[]) => hits as never[],
+      ping: async () => { pingCalls++; return { ok: true, latencyMs: 5 }; },
+    };
+    const h = buildHandler({ storage: realStorage, wal: realWal, cwd: '/x', reranker: stubReranker });
+    // First call → fresh probe (1)
+    const a = await h({ kind: 'doctor' }) as { ok: true; data: { reranker?: { ok: boolean; cached?: boolean } } };
+    expect(pingCalls).toBe(1);
+    expect(a.data.reranker?.cached).toBeUndefined();
+    // Second call within 60s → cached, no new ping
+    const b = await h({ kind: 'doctor' }) as { ok: true; data: { reranker?: { cached?: boolean } } };
+    expect(pingCalls).toBe(1);
+    expect(b.data.reranker?.cached).toBe(true);
+    // heal=true bypasses cache → fresh ping
+    await h({ kind: 'doctor', heal: true });
+    expect(pingCalls).toBe(2);
+  });
+
   it('doctor heal=true triggers vec backfill when drift exists', async () => {
     // Without sqlite-vec loaded, vecEnabled=false → backfillVec is a no-op (returns 0).
     // The healed branch still runs; verify the response shape.
