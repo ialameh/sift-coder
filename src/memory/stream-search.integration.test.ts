@@ -50,7 +50,10 @@ afterEach(async () => {
 
 interface PartialFrame { partial?: { stage: string; hits: unknown[] }; done?: boolean }
 
-describe('stream_search wire protocol', () => {
+// Windows: UDS socket bind on TEMP-derived paths fails with EACCES under GitHub Actions.
+// Mirror the skip pattern used by client.test.ts and e2e.test.ts. The streaming dispatch is
+// covered at unit level by daemon/server.test.ts processFrame tests, which run on every OS.
+describe.skipIf(process.platform === 'win32')('stream_search wire protocol', () => {
   it('emits BM25, vector, final, and a done terminator', async () => {
     const client = new MemoryClient({ socketPath, timeoutMs: 5000 });
     const req: StreamSearchRequest = { kind: 'stream_search', query: 'auth', k: 5 };
