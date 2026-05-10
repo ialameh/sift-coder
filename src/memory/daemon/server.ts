@@ -66,7 +66,7 @@ export function isRetryableError(message: string): boolean {
   );
 }
 
-async function runDrain(
+export async function runDrain(
   storage: Storage,
   summarizer: Summarizer,
   embedder: Embedder | null | undefined,

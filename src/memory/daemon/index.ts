@@ -232,6 +232,38 @@ async function main() {
     lastClientTs = Date.now();
   });
 
+  // Daemon-side periodic drain. v1.2 added an MCP-side eager-drain loop, but sessions where
+  // sampling is NOT advertised — or where the MCP server hasn't initialized — leave the daemon
+  // idle even when a backend (Gemini/Anthropic/Ollama/GLM) is configured. This loop closes that
+  // gap. Cadence + batch tunable via env. Disable with SIFTCODER_DAEMON_DRAIN_MS=0.
+  const { runPeriodicDaemonDrain } = await import('./periodic-drain.js');
+  const daemonDrainMs = (() => {
+    const raw = process.env['SIFTCODER_DAEMON_DRAIN_MS'];
+    if (raw === undefined) return 60_000;
+    const n = Number.parseInt(raw, 10);
+    return Number.isFinite(n) && n >= 0 ? n : 60_000;
+  })();
+  const daemonDrainBatch = (() => {
+    const raw = process.env['SIFTCODER_DAEMON_DRAIN_BATCH'];
+    if (raw === undefined) return 8;
+    const n = Number.parseInt(raw, 10);
+    return Number.isFinite(n) && n > 0 ? n : 8;
+  })();
+  const daemonDrainHandle = runPeriodicDaemonDrain(storage, summarizer, embedder, {
+    intervalMs: daemonDrainMs,
+    batch: daemonDrainBatch,
+    backend: drainBackend,
+    onTick: ({ ran, result, error }) => {
+      if (error) logger.warn('daemon drain error', { error: error.message });
+      else if (ran && result && result.processed > 0) {
+        logger.info('daemon drain', { processed: result.processed, errors: result.errors, pending: result.pending });
+      }
+    },
+  });
+  if (summarizer && daemonDrainMs > 0) {
+    logger.info('daemon periodic drain enabled', { intervalMs: daemonDrainMs, batch: daemonDrainBatch });
+  }
+
   let httpServer: ReturnType<typeof startHttpBridge> | null = null;
   if (process.env['SIFTCODER_NO_HTTP'] !== '1') {
     const handler = buildHandler({ storage, wal, cwd, embedder, reranker });
@@ -319,6 +351,7 @@ async function main() {
   function shutdown() {
     consolidator.stop();
     symbolWorker.stop();
+    daemonDrainHandle.stop();
     if (counterTimer) clearInterval(counterTimer);
     if (sweepTimer) clearInterval(sweepTimer);
     logger.info('daemon stopping');
