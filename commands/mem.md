@@ -35,6 +35,8 @@ Single entry point for memory daemon operations.
 | `stats [--day] [--json]` | Throughput, backlog ETA, cache hit rate, top tools |
 | `web` | Print web UI URL for browser inspection |
 | `list` | List recent summaries |
+| `graph-subgraph <kind> <id> [--depth N] [--direction out\|in\|both] [--edge-type T] [--max-edges N] [--json]` | Extract a knowledge-graph subgraph around a node |
+| `graph-hubs [--limit N] [--kind file\|symbol\|...] [--json]` | List the most-connected nodes in the provenance graph |
 
 ## Examples
 

@@ -501,8 +501,29 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
 
         case 'why': {
           if (!deps.provenance) return { ok: true, data: { edges: [] } };
-          const edges = deps.provenance.trace({ kind: req.nodeKind, id: req.nodeId }, req.depth ?? 4);
+          const edges = await deps.provenance.trace({ kind: req.nodeKind, id: req.nodeId }, req.depth ?? 4);
           return { ok: true, data: { edges } };
+        }
+
+        case 'graph_subgraph': {
+          if (!deps.provenance) return { ok: true, data: { nodes: [], edges: [] } };
+          const direction = req.direction === 'in' || req.direction === 'out' ? req.direction : 'both';
+          const result = await deps.provenance.subgraph(
+            { kind: req.nodeKind, id: req.nodeId },
+            {
+              maxDepth: req.maxDepth,
+              direction,
+              edgeType: req.edgeType as never,
+              maxEdges: req.maxEdges,
+            },
+          );
+          return { ok: true, data: result };
+        }
+
+        case 'graph_hubs': {
+          if (!deps.provenance) return { ok: true, data: { hubs: [] } };
+          const hubs = await deps.provenance.topHubs(req.limit ?? 20, req.nodeKind);
+          return { ok: true, data: { hubs } };
         }
 
         case 'shutdown': {

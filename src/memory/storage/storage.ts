@@ -1468,4 +1468,35 @@ export class Storage {
       `SELECT * FROM provenance_edges WHERE to_kind = ? AND to_id = ? ORDER BY ts DESC`
     )).all(toKind, toId) as Array<Record<string, unknown>>;
   }
+
+  /**
+   * Top hub nodes by degree (incoming + outgoing). Surfaces "what's at the centre of my graph"
+   * — files that get edited often, decisions that influence many summaries, etc. UNION ALL
+   * across both directions then groups; this scales fine with current row counts (graphs
+   * stay small relative to summary corpora).
+   */
+  async topProvenanceDegree(limit = 20, kind?: string): Promise<Array<{
+    kind: string; id: string; degree: number; outDegree: number; inDegree: number;
+  }>> {
+    const filter = kind ? 'WHERE k = ?' : '';
+    const sql = `SELECT k AS kind, i AS id,
+                        sum(out_d) AS out_degree,
+                        sum(in_d) AS in_degree,
+                        sum(out_d) + sum(in_d) AS degree
+                  FROM (
+                    SELECT from_kind AS k, from_id AS i, count(*) AS out_d, 0 AS in_d
+                      FROM provenance_edges GROUP BY from_kind, from_id
+                    UNION ALL
+                    SELECT to_kind AS k, to_id AS i, 0 AS out_d, count(*) AS in_d
+                      FROM provenance_edges GROUP BY to_kind, to_id
+                  )
+                  ${filter}
+                  GROUP BY k, i
+                  ORDER BY degree DESC, k ASC, i ASC
+                  LIMIT ?`;
+    const rows = kind
+      ? await (await this.db.prepare(sql)).all(kind, limit) as Array<{ kind: string; id: string; out_degree: number; in_degree: number; degree: number }>
+      : await (await this.db.prepare(sql)).all(limit) as Array<{ kind: string; id: string; out_degree: number; in_degree: number; degree: number }>;
+    return rows.map(r => ({ kind: r.kind, id: r.id, degree: r.degree, outDegree: r.out_degree, inDegree: r.in_degree }));
+  }
 }

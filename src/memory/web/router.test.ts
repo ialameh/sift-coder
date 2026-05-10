@@ -141,6 +141,30 @@ describe('new web endpoints (stats, doctor, pinned, symbol-search, thread, repla
     expect(body.data.hits).toHaveLength(1);
   });
 
+  it('POST /api/graph/subgraph returns nodes and edges around a seed', async () => {
+    await provenance.addEdge({ from: { kind: 'n', id: 'a' }, to: { kind: 'n', id: 'b' }, edgeType: 'causes' });
+    await provenance.addEdge({ from: { kind: 'n', id: 'b' }, to: { kind: 'n', id: 'c' }, edgeType: 'causes' });
+    const r = await route(req({ method: 'POST', path: '/api/graph/subgraph', body: JSON.stringify({ kind: 'n', id: 'b', maxDepth: 1 }) }), deps());
+    const body = JSON.parse(String(r.body));
+    expect(body.data.nodes.length).toBeGreaterThanOrEqual(3);
+    expect(body.data.edges).toHaveLength(2);
+  });
+
+  it('POST /api/graph/subgraph 400s on missing kind/id', async () => {
+    const r = await route(req({ method: 'POST', path: '/api/graph/subgraph', body: '{}' }), deps());
+    expect(r.status).toBe(400);
+  });
+
+  it('GET /api/graph/hubs returns top-degree nodes', async () => {
+    for (let i = 0; i < 3; i++) {
+      await provenance.addEdge({ from: { kind: 'file', id: 'h' }, to: { kind: 'file', id: 'leaf-' + i }, edgeType: 'imports' });
+    }
+    const r = await route(req({ path: '/api/graph/hubs', query: { limit: '5' } }), deps());
+    const body = JSON.parse(String(r.body));
+    expect(body.data.hubs[0].node.id).toBe('h');
+    expect(body.data.hubs[0].degree).toBe(3);
+  });
+
   it('GET /api/sessions lists sessions with counts', async () => {
     await storage.recordEvent({ ts: 1, sessionId: 'a', tool: 'R', payload: { i: 1 } });
     await storage.recordEvent({ ts: 2, sessionId: 'a', tool: 'R', payload: { i: 2 } });

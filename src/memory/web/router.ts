@@ -254,6 +254,32 @@ export async function route(req: WebRequest, deps: WebDeps): Promise<WebResponse
     return json(200, { ok: true, data: { pinned: await deps.storage.pin(body.summaryId), summaryId: body.summaryId } });
   }
 
+  if (req.method === 'POST' && req.path === '/api/graph/subgraph') {
+    const body = parseBody<{ kind: string; id: string; maxDepth?: number; direction?: 'out' | 'in' | 'both'; edgeType?: string; maxEdges?: number }>(req.body);
+    if (!body || typeof body.kind !== 'string' || typeof body.id !== 'string') {
+      return badRequest('kind and id required');
+    }
+    if (!deps.provenance) return json(200, { ok: true, data: { nodes: [], edges: [] } });
+    const direction = body.direction === 'in' || body.direction === 'out' ? body.direction : 'both';
+    const result = await deps.provenance.subgraph(
+      { kind: body.kind, id: body.id },
+      {
+        maxDepth: body.maxDepth,
+        direction,
+        edgeType: body.edgeType as never,
+        maxEdges: body.maxEdges,
+      },
+    );
+    return json(200, { ok: true, data: result });
+  }
+
+  if (req.method === 'GET' && req.path === '/api/graph/hubs') {
+    const limit = parseInt(req.query['limit'] ?? '20', 10) || 20;
+    const kind = req.query['kind'];
+    if (!deps.provenance) return json(200, { ok: true, data: { hubs: [] } });
+    return json(200, { ok: true, data: { hubs: await deps.provenance.topHubs(limit, kind || undefined) } });
+  }
+
   if (req.method === 'POST' && req.path === '/api/unpin') {
     const body = parseBody<{ summaryId: number }>(req.body);
     if (!body || !Number.isFinite(body.summaryId)) return badRequest('summaryId required');
