@@ -2,6 +2,13 @@
 
 All notable changes to SiftCoder. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning is [SemVer](https://semver.org/).
 
+## [1.2.1] — 2026-05-10
+
+Build fix. The TypeScript compiler doesn't copy non-`.ts` assets, so `dist/memory/web/static/` was never populated. The HTTP bridge resolves `index.html` / `app.js` / `style.css` from that path at runtime, so any installation built from a fresh checkout returned 404 on `/?token=…` even though the source files sat untouched in `src/memory/web/static/`. Latent since the SPA shipped; only surfaced when the daemon was restarted on a freshly built dist.
+
+### Fixed
+- **SPA shell 404 from compiled dist** — `npm run build` now runs `scripts/copy-static.mjs` after `tsc` to copy `src/memory/web/static/*` → `dist/memory/web/static/*`. The script logs the file count so build output makes the copy visible.
+
 ## [1.2.0] — 2026-05-10
 
 Knowledge-graph + retrieval-quality release. Nine PRs (#27–#35) closing every deferred roadmap item from the 1.1.0 audit. Test count 800 → 857; +57 tests across new modules. Capture path now seeds the provenance graph automatically; search gains both progressive streaming and opt-in cross-encoder reranking.
