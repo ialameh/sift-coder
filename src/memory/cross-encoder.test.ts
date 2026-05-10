@@ -95,6 +95,24 @@ describe('crossEncoderToReranker', () => {
   });
 });
 
+describe('crossEncoderToReranker.ping', () => {
+  it('reports ok with latency on a successful score call', async () => {
+    const ce: CrossEncoder = { score: async () => [0.5] };
+    const reranker = crossEncoderToReranker(ce);
+    const probe = await reranker.ping!();
+    expect(probe.ok).toBe(true);
+    expect(probe.latencyMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it('reports ok=false with error message when scoring throws', async () => {
+    const ce: CrossEncoder = { score: async () => { throw new Error('connection refused'); } };
+    const reranker = crossEncoderToReranker(ce);
+    const probe = await reranker.ping!();
+    expect(probe.ok).toBe(false);
+    expect(probe.error).toBe('connection refused');
+  });
+});
+
 describe('loadCrossEncoderFromEnv', () => {
   it('returns null when SIFTCODER_RERANKER_URL is unset', () => {
     expect(loadCrossEncoderFromEnv({})).toBeNull();

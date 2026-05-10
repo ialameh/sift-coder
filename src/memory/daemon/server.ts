@@ -294,11 +294,20 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
 
         case 'doctor': {
           const r = await deps.storage.doctor();
+          // Optional reranker probe: surfaces whether SIFTCODER_RERANKER_URL is reachable so a
+          // silently-broken reranker shows up in `mem doctor` rather than degrading search quality.
+          let reranker: { configured: boolean; ok?: boolean; latencyMs?: number; error?: string } = {
+            configured: !!deps.reranker,
+          };
+          if (deps.reranker?.ping) {
+            const probe = await deps.reranker.ping();
+            reranker = { configured: true, ok: probe.ok, latencyMs: probe.latencyMs, ...(probe.error ? { error: probe.error } : {}) };
+          }
           if (req.heal && r.vecCardinality.drift > 0) {
             const copied = await deps.storage.backfillVec();
-            return { ok: true, data: { ...r, healed: { vecBackfilled: copied } } };
+            return { ok: true, data: { ...r, reranker, healed: { vecBackfilled: copied } } };
           }
-          return { ok: true, data: r };
+          return { ok: true, data: { ...r, reranker } };
         }
 
         case 'sweep_expired': {

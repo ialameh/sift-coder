@@ -105,6 +105,15 @@ export function crossEncoderToReranker(ce: CrossEncoder): AsyncReranker {
         return hits;
       }
     },
+    async ping() {
+      const t = Date.now();
+      try {
+        await ce.score('ping', ['ok']);
+        return { ok: true, latencyMs: Date.now() - t };
+      } catch (e) {
+        return { ok: false, latencyMs: Date.now() - t, error: (e as Error).message };
+      }
+    },
   };
 }
 

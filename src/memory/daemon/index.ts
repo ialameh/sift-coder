@@ -339,7 +339,9 @@ async function main() {
 }
 
 main().catch(err => {
-  process.stderr.write(`siftcoder-mem daemon: ${err?.message ?? err}\n`);
+  // Stack first so the operator gets the line number; fall back to message for non-Error throws.
+  const detail = err instanceof Error ? (err.stack ?? err.message) : String(err);
+  process.stderr.write(`siftcoder-mem daemon: ${detail}\n`);
   process.exit(1);
 });
 /* c8 ignore stop */
