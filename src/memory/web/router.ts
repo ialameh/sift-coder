@@ -15,6 +15,7 @@
  *   POST /api/graph/subgraph { kind, id, maxDepth, direction, edgeType, maxEdges }
  *   GET  /api/graph/hubs?limit&kind  top-degree nodes
  *   POST /api/graph/path     { fromKind, fromId, toKind, toId, maxDepth }
+ *   POST /api/federate-search { query, k, workspacePrefix, maxWorkspaces }
  *   GET  /api/patterns?min   recurring input_hash patterns across sessions
  *   POST /api/session-digest { sessionId, limit }
  *   GET  /api/as-of?ts&limit point-in-time snapshot
@@ -303,6 +304,18 @@ export async function route(req: WebRequest, deps: WebDeps): Promise<WebResponse
     const kind = req.query['kind'];
     if (!deps.provenance) return json(200, { ok: true, data: { hubs: [] } });
     return json(200, { ok: true, data: { hubs: await deps.provenance.topHubs(limit, kind || undefined) } });
+  }
+
+  if (req.method === 'POST' && req.path === '/api/federate-search') {
+    const body = parseBody<{ query: string; k?: number; workspacePrefix?: string; maxWorkspaces?: number }>(req.body);
+    if (!body || typeof body.query !== 'string') return badRequest('query required');
+    const { federatedSearch } = await import('../federation.js');
+    const hits = await federatedSearch(body.query, deps.embedder ?? null, {
+      k: body.k ?? 5,
+      workspacePrefix: body.workspacePrefix,
+      maxWorkspaces: body.maxWorkspaces,
+    });
+    return json(200, { ok: true, data: { hits } });
   }
 
   if (req.method === 'GET' && req.path === '/api/patterns') {

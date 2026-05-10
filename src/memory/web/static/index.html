@@ -23,6 +23,7 @@
   <button data-tab="why">Provenance</button>
   <button data-tab="graph">Graph</button>
   <button data-tab="patterns">Patterns</button>
+  <button data-tab="federation">Federation</button>
   <button data-tab="ab">A/B savings</button>
   <button id="refresh">↻</button>
 </nav>
@@ -167,6 +168,21 @@
     <table>
       <thead><tr><th>occ</th><th>sessions</th><th>tools</th><th>sample / last seen</th></tr></thead>
       <tbody id="patterns-body"></tbody>
+    </table>
+  </section>
+
+  <section id="tab-federation" class="tab">
+    <form id="fed-form">
+      <input id="fed-q" placeholder="search across consented workspaces..." autocomplete="off" />
+      <input id="fed-k" type="number" min="1" max="50" value="10" title="k per workspace" />
+      <input id="fed-prefix" placeholder="workspace prefix (optional)" />
+      <input id="fed-max" type="number" min="1" max="50" value="10" title="max workspaces" />
+      <button type="submit">Search</button>
+    </form>
+    <div id="fed-summary" class="empty">Searches every workspace under ~/.siftcoder/workspaces with `federate.consent`. Results tagged by workspace.</div>
+    <table>
+      <thead><tr><th>workspace</th><th>score</th><th>id</th><th>text</th></tr></thead>
+      <tbody id="fed-body"></tbody>
     </table>
   </section>
 
