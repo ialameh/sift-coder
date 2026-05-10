@@ -1,6 +1,6 @@
 {
   "name": "siftcoder",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "type": "module",
   "description": "Persistent project memory + local-LLM offload + Salesforce domain skills for Claude Code",
   "main": "dist/index.js",
@@ -14,7 +14,7 @@
   "scripts": {
     "sync-version": "node scripts/sync-version.mjs",
     "prebuild": "node scripts/sync-version.mjs",
-    "build": "tsc",
+    "build": "tsc && node scripts/copy-static.mjs",
     "dev": "tsc --watch",
     "test": "vitest run",
     "test:watch": "vitest --watch",
