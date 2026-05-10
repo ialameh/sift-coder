@@ -989,6 +989,7 @@ switch (cmd) {
       daemon: { state: daemonState, pid, uptimeSec },
       storageBackend,
       backends: { glm, ollama, anthropic },
+      reranker: process.env['SIFTCODER_RERANKER_URL'] ? { url: process.env['SIFTCODER_RERANKER_URL'] } : null,
       ...(dbCounts ? { counts: dbCounts } : {}),
       ...(dbSizeBytes !== null ? { dbSizeBytes } : {}),
       ...(webUrl ? { webUrl } : {}),
@@ -1015,6 +1016,7 @@ switch (cmd) {
       if (info.webUrl) lines.push(`web         ${info.webUrl}`);
       lines.push('');
       lines.push(`backends    glm=${info.backends.glm ? 'configured' : 'no key'}  ollama=${info.backends.ollama ? 'up' : 'down'}  anthropic=${info.backends.anthropic ? 'configured' : 'no key'}`);
+      if (info.reranker) lines.push(`reranker    ${info.reranker.url}`);
       if (info.counts) {
         const c = info.counts;
         lines.push(`counts      events=${c.events}  raw=${c.raw}  summarized=${c.summarized}  skipped=${c.skipped}  summaries=${c.summaries}  embeddings=${c.embeddings}`);

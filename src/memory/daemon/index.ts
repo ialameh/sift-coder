@@ -204,6 +204,13 @@ async function main() {
   logger.info('drain backend selected', { name: drainBackend });
   const summarizer = modelClient ? new Summarizer(storage, modelClient) : null;
   const provenance = new ProvenanceStore(storage);
+  // Optional cross-encoder reranker. SIFTCODER_RERANKER_URL points at an HTTP scoring service
+  // (text-embeddings-inference, jina-reranker-server, Cohere, etc.). Returns null when unset
+  // so search falls back to the RRF + decay baseline.
+  const { loadCrossEncoderFromEnv, crossEncoderToReranker } = await import('../cross-encoder.js');
+  const crossEncoder = loadCrossEncoderFromEnv();
+  const reranker = crossEncoder ? crossEncoderToReranker(crossEncoder) : null;
+  if (reranker) logger.info('cross-encoder reranker enabled', { url: process.env['SIFTCODER_RERANKER_URL'] });
 
   const server = startServer({
     embedder,
@@ -216,6 +223,7 @@ async function main() {
     drainBatch: 16,
     drainBackend,
     provenance,
+    reranker,
     onShutdown: () => {
       stopping = true;
     },
@@ -226,7 +234,7 @@ async function main() {
 
   let httpServer: ReturnType<typeof startHttpBridge> | null = null;
   if (process.env['SIFTCODER_NO_HTTP'] !== '1') {
-    const handler = buildHandler({ storage, wal, cwd, embedder });
+    const handler = buildHandler({ storage, wal, cwd, embedder, reranker });
     const { ProvenanceStore } = await import('../provenance.js');
     httpServer = startHttpBridge({
       workspaceRoot: paths.root,
@@ -236,6 +244,7 @@ async function main() {
       storage,
       embedder,
       provenance: new ProvenanceStore(storage),
+      reranker,
     });
     logger.info('http bridge enabled', {});
   }

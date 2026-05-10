@@ -9,7 +9,7 @@ import { Storage, hashInput } from '../storage/storage.js';
 import { redact } from '../privacy.js';
 import { WAL } from './wal.js';
 import type { Embedder } from '../embedder.js';
-import { hybridSearch } from '../retrieval.js';
+import { hybridSearch, type AsyncReranker } from '../retrieval.js';
 import type { SymbolExtractor, AsyncSymbolExtractor } from '../symbols.js';
 import { approximate } from '../tokens.js';
 import { inferEdgesForEvent } from '../auto-edges.js';
@@ -30,6 +30,8 @@ export interface ServerDeps {
   drainBatch?: number;
   drainBackend?: string;
   provenance?: ProvenanceStore | null;
+  /** Optional cross-encoder reranker, applied as the final stage of hybridSearch. */
+  reranker?: AsyncReranker | null;
 }
 
 export interface DrainResult {
@@ -106,7 +108,7 @@ async function runDrain(
 
 export type Handler = (req: Request) => Promise<Response>;
 
-export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 'embedder' | 'symbols' | 'asyncSymbols' | 'onShutdown' | 'summarizer' | 'drainBatch' | 'drainBackend' | 'provenance'>): Handler {
+export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 'embedder' | 'symbols' | 'asyncSymbols' | 'onShutdown' | 'summarizer' | 'drainBatch' | 'drainBackend' | 'provenance' | 'reranker'>): Handler {
   return async (req: Request): Promise<Response> => {
     try {
       switch (req.kind) {
@@ -160,7 +162,10 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
         case 'search': {
           const k = req.k ?? 5;
           const embedder = deps.embedder ?? null;
-          const hits = await hybridSearch(deps.storage, embedder, req.query, Date.now(), { k });
+          const hits = await hybridSearch(deps.storage, embedder, req.query, Date.now(), {
+            k,
+            asyncReranker: deps.reranker ?? null,
+          });
           return { ok: true, data: { hits } };
         }
 
@@ -454,7 +459,10 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
 
         case 'context_budget': {
           const k = req.candidatePool ?? 50;
-          const hits = await hybridSearch(deps.storage, deps.embedder ?? null, req.query, Date.now(), { k, candidatePool: k });
+          const hits = await hybridSearch(deps.storage, deps.embedder ?? null, req.query, Date.now(), {
+            k, candidatePool: k,
+            asyncReranker: deps.reranker ?? null,
+          });
           // Greedy fill: take in score order until cumulative tokens exceed budget.
           const out: Array<{ id: number; eventId: number; text: string; ts: number; score: number; tool?: string; tokens: number }> = [];
           let used = 0;

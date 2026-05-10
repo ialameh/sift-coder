@@ -35,7 +35,7 @@ import type { Embedder } from '../embedder.js';
 import type { ProvenanceStore, NodeRef } from '../provenance.js';
 import type { Request, Response } from '../protocol.js';
 import { computeSavings } from '../metrics.js';
-import { hybridSearch } from '../retrieval.js';
+import { hybridSearch, type AsyncReranker } from '../retrieval.js';
 import { AbHarness } from '../ab.js';
 
 export interface WebRequest {
@@ -63,6 +63,8 @@ export interface WebDeps {
   staticAsset?: (name: string) => { body: Buffer; type: string } | null;
   backend: 'native' | 'wasm' | 'postgres' | 'sqlite-native' | 'sqlite-wasm';
   workspaceKey: string;
+  /** Optional cross-encoder reranker, applied at the end of /api/search. */
+  reranker?: AsyncReranker | null;
 }
 
 const STATIC_PATHS: Record<string, string> = {
@@ -182,7 +184,10 @@ export async function route(req: WebRequest, deps: WebDeps): Promise<WebResponse
   if (req.method === 'POST' && req.path === '/api/search') {
     const body = parseBody<{ query: string; k?: number }>(req.body);
     if (!body || typeof body.query !== 'string') return badRequest('query required');
-    const hits = await hybridSearch(deps.storage, deps.embedder, body.query, Date.now(), { k: body.k ?? 5 });
+    const hits = await hybridSearch(deps.storage, deps.embedder, body.query, Date.now(), {
+      k: body.k ?? 5,
+      asyncReranker: deps.reranker ?? null,
+    });
     return json(200, { ok: true, data: { hits } });
   }
 
