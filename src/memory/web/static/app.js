@@ -88,6 +88,7 @@
     if (name === 'why') return;
     if (name === 'graph') return loadGraphTab();
     if (name === 'patterns') return loadPatterns();
+    if (name === 'federation') return; // form-driven
     if (name === 'ab') return;
   }
 
@@ -567,6 +568,44 @@
   document.getElementById('patterns-form').addEventListener('submit', (ev) => {
     ev.preventDefault();
     loadPatterns();
+  });
+
+  // ─── Federation tab ──────────────────────────────────────────────────────────
+  document.getElementById('fed-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const q = document.getElementById('fed-q').value.trim();
+    const k = parseInt(document.getElementById('fed-k').value, 10) || 10;
+    const prefix = document.getElementById('fed-prefix').value.trim();
+    const maxWs = parseInt(document.getElementById('fed-max').value, 10) || 10;
+    const tbody = document.getElementById('fed-body');
+    const summary = document.getElementById('fed-summary');
+    if (!q) { tbody.innerHTML = ''; return; }
+    summary.className = '';
+    summary.textContent = 'searching...';
+    tbody.innerHTML = '';
+    try {
+      const body = { query: q, k, maxWorkspaces: maxWs };
+      if (prefix) body.workspacePrefix = prefix;
+      const res = await api('/api/federate-search', { method: 'POST', body });
+      const hits = res.data.hits ?? [];
+      if (!hits.length) {
+        summary.className = 'empty';
+        summary.textContent = `no hits — make sure other workspaces have federate.consent enabled`;
+        return;
+      }
+      summary.textContent = `${hits.length} hits across federated workspaces`;
+      tbody.innerHTML = hits.map((h) => {
+        const ws = h.workspace ?? h.workspaceKey ?? '?';
+        const wsShort = ws.length > 12 ? ws.slice(0, 12) + '…' : ws;
+        return `<tr><td title="${escape(ws)}"><span class="muted">${escape(wsShort)}</span></td>` +
+          `<td>${escape(Number(h.score ?? 0).toFixed(4))}</td>` +
+          `<td>#${escape(h.id)}</td>` +
+          `<td>${escape(h.text ?? '')}</td></tr>`;
+      }).join('');
+    } catch (e) {
+      summary.className = 'empty';
+      summary.textContent = 'failed: ' + e.message;
+    }
   });
 
   refreshAll();

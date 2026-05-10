@@ -155,6 +155,11 @@ describe('new web endpoints (stats, doctor, pinned, symbol-search, thread, repla
     expect(r.status).toBe(400);
   });
 
+  it('POST /api/federate-search 400s on missing query', async () => {
+    const r = await route(req({ method: 'POST', path: '/api/federate-search', body: '{}' }), deps());
+    expect(r.status).toBe(400);
+  });
+
   it('GET /api/patterns lists recurring input hashes', async () => {
     // Identical payload across distinct sessions → a pattern.
     for (const sid of ['a', 'b', 'c']) {
