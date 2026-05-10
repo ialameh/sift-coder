@@ -122,6 +122,52 @@ const DEFAULTS: Required<Omit<HybridOptions, 'asyncReranker' | 'boostFn' | 'deca
   rerank: false,
 };
 
+/**
+ * Preflight stage: run BM25 + (optional) vector queries and return the raw rank/score maps.
+ * Pulled out of `hybridSearch` so streamingHybridSearch can emit BM25 + vector hits as they
+ * land and then fuse them into the final ranking without re-querying.
+ */
+async function runRetrievalStages(
+  storage: Storage,
+  embedder: Embedder | null,
+  query: string,
+  pool: number,
+): Promise<{
+  bm25Hits: SearchHit[];
+  vecRank: Map<number, number>;
+  vecCos: Map<number, number>;
+  vecTools: Map<number, string>;
+}> {
+  const bm25Hits = await storage.searchFts(query, pool);
+  const vecRank = new Map<number, number>();
+  const vecCos = new Map<number, number>();
+  const vecTools = new Map<number, string>();
+  if (embedder) {
+    const qv = await embedder.embed(query);
+    if (storage.vecEnabled) {
+      const indexedHits = await storage.searchVec(qv, pool);
+      indexedHits.forEach((e, i) => {
+        vecRank.set(e.summaryId, i + 1);
+        vecCos.set(e.summaryId, e.cosine);
+      });
+      const tools = await storage.toolsForSummaries(indexedHits.map(h => h.summaryId));
+      for (const [sid, tool] of tools) vecTools.set(sid, tool);
+    } else {
+      const all = await storage.allEmbeddings();
+      const scored = all
+        .map(e => ({ id: e.summaryId, ts: e.ts, sim: cosine(qv, e.vec), tool: e.tool }))
+        .sort((a, b) => b.sim - a.sim)
+        .slice(0, pool);
+      scored.forEach((e, i) => {
+        vecRank.set(e.id, i + 1);
+        vecCos.set(e.id, e.sim);
+        if (e.tool) vecTools.set(e.id, e.tool);
+      });
+    }
+  }
+  return { bm25Hits, vecRank, vecCos, vecTools };
+}
+
 export async function hybridSearch(
   storage: Storage,
   embedder: Embedder | null,
@@ -132,44 +178,30 @@ export async function hybridSearch(
   const cfg = { ...DEFAULTS, ...opts };
   const decayByTool: Record<string, number> = opts.decayTauMsByTool ?? DEFAULT_DECAY_TAU_MS_BY_TOOL;
 
-  const bm25Hits = await storage.searchFts(query, cfg.candidatePool);
+  const stages = await runRetrievalStages(storage, embedder, query, cfg.candidatePool);
+  return await fuseAndRank(storage, query, stages, cfg, decayByTool, now, opts);
+}
+
+/**
+ * Pure fusion stage: takes precomputed BM25 + vector outputs from `runRetrievalStages` and
+ * produces the final ranked HybridHit list. RRF + per-tool decay + supersede sieve + optional
+ * cross-encoder rerank live here. Sharing this with `streamingHybridSearch` means we don't
+ * re-run the BM25 / vector queries when emitting the streaming `final` stage.
+ */
+async function fuseAndRank(
+  storage: Storage,
+  query: string,
+  stages: { bm25Hits: SearchHit[]; vecRank: Map<number, number>; vecCos: Map<number, number>; vecTools: Map<number, string> },
+  cfg: typeof DEFAULTS,
+  decayByTool: Record<string, number>,
+  now: number,
+  opts: HybridOptions,
+): Promise<HybridHit[]> {
+  const { bm25Hits, vecRank, vecCos, vecTools } = stages;
   const bm25Rank = new Map<number, number>();
   bm25Hits.forEach((h, i) => bm25Rank.set(h.id, i + 1));
 
-  // Vector candidates: prefer indexed vec0 MATCH when sqlite-vec is loaded; otherwise fall
-  // back to a JS-side cosine over every embedding. Both paths produce the same shape so the
-  // RRF + decay + rerank stages downstream are unchanged.
-  const vecRank = new Map<number, number>();
-  const vecCos = new Map<number, number>();
-  const vecTools = new Map<number, string>();
-  if (embedder) {
-    const qv = await embedder.embed(query);
-    if (storage.vecEnabled) {
-      const indexedHits = await storage.searchVec(qv, cfg.candidatePool);
-      indexedHits.forEach((e, i) => {
-        vecRank.set(e.summaryId, i + 1);
-        vecCos.set(e.summaryId, e.cosine);
-      });
-      // Fetch tools for these ids in one query so per-tool decay can apply downstream.
-      const tools = await storage.toolsForSummaries(indexedHits.map(h => h.summaryId));
-      for (const [sid, tool] of tools) vecTools.set(sid, tool);
-    } else {
-      const all = await storage.allEmbeddings();
-      const scored = all
-        .map(e => ({ id: e.summaryId, ts: e.ts, sim: cosine(qv, e.vec), tool: e.tool }))
-        .sort((a, b) => b.sim - a.sim)
-        .slice(0, cfg.candidatePool);
-      scored.forEach((e, i) => {
-        vecRank.set(e.id, i + 1);
-        vecCos.set(e.id, e.sim);
-        if (e.tool) vecTools.set(e.id, e.tool);
-      });
-    }
-  }
-
   const dropped = await storage.supersededIds();
-  // Pinned summaries are exempt from the supersede sieve — even if a near-duplicate beats one
-  // in cosine, the user pin is a stronger signal than the consolidator's heuristic.
   const pinned = await storage.pinnedIds();
   const ids = new Set<number>([...bm25Rank.keys(), ...vecRank.keys()]);
 
@@ -193,17 +225,15 @@ export async function hybridSearch(
     const rrf =
       (br ? cfg.bm25Weight / (cfg.rrfK + br) : 0) +
       (vr ? cfg.vectorWeight / (cfg.rrfK + vr) : 0);
-    // Per-tool decay: tools come from BM25 hits (joined in searchFts) or the vec-side tools map.
     const tool: string | undefined = (row as SearchHit).tool ?? vecTools.get(id);
     const tau = tauForTool(tool, decayByTool, cfg.decayTauMs);
     const recency = Math.exp(-(now - row.ts) / tau);
     const score = rrf * recency;
-    const text = row.text;
     const eventId = (row as SearchHit).eventId ?? (row as SummaryRow).eventId;
     hits.push({
       id,
       eventId,
-      text,
+      text: row.text,
       ts: row.ts,
       score,
       ...(br !== undefined ? { bm25Rank: br } : {}),
@@ -254,8 +284,10 @@ export async function streamingHybridSearch(
   opts: HybridOptions = {},
 ): Promise<void> {
   const cfg = { ...DEFAULTS, ...opts };
+  const decayByTool: Record<string, number> = opts.decayTauMsByTool ?? DEFAULT_DECAY_TAU_MS_BY_TOOL;
 
-  // Stage 1: BM25 — fastest path, no embedding cost. Emit immediately.
+  // Stage 1: BM25 — fastest path, no embedding cost. Emit immediately and keep the result for
+  // the fusion stage so we don't re-query.
   const bm25Hits = await storage.searchFts(query, cfg.candidatePool);
   emit({
     stage: 'bm25',
@@ -265,50 +297,60 @@ export async function streamingHybridSearch(
   });
 
   // Stage 2: vector — embedding round-trip is the expensive part. Emit once it lands.
+  // Capture the rank/cos/tools maps for fusion below.
+  const vecRank = new Map<number, number>();
+  const vecCos = new Map<number, number>();
+  const vecTools = new Map<number, string>();
   if (embedder) {
     try {
-      const vecHits = await runVectorStage(storage, embedder, query, cfg.candidatePool);
-      emit({
-        stage: 'vector',
-        hits: vecHits.slice(0, cfg.k),
-      });
+      const qv = await embedder.embed(query);
+      if (storage.vecEnabled) {
+        const indexed = await storage.searchVec(qv, cfg.candidatePool);
+        indexed.forEach((e, i) => {
+          vecRank.set(e.summaryId, i + 1);
+          vecCos.set(e.summaryId, e.cosine);
+        });
+        const tools = await storage.toolsForSummaries(indexed.map(h => h.summaryId));
+        for (const [sid, tool] of tools) vecTools.set(sid, tool);
+      } else {
+        const all = await storage.allEmbeddings();
+        const scored = all
+          .map(e => ({ id: e.summaryId, ts: e.ts, sim: cosine(qv, e.vec), tool: e.tool }))
+          .sort((a, b) => b.sim - a.sim)
+          .slice(0, cfg.candidatePool);
+        scored.forEach((e, i) => {
+          vecRank.set(e.id, i + 1);
+          vecCos.set(e.id, e.sim);
+          if (e.tool) vecTools.set(e.id, e.tool);
+        });
+      }
+      // Render the vector stage with the vec ids resolved to summary text.
+      const vecIds = [...vecRank.keys()].sort((a, b) => vecRank.get(a)! - vecRank.get(b)!);
+      const rows = vecIds.length > 0 ? await storage.getSummariesByIds(vecIds) : [];
+      const byId = new Map(rows.map(r => [r.id, r]));
+      const vecHits = vecIds.slice(0, cfg.k).map((id, i) => {
+        const row = byId.get(id);
+        if (!row) return null;
+        const tool = vecTools.get(id);
+        return {
+          id, eventId: row.eventId, text: row.text, ts: row.ts,
+          ...(tool ? { tool } : {}),
+          cosine: vecCos.get(id)!, vecRank: i + 1,
+        };
+      }).filter((x): x is NonNullable<typeof x> => x !== null);
+      emit({ stage: 'vector', hits: vecHits });
     } catch {
-      // Vector stage failure (embedder unavailable) → emit empty stage; final still useful.
       emit({ stage: 'vector', hits: [] });
     }
   } else {
     emit({ stage: 'vector', hits: [] });
   }
 
-  // Stage 3: final — full pipeline result. Reuses the non-streaming impl to guarantee parity.
-  const final = await hybridSearch(storage, embedder, query, now, opts);
+  // Stage 3: final — fuse the precomputed stages. No re-querying.
+  const final = await fuseAndRank(
+    storage, query,
+    { bm25Hits, vecRank, vecCos, vecTools },
+    cfg, decayByTool, now, opts,
+  );
   emit({ stage: 'final', hits: final });
-}
-
-async function runVectorStage(
-  storage: Storage,
-  embedder: Embedder,
-  query: string,
-  pool: number,
-): Promise<Array<{ id: number; eventId: number; text: string; ts: number; tool?: string; cosine: number; vecRank: number }>> {
-  const qv = await embedder.embed(query);
-  const hits: Array<{ summaryId: number; cosine: number }> = storage.vecEnabled
-    ? (await storage.searchVec(qv, pool)).map(e => ({ summaryId: e.summaryId, cosine: e.cosine }))
-    : (await storage.allEmbeddings())
-        .map(e => ({ summaryId: e.summaryId, cosine: cosine(qv, e.vec) }))
-        .sort((a, b) => b.cosine - a.cosine)
-        .slice(0, pool);
-  if (hits.length === 0) return [];
-  const rows = await storage.getSummariesByIds(hits.map(h => h.summaryId));
-  const byId = new Map(rows.map(r => [r.id, r]));
-  return hits
-    .map((h, i) => {
-      const row = byId.get(h.summaryId);
-      if (!row) return null;
-      return {
-        id: row.id, eventId: row.eventId, text: row.text, ts: row.ts,
-        cosine: h.cosine, vecRank: i + 1,
-      };
-    })
-    .filter((x): x is { id: number; eventId: number; text: string; ts: number; cosine: number; vecRank: number } => x !== null);
 }
