@@ -13,9 +13,13 @@
 </header>
 <nav>
   <button data-tab="overview" class="active">Overview</button>
+  <button data-tab="health">Health</button>
   <button data-tab="events">Events</button>
   <button data-tab="summaries">Summaries</button>
+  <button data-tab="pinned">Pinned</button>
+  <button data-tab="sessions">Sessions</button>
   <button data-tab="search">Search</button>
+  <button data-tab="symbol">Symbol</button>
   <button data-tab="why">Provenance</button>
   <button data-tab="ab">A/B savings</button>
   <button id="refresh">↻</button>
@@ -75,6 +79,40 @@
       <button type="submit">Run</button>
     </form>
     <div id="ab-result"></div>
+  </section>
+
+  <section id="tab-health" class="tab">
+    <h2>Stats (last hour)</h2>
+    <div id="health-stats"></div>
+    <h2>Doctor</h2>
+    <div id="health-doctor"></div>
+  </section>
+
+  <section id="tab-pinned" class="tab">
+    <table>
+      <thead><tr><th>id</th><th>conf</th><th>text</th><th>when</th><th></th></tr></thead>
+      <tbody id="pinned-body"></tbody>
+    </table>
+  </section>
+
+  <section id="tab-sessions" class="tab">
+    <table>
+      <thead><tr><th>session</th><th>events</th><th>first</th><th>last</th><th>cwd</th><th></th></tr></thead>
+      <tbody id="sessions-body"></tbody>
+    </table>
+    <div id="replay-panel" class="empty">Click a session to replay it.</div>
+  </section>
+
+  <section id="tab-symbol" class="tab">
+    <form id="symbol-form">
+      <input id="symbol-q" placeholder="kind:name (e.g. function:login) or just name" autocomplete="off" />
+      <input id="symbol-k" type="number" min="1" max="50" value="10" />
+      <button type="submit">Find</button>
+    </form>
+    <table>
+      <thead><tr><th>event</th><th>tool</th><th>symbols</th><th>summary</th></tr></thead>
+      <tbody id="symbol-body"></tbody>
+    </table>
   </section>
 </main>
 <script src="/app.js"></script>

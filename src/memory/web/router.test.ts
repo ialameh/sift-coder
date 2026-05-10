@@ -141,6 +141,17 @@ describe('new web endpoints (stats, doctor, pinned, symbol-search, thread, repla
     expect(body.data.hits).toHaveLength(1);
   });
 
+  it('GET /api/sessions lists sessions with counts', async () => {
+    await storage.recordEvent({ ts: 1, sessionId: 'a', tool: 'R', payload: { i: 1 } });
+    await storage.recordEvent({ ts: 2, sessionId: 'a', tool: 'R', payload: { i: 2 } });
+    await storage.recordEvent({ ts: 3, sessionId: 'b', tool: 'Edit', payload: { i: 3 } });
+    const r = await route(req({ path: '/api/sessions' }), deps());
+    const body = JSON.parse(String(r.body));
+    expect(body.data.sessions).toHaveLength(2);
+    const a = body.data.sessions.find((s: { sessionId: string; eventCount: number }) => s.sessionId === 'a');
+    expect(a.eventCount).toBe(2);
+  });
+
   it('POST /api/thread returns related sessions', async () => {
     await storage.recordEvent({ ts: 1, sessionId: 's1', tool: 'R', payload: { same: true } });
     await storage.recordEvent({ ts: 2, sessionId: 's2', tool: 'R', payload: { same: true } });

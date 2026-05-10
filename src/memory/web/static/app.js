@@ -80,7 +80,11 @@
     if (name === 'overview') return loadOverview();
     if (name === 'events') return loadEvents();
     if (name === 'summaries') return loadSummaries();
+    if (name === 'health') return loadHealthTab();
+    if (name === 'pinned') return loadPinned();
+    if (name === 'sessions') return loadSessions();
     if (name === 'search') return; // form-driven
+    if (name === 'symbol') return; // form-driven
     if (name === 'why') return;
     if (name === 'ab') return;
   }
@@ -235,6 +239,161 @@
       </div>`;
     } catch (e) {
       out.innerHTML = '<div class="empty">failed: ' + escape(e.message) + '</div>';
+    }
+  });
+
+  // ─── Health tab: stats + doctor ──────────────────────────────────────────────
+  // rowHtml allows trusted html on the right-hand side (caller's responsibility to escape).
+  function rowHtml(label, html) { return `<div class="k">${escape(label)}</div><div class="v">${html}</div>`; }
+  async function loadHealthTab() {
+    const statsBox = document.getElementById('health-stats');
+    const doctorBox = document.getElementById('health-doctor');
+    statsBox.innerHTML = doctorBox.innerHTML = '<div class="empty">loading...</div>';
+    try {
+      const [stats, doctor] = await Promise.all([api('/api/stats'), api('/api/doctor')]);
+      const s = stats.data;
+      const c = s.counts || { events: 0, raw: 0, summarized: 0, skipped: 0 };
+      const tp = s.throughput || { eventsPerMin: 0, summariesPerMin: 0 };
+      const bl = s.backlog || { pending: 0, etaSec: null };
+      statsBox.innerHTML = '<div class="kv">' +
+        row('events', `${fmt.num(c.events)} (raw=${fmt.num(c.raw)} sum=${fmt.num(c.summarized)} skip=${fmt.num(c.skipped)})`) +
+        row('throughput', `${tp.eventsPerMin.toFixed(2)} ev/min  ${tp.summariesPerMin.toFixed(2)} sm/min`) +
+        row('backlog', `${fmt.num(bl.pending)} pending  eta ${bl.etaSec ?? '–'}s`) +
+        row('cache hit rate', fmt.pct(s.cacheHitRate)) +
+        row('top tools', (s.topTools || []).slice(0, 6).map(t => `${t.tool}=${t.count}`).join(', ') || '–') +
+        '</div>';
+      const d = doctor.data;
+      const vc = d.vecCardinality || { embeddings: 0, vec: 0, drift: 0 };
+      const ok = d.integrity === 'ok' && (d.orphanSummaries ?? 0) === 0 && (d.orphanEmbeddings ?? 0) === 0 && (d.orphanProvenance ?? 0) === 0;
+      doctorBox.innerHTML = '<div class="kv">' +
+        rowHtml('integrity', `<span class="tag ${ok ? 'ok' : 'err'}">${escape(d.integrity)}</span>`) +
+        row('orphans', `summaries=${d.orphanSummaries ?? 0} embeddings=${d.orphanEmbeddings ?? 0} provenance=${d.orphanProvenance ?? 0}`) +
+        row('vec0 drift', `embeddings=${vc.embeddings} vec=${vc.vec} drift=${vc.drift}`) +
+        row('pinned', fmt.num(d.pinned ?? 0)) +
+        '</div>';
+    } catch (e) {
+      statsBox.innerHTML = '<div class="empty">failed: ' + escape(e.message) + '</div>';
+      doctorBox.innerHTML = '';
+    }
+  }
+
+  // ─── Pinned tab: list + unpin ────────────────────────────────────────────────
+  async function loadPinned() {
+    const tbody = document.getElementById('pinned-body');
+    tbody.innerHTML = '<tr><td colspan="5" class="empty">loading...</td></tr>';
+    try {
+      const { data } = await api('/api/pinned?limit=100');
+      if (!data.pinned.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="empty">no pinned summaries — pin via mem_pin or click pin in another tab</td></tr>';
+        return;
+      }
+      tbody.innerHTML = data.pinned.map((p) =>
+        `<tr><td>${escape(p.id)}</td>` +
+        `<td>${escape(fmt.confidence(p.confidence))}</td>` +
+        `<td>${escape(p.text)}</td>` +
+        `<td>${escape(fmt.when(p.ts))}</td>` +
+        `<td><button class="unpin-btn" data-id="${escape(p.id)}">unpin</button></td></tr>`
+      ).join('');
+      tbody.querySelectorAll('.unpin-btn').forEach((btn) => {
+        btn.addEventListener('click', async (ev) => {
+          const id = Number(ev.target.dataset.id);
+          ev.target.disabled = true;
+          ev.target.textContent = '...';
+          try {
+            await api('/api/unpin', { method: 'POST', body: { summaryId: id } });
+            await loadPinned();
+          } catch (err) { ev.target.textContent = 'failed'; }
+        });
+      });
+    } catch (e) {
+      tbody.innerHTML = '<tr><td colspan="5" class="empty">failed: ' + escape(e.message) + '</td></tr>';
+    }
+  }
+
+  // ─── Sessions tab: list + click to replay ────────────────────────────────────
+  async function loadSessions() {
+    const tbody = document.getElementById('sessions-body');
+    tbody.innerHTML = '<tr><td colspan="6" class="empty">loading...</td></tr>';
+    document.getElementById('replay-panel').innerHTML = '';
+    try {
+      const { data } = await api('/api/sessions?limit=50');
+      if (!data.sessions || data.sessions.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="empty">no sessions yet</td></tr>';
+        return;
+      }
+      tbody.innerHTML = data.sessions.map((s) => {
+        const short = s.sessionId.length > 12 ? s.sessionId.slice(0, 12) + '…' : s.sessionId;
+        return `<tr class="session-row" data-id="${escape(s.sessionId)}">` +
+          `<td title="${escape(s.sessionId)}">${escape(short)}</td>` +
+          `<td>${fmt.num(s.eventCount)}</td>` +
+          `<td>${escape(fmt.when(s.firstTs))}</td>` +
+          `<td>${escape(fmt.when(s.lastTs))}</td>` +
+          `<td title="${escape(s.cwd ?? '')}">${escape(s.cwd ? shortPath(s.cwd) : '')}</td>` +
+          `<td><button class="replay-btn" data-id="${escape(s.sessionId)}">replay</button></td></tr>`;
+      }).join('');
+      tbody.querySelectorAll('.replay-btn').forEach((btn) => {
+        btn.addEventListener('click', async (ev) => {
+          await runReplay(ev.target.dataset.id);
+        });
+      });
+    } catch (e) {
+      tbody.innerHTML = '<tr><td colspan="6" class="empty">failed: ' + escape(e.message) + '</td></tr>';
+    }
+  }
+
+  function shortPath(p) {
+    const parts = p.split('/').filter(Boolean);
+    if (parts.length <= 3) return p;
+    return '…/' + parts.slice(-3).join('/');
+  }
+
+  async function runReplay(sessionId) {
+    const panel = document.getElementById('replay-panel');
+    panel.innerHTML = '<div class="empty">loading replay...</div>';
+    try {
+      const { data } = await api('/api/replay', { method: 'POST', body: { sessionId, limit: 50 } });
+      if (!data.events.length) {
+        panel.innerHTML = '<div class="empty">no events in this session</div>';
+        return;
+      }
+      panel.innerHTML = `<h3>Replay: ${escape(sessionId)}</h3>` +
+        '<ul class="replay-list">' +
+        data.events.map((e) => {
+          const sym = (e.symbols ?? []).join(', ');
+          const sumText = e.summary && e.summary.text ? `<div class="replay-sum">→ ${escape(e.summary.text)}</div>` : '';
+          return `<li><span class="tag ${escape(e.status)}">${escape(e.tool)}</span> ` +
+            `<span class="muted">#${escape(e.eventId)}  ${escape(fmt.when(e.ts))}</span> ` +
+            (sym ? `<span class="muted">[${escape(sym)}]</span>` : '') +
+            sumText + '</li>';
+        }).join('') +
+        '</ul>';
+    } catch (e) {
+      panel.innerHTML = '<div class="empty">failed: ' + escape(e.message) + '</div>';
+    }
+  }
+
+  // ─── Symbol search tab ───────────────────────────────────────────────────────
+  document.getElementById('symbol-form').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const q = document.getElementById('symbol-q').value.trim();
+    const k = parseInt(document.getElementById('symbol-k').value, 10) || 10;
+    const tbody = document.getElementById('symbol-body');
+    if (!q) { tbody.innerHTML = ''; return; }
+    tbody.innerHTML = '<tr><td colspan="4" class="empty">searching...</td></tr>';
+    try {
+      const { data } = await api('/api/symbol-search', { method: 'POST', body: { query: q, k } });
+      if (!data.hits.length) {
+        tbody.innerHTML = '<tr><td colspan="4" class="empty">no symbol matches — symbols populate asynchronously after capture</td></tr>';
+        return;
+      }
+      tbody.innerHTML = data.hits.map((h) =>
+        `<tr><td>#${escape(h.eventId)}</td>` +
+        `<td>${escape(h.tool)}</td>` +
+        `<td>${escape((h.symbols ?? []).join(', '))}</td>` +
+        `<td>${escape(h.text ?? '–')}</td></tr>`
+      ).join('');
+    } catch (e) {
+      tbody.innerHTML = '<tr><td colspan="4" class="empty">failed: ' + escape(e.message) + '</td></tr>';
     }
   });
 
