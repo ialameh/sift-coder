@@ -33,6 +33,7 @@ export interface HttpBridgeDeps {
   storage: WebDeps['storage'];
   embedder: WebDeps['embedder'];
   provenance: WebDeps['provenance'];
+  reranker?: WebDeps['reranker'];
   port?: number;
 }
 
@@ -102,6 +103,7 @@ export function startHttpBridge(deps: HttpBridgeDeps): Server {
       storage: deps.storage,
       embedder: deps.embedder,
       provenance: deps.provenance,
+      reranker: deps.reranker ?? null,
       authToken: token,
       rpc: deps.handler,
       staticAsset,
