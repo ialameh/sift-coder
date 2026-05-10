@@ -22,6 +22,7 @@
   <button data-tab="symbol">Symbol</button>
   <button data-tab="why">Provenance</button>
   <button data-tab="graph">Graph</button>
+  <button data-tab="patterns">Patterns</button>
   <button data-tab="ab">A/B savings</button>
   <button id="refresh">↻</button>
 </nav>
@@ -155,6 +156,18 @@
         </table>
       </aside>
     </div>
+  </section>
+
+  <section id="tab-patterns" class="tab">
+    <form id="patterns-form">
+      <label>min occurrences <input id="patterns-min" type="number" min="2" max="50" value="3" /></label>
+      <button type="submit">Refresh</button>
+    </form>
+    <div id="patterns-summary" class="empty">Recurring input_hash buckets across sessions — habits worth pinning.</div>
+    <table>
+      <thead><tr><th>occ</th><th>sessions</th><th>tools</th><th>sample / last seen</th></tr></thead>
+      <tbody id="patterns-body"></tbody>
+    </table>
   </section>
 
   <section id="tab-symbol" class="tab">

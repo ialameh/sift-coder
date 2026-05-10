@@ -87,6 +87,7 @@
     if (name === 'symbol') return; // form-driven
     if (name === 'why') return;
     if (name === 'graph') return loadGraphTab();
+    if (name === 'patterns') return loadPatterns();
     if (name === 'ab') return;
   }
 
@@ -526,6 +527,39 @@
       out.className = 'empty';
       out.textContent = 'failed: ' + e.message;
     }
+  });
+
+  // ─── Patterns tab ────────────────────────────────────────────────────────────
+  async function loadPatterns() {
+    const min = parseInt(document.getElementById('patterns-min').value, 10) || 3;
+    const tbody = document.getElementById('patterns-body');
+    const summary = document.getElementById('patterns-summary');
+    tbody.innerHTML = '<tr><td colspan="4" class="empty">loading...</td></tr>';
+    try {
+      const { data } = await api(`/api/patterns?min=${min}&limit=50`);
+      if (!data.patterns.length) {
+        tbody.innerHTML = `<tr><td colspan="4" class="empty">no patterns above threshold (min=${min})</td></tr>`;
+        summary.className = 'empty';
+        summary.textContent = 'No recurring input_hash buckets at this threshold yet.';
+        return;
+      }
+      summary.className = '';
+      summary.textContent = `${data.patterns.length} patterns at min=${min} occurrences`;
+      tbody.innerHTML = data.patterns.map((p) =>
+        `<tr><td>${fmt.num(p.occurrences)}</td>` +
+        `<td>${fmt.num(p.distinctSessions)}</td>` +
+        `<td>${escape((p.tools ?? []).join(', '))}</td>` +
+        `<td><span class="muted">event #${escape(p.sampleEventId)}</span> ` +
+        `<span class="muted">${escape(fmt.when(p.lastTs))}</span></td></tr>`
+      ).join('');
+    } catch (e) {
+      tbody.innerHTML = '<tr><td colspan="4" class="empty">failed: ' + escape(e.message) + '</td></tr>';
+    }
+  }
+
+  document.getElementById('patterns-form').addEventListener('submit', (ev) => {
+    ev.preventDefault();
+    loadPatterns();
   });
 
   refreshAll();

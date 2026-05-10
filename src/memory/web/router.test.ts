@@ -155,6 +155,47 @@ describe('new web endpoints (stats, doctor, pinned, symbol-search, thread, repla
     expect(r.status).toBe(400);
   });
 
+  it('GET /api/patterns lists recurring input hashes', async () => {
+    // Identical payload across distinct sessions → a pattern.
+    for (const sid of ['a', 'b', 'c']) {
+      await storage.recordEvent({ ts: 1, sessionId: sid, tool: 'Edit', payload: { x: 1 } });
+    }
+    const r = await route(req({ path: '/api/patterns', query: { min: '2' } }), deps());
+    const body = JSON.parse(String(r.body));
+    expect(body.data.patterns.length).toBeGreaterThan(0);
+    expect(body.data.patterns[0].occurrences).toBeGreaterThanOrEqual(2);
+    expect(body.data.patterns[0].distinctSessions).toBeGreaterThanOrEqual(2);
+  });
+
+  it('POST /api/session-digest concats summaries for a session', async () => {
+    const eid = await storage.recordEvent({ ts: 1, sessionId: 'd', tool: 'Edit', payload: { x: 1 } });
+    await storage.recordSummary({ eventId: eid, ts: 1, model: 'm', promptHash: 'p', text: 'fact one', tokensIn: null, tokensOut: null, confidence: null });
+    const r = await route(req({ method: 'POST', path: '/api/session-digest', body: JSON.stringify({ sessionId: 'd' }) }), deps());
+    const body = JSON.parse(String(r.body));
+    expect(body.data.text).toContain('fact one');
+  });
+
+  it('POST /api/session-digest 400s on missing sessionId', async () => {
+    const r = await route(req({ method: 'POST', path: '/api/session-digest', body: '{}' }), deps());
+    expect(r.status).toBe(400);
+  });
+
+  it('GET /api/as-of returns snapshot at a timestamp', async () => {
+    const eid = await storage.recordEvent({ ts: 100, sessionId: 's', tool: 'R', payload: {} });
+    await storage.recordSummary({ eventId: eid, ts: 100, model: 'm', promptHash: 'p', text: 'old', tokensIn: null, tokensOut: null, confidence: null });
+    const eid2 = await storage.recordEvent({ ts: 500, sessionId: 's', tool: 'R', payload: {} });
+    await storage.recordSummary({ eventId: eid2, ts: 500, model: 'm', promptHash: 'p2', text: 'newer', tokensIn: null, tokensOut: null, confidence: null });
+    const r = await route(req({ path: '/api/as-of', query: { ts: '300', limit: '10' } }), deps());
+    const body = JSON.parse(String(r.body));
+    expect(body.data.counts.events).toBe(1);
+    expect(body.data.summaries[0].text).toBe('old');
+  });
+
+  it('GET /api/as-of 400s when ts is missing or invalid', async () => {
+    const r = await route(req({ path: '/api/as-of' }), deps());
+    expect(r.status).toBe(400);
+  });
+
   it('POST /api/graph/path returns the shortest connecting edges', async () => {
     await provenance.addEdge({ from: { kind: 'n', id: 'a' }, to: { kind: 'n', id: 'b' }, edgeType: 'causes' });
     await provenance.addEdge({ from: { kind: 'n', id: 'b' }, to: { kind: 'n', id: 'c' }, edgeType: 'causes' });
