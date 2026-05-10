@@ -21,6 +21,7 @@
   <button data-tab="search">Search</button>
   <button data-tab="symbol">Symbol</button>
   <button data-tab="why">Provenance</button>
+  <button data-tab="graph">Graph</button>
   <button data-tab="ab">A/B savings</button>
   <button id="refresh">↻</button>
 </nav>
@@ -101,6 +102,48 @@
       <tbody id="sessions-body"></tbody>
     </table>
     <div id="replay-panel" class="empty">Click a session to replay it.</div>
+  </section>
+
+  <section id="tab-graph" class="tab">
+    <div class="graph-layout">
+      <div class="graph-main">
+        <form id="graph-form">
+          <input id="graph-kind" placeholder="kind (file, summary, event, symbol, decision)" />
+          <input id="graph-id" placeholder="id" />
+          <select id="graph-direction">
+            <option value="both">both</option>
+            <option value="out">out</option>
+            <option value="in">in</option>
+          </select>
+          <input id="graph-depth" type="number" min="1" max="6" value="2" title="max depth" />
+          <input id="graph-edge-type" placeholder="edge type (optional)" />
+          <button type="submit">Explore</button>
+        </form>
+        <div id="graph-summary" class="empty">Submit a node to extract its subgraph.</div>
+        <table>
+          <thead><tr><th>from</th><th>edge</th><th>to</th><th>conf</th></tr></thead>
+          <tbody id="graph-body"></tbody>
+        </table>
+      </div>
+      <aside class="graph-hubs">
+        <h2>Top hubs</h2>
+        <div class="kv" style="margin-bottom: 8px;">
+          <div class="k">kind</div>
+          <div class="v"><select id="hubs-kind">
+            <option value="">(any)</option>
+            <option value="file">file</option>
+            <option value="summary">summary</option>
+            <option value="event">event</option>
+            <option value="symbol">symbol</option>
+            <option value="decision">decision</option>
+          </select></div>
+        </div>
+        <table>
+          <thead><tr><th>node</th><th>deg</th></tr></thead>
+          <tbody id="hubs-body"></tbody>
+        </table>
+      </aside>
+    </div>
   </section>
 
   <section id="tab-symbol" class="tab">
