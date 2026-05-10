@@ -12,6 +12,7 @@ import type { Embedder } from '../embedder.js';
 import { hybridSearch } from '../retrieval.js';
 import type { SymbolExtractor, AsyncSymbolExtractor } from '../symbols.js';
 import { approximate } from '../tokens.js';
+import { inferEdgesForEvent } from '../auto-edges.js';
 import { listTranscripts, readTranscript, parseTranscript } from '../replay.js';
 import type { Summarizer } from './summarizer.js';
 import type { ProvenanceStore } from '../provenance.js';
@@ -145,6 +146,14 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
             tokensEst,
             ttlMs: req.ttlMs,
           });
+          // Auto-edge inference: cheap structural edges so the provenance graph isn't empty
+          // out of the gate. Failures must never break capture, so a try/catch isolates the
+          // call. SIFTCODER_AUTO_EDGES=0 disables it for benchmarks or schema-drift testing.
+          if (deps.provenance && process.env['SIFTCODER_AUTO_EDGES'] !== '0') {
+            try {
+              await inferEdgesForEvent(deps.storage, deps.provenance, id, req.sessionId, req.tool, stamped, ts);
+            } catch { /* swallow — graph health is observable via `mem doctor` */ }
+          }
           return { ok: true, data: { id, tokensEst } };
         }
 
