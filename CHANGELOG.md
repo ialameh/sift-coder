@@ -2,6 +2,17 @@
 
 All notable changes to SiftCoder. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning is [SemVer](https://semver.org/).
 
+## [1.2.7] — 2026-05-10
+
+### Fixed
+- **Daemon never auto-drained without MCP host sampling** — v1.2 added an MCP-side eager-drain loop, but sessions where Claude Code didn't advertise `sampling` (or where the MCP server hadn't initialized) left the daemon idle even with a fully configured backend. Capture worked (UDS path is independent), drain didn't fire. Found via real workspace: `/Users/sam/Documents/ADHD` had 28 raw events accumulating over 50 minutes with `GEMINI_API_KEY` set and `drain backend selected: gemini-2.0-flash` logged at boot, but `summarized=0` throughout because nothing kicked drain.
+- Added `src/memory/daemon/periodic-drain.ts` — adaptive-backoff drain loop mirroring the MCP-side pattern, runs daemon-side whenever a `summarizer` is configured. 2× empty-tick backoff capped at `maxBackoffSteps`, snaps to base on a productive drain. Single concurrency guard. Errors logged but never thrown.
+- Tunable: `SIFTCODER_DAEMON_DRAIN_MS` (default 60s; 0 disables), `SIFTCODER_DAEMON_DRAIN_BATCH` (default 8).
+- Tests: 6 new cases covering disabled paths, backoff behaviour, productive-drain reset, error survival.
+
+### Coverage
+The two drain paths are now symmetrical — MCP-side handles host-sampling sessions, daemon-side handles backend-API-key sessions. Both run with the same backoff shape.
+
 ## [1.2.6] — 2026-05-10
 
 ### Added
