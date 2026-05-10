@@ -2,6 +2,18 @@
 
 All notable changes to SiftCoder. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning is [SemVer](https://semver.org/).
 
+## [1.2.2] — 2026-05-10
+
+Operational hardening. Three issues that all surfaced during the v1.2.1 plugin-cache install:
+
+### Fixed
+- **Missing native binding crashes daemon with cryptic `database is locked`** — `npm install --silent` (used by some plugin-marketplace install paths) skips better-sqlite3's postinstall on certain npm versions. The bindings.js fallback then triggers a wasm path that interprets WAL state as a lock. `bin/siftcoder.mjs` now checks for `node_modules/better-sqlite3/build/Release/better_sqlite3.node` on `start` and `openStorage`, runs `npm rebuild better-sqlite3` automatically when missing.
+- **Daemon main-loop catch swallows stack** — `main().catch(err => stderr.write(err.message))` was hiding the line number. Now writes `err.stack ?? err.message`. Future first-boot failures will be diagnosable on first sight.
+
+### Added
+- **Reranker reachability probe in `mem doctor`** — when `SIFTCODER_RERANKER_URL` is set, doctor calls `reranker.ping()` (single 1-doc score round-trip) and reports `{ configured, ok, latencyMs, error? }`. Surfaced in the SPA Health tab as a `reachable | unreachable | disabled` tag with latency. A silently-broken reranker no longer degrades search quality unnoticed.
+- `AsyncReranker.ping?(): Promise<{ ok, latencyMs, error? }>` — optional health probe. `crossEncoderToReranker` implements it via a 1-doc score call.
+
 ## [1.2.1] — 2026-05-10
 
 Build fix. The TypeScript compiler doesn't copy non-`.ts` assets, so `dist/memory/web/static/` was never populated. The HTTP bridge resolves `index.html` / `app.js` / `style.css` from that path at runtime, so any installation built from a fresh checkout returned 404 on `/?token=…` even though the source files sat untouched in `src/memory/web/static/`. Latent since the SPA shipped; only surfaced when the daemon was restarted on a freshly built dist.

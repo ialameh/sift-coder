@@ -77,6 +77,11 @@ function tauForTool(
 
 export interface AsyncReranker {
   rerank(query: string, hits: HybridHit[]): Promise<HybridHit[]>;
+  /**
+   * Optional health probe. When implemented, `mem doctor` and `/api/doctor` invoke it to
+   * surface whether the reranker server is reachable. Should be cheap (single 1-doc score).
+   */
+  ping?(): Promise<{ ok: boolean; latencyMs: number; error?: string }>;
 }
 
 export interface HybridOptions {

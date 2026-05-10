@@ -267,11 +267,18 @@
       const d = doctor.data;
       const vc = d.vecCardinality || { embeddings: 0, vec: 0, drift: 0 };
       const ok = d.integrity === 'ok' && (d.orphanSummaries ?? 0) === 0 && (d.orphanEmbeddings ?? 0) === 0 && (d.orphanProvenance ?? 0) === 0;
+      const rerank = d.reranker || { configured: false };
+      const rerankCell = rerank.configured
+        ? (rerank.ok
+            ? `<span class="tag ok">reachable</span> <span class="muted">${escape(rerank.latencyMs ?? '?')}ms</span>`
+            : `<span class="tag err">unreachable</span> <span class="muted">${escape(rerank.error ?? 'unknown')}</span>`)
+        : '<span class="tag">disabled</span> <span class="muted">SIFTCODER_RERANKER_URL not set</span>';
       doctorBox.innerHTML = '<div class="kv">' +
         rowHtml('integrity', `<span class="tag ${ok ? 'ok' : 'err'}">${escape(d.integrity)}</span>`) +
         row('orphans', `summaries=${d.orphanSummaries ?? 0} embeddings=${d.orphanEmbeddings ?? 0} provenance=${d.orphanProvenance ?? 0}`) +
         row('vec0 drift', `embeddings=${vc.embeddings} vec=${vc.vec} drift=${vc.drift}`) +
         row('pinned', fmt.num(d.pinned ?? 0)) +
+        rowHtml('reranker', rerankCell) +
         '</div>';
     } catch (e) {
       statsBox.innerHTML = '<div class="empty">failed: ' + escape(e.message) + '</div>';

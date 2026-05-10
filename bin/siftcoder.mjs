@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // SiftCoder CLI: setup | start | stop | status | drain | backfill | web | version | check | list
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import path from 'node:path';
 import url from 'node:url';
 import fs from 'node:fs';
@@ -148,11 +148,34 @@ function ensureBuilt() {
 }
 
 /**
+ * Verify the better-sqlite3 native binding is built. Plugin-marketplace installs occasionally
+ * skip postinstall (e.g. `npm install --silent` on some npm versions), leaving node_modules
+ * present but the .node binary absent. The daemon then crashes with the unhelpful
+ * "database is locked" because better-sqlite3's bindings.js can't find its native module.
+ *
+ * Auto-rebuild when missing: cheap on cache hit, runs node-gyp once when a fresh checkout
+ * arrives. Idempotent — subsequent invocations short-circuit on the file-existence check.
+ */
+function ensureNativeBindings() {
+  const binding = path.join(ROOT, 'node_modules', 'better-sqlite3', 'build', 'Release', 'better_sqlite3.node');
+  if (fs.existsSync(binding)) return;
+  console.error('[siftcoder] better-sqlite3 native binding missing — running npm rebuild');
+  const r = spawnSync('npm', ['rebuild', 'better-sqlite3'], { cwd: ROOT, stdio: 'inherit' });
+  if (r.status !== 0 || !fs.existsSync(binding)) {
+    console.error('[siftcoder] npm rebuild better-sqlite3 failed; see output above');
+    console.error(`  cd ${ROOT} && npm rebuild better-sqlite3`);
+    process.exit(1);
+  }
+  console.error('[siftcoder] native binding rebuilt');
+}
+
+/**
  * Open storage using the backend resolver.
  * Returns { storage, backend, dbPath } where storage is an ready Storage instance.
  */
 async function openStorage() {
   ensureBuilt();
+  ensureNativeBindings();
   const p = paths();
   fs.mkdirSync(path.dirname(p.db), { recursive: true });
   const { openStorage: resolve } = await import(path.join(ROOT, 'dist', 'memory', 'storage', 'open.js'));
@@ -185,6 +208,8 @@ switch (cmd) {
     console.log(`siftcoder v${pkgVersion()}`);
     break;
   case 'start': {
+    ensureBuilt();
+    ensureNativeBindings();
     const p = paths();
     fs.mkdirSync(p.run, { recursive: true });
     fs.mkdirSync(p.workspace, { recursive: true });
