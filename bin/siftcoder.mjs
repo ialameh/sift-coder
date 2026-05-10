@@ -604,6 +604,54 @@ switch (cmd) {
     console.error('dashboard requires the daemon');
     process.exit(1);
   }
+  case 'graph-subgraph': {
+    // siftcoder graph-subgraph <kind> <id> [--depth N] [--direction out|in|both] [--edge-type T] [--max-edges N] [--json]
+    const [kind, id] = args.slice(1, 3);
+    if (!kind || !id) {
+      console.error('usage: siftcoder graph-subgraph <kind> <id> [--depth N] [--direction out|in|both] [--edge-type T] [--max-edges N] [--json]');
+      process.exit(1);
+    }
+    const depthIdx = args.indexOf('--depth');
+    const dirIdx = args.indexOf('--direction');
+    const etIdx = args.indexOf('--edge-type');
+    const meIdx = args.indexOf('--max-edges');
+    const r = await rpc({
+      kind: 'graph_subgraph',
+      nodeKind: kind,
+      nodeId: id,
+      maxDepth: depthIdx >= 0 ? parseInt(args[depthIdx + 1] ?? '2', 10) : 2,
+      direction: dirIdx >= 0 ? args[dirIdx + 1] : 'both',
+      edgeType: etIdx >= 0 ? args[etIdx + 1] : undefined,
+      maxEdges: meIdx >= 0 ? parseInt(args[meIdx + 1] ?? '200', 10) : 200,
+    }, 30000);
+    if (r.ok && !args.includes('--json')) {
+      console.log(`subgraph: ${r.data.nodes.length} nodes, ${r.data.edges.length} edges`);
+      for (const e of r.data.edges) {
+        console.log(`  ${e.from.kind}:${e.from.id}  --[${e.edgeType}]-->  ${e.to.kind}:${e.to.id}`);
+      }
+    } else {
+      console.log(JSON.stringify(r, null, 2));
+    }
+    break;
+  }
+  case 'graph-hubs': {
+    // siftcoder graph-hubs [--limit N] [--kind file|symbol|...] [--json]
+    const lIdx = args.indexOf('--limit');
+    const kIdx = args.indexOf('--kind');
+    const r = await rpc({
+      kind: 'graph_hubs',
+      limit: lIdx >= 0 ? parseInt(args[lIdx + 1] ?? '20', 10) : 20,
+      nodeKind: kIdx >= 0 ? args[kIdx + 1] : undefined,
+    }, 15000);
+    if (r.ok && !args.includes('--json')) {
+      for (const h of r.data.hubs ?? []) {
+        console.log(`  deg=${h.degree}  out=${h.outDegree}  in=${h.inDegree}  ${h.node.kind}:${h.node.id}`);
+      }
+    } else {
+      console.log(JSON.stringify(r, null, 2));
+    }
+    break;
+  }
   case 'capture': {
     // Used by `siftcoder hooks install` PostToolUse hook — receives JSON payload via stdin
     // and forwards to the daemon as a capture RPC. Falls back to direct Storage write when

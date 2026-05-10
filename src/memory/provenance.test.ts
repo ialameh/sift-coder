@@ -223,3 +223,75 @@ describe('ingestFromCdg', () => {
     expect(e.confidence).toBe(1);
   });
 });
+
+describe('ProvenanceStore.subgraph', () => {
+  it('returns a deduped node + edge set within maxDepth in both directions', async () => {
+    // a → b → c, and d → b. Seed at b with depth 1, direction both → nodes b, a, c, d.
+    await prov.addEdge({ from: { kind: 'n', id: 'a' }, to: { kind: 'n', id: 'b' }, edgeType: 'causes' });
+    await prov.addEdge({ from: { kind: 'n', id: 'b' }, to: { kind: 'n', id: 'c' }, edgeType: 'causes' });
+    await prov.addEdge({ from: { kind: 'n', id: 'd' }, to: { kind: 'n', id: 'b' }, edgeType: 'causes' });
+    const sg = await prov.subgraph({ kind: 'n', id: 'b' }, { maxDepth: 1, direction: 'both' });
+    const ids = sg.nodes.map(n => n.id).sort();
+    expect(ids).toEqual(['a', 'b', 'c', 'd']);
+    expect(sg.edges).toHaveLength(3);
+  });
+
+  it('respects direction=out (no upstream incoming edges)', async () => {
+    await prov.addEdge({ from: { kind: 'n', id: 'a' }, to: { kind: 'n', id: 'b' }, edgeType: 'causes' });
+    await prov.addEdge({ from: { kind: 'n', id: 'b' }, to: { kind: 'n', id: 'c' }, edgeType: 'causes' });
+    const sg = await prov.subgraph({ kind: 'n', id: 'b' }, { maxDepth: 1, direction: 'out' });
+    expect(sg.nodes.map(n => n.id).sort()).toEqual(['b', 'c']);
+  });
+
+  it('respects direction=in', async () => {
+    await prov.addEdge({ from: { kind: 'n', id: 'a' }, to: { kind: 'n', id: 'b' }, edgeType: 'causes' });
+    await prov.addEdge({ from: { kind: 'n', id: 'b' }, to: { kind: 'n', id: 'c' }, edgeType: 'causes' });
+    const sg = await prov.subgraph({ kind: 'n', id: 'b' }, { maxDepth: 1, direction: 'in' });
+    expect(sg.nodes.map(n => n.id).sort()).toEqual(['a', 'b']);
+  });
+
+  it('caps edges via maxEdges to protect hubs', async () => {
+    for (let i = 0; i < 20; i++) {
+      await prov.addEdge({ from: { kind: 'n', id: 'hub' }, to: { kind: 'n', id: 'leaf-' + i }, edgeType: 'references' });
+    }
+    const sg = await prov.subgraph({ kind: 'n', id: 'hub' }, { maxDepth: 1, maxEdges: 5 });
+    expect(sg.edges).toHaveLength(5);
+  });
+
+  it('honours edgeType filter', async () => {
+    await prov.addEdge({ from: { kind: 'n', id: 'x' }, to: { kind: 'n', id: 'y' }, edgeType: 'edits' });
+    await prov.addEdge({ from: { kind: 'n', id: 'x' }, to: { kind: 'n', id: 'z' }, edgeType: 'references' });
+    const sg = await prov.subgraph({ kind: 'n', id: 'x' }, { maxDepth: 1, direction: 'out', edgeType: 'edits' });
+    expect(sg.edges).toHaveLength(1);
+    expect(sg.edges[0]!.to.id).toBe('y');
+  });
+
+  it('returns the seed even when isolated', async () => {
+    const sg = await prov.subgraph({ kind: 'n', id: 'lonely' }, { maxDepth: 3 });
+    expect(sg.nodes).toEqual([{ kind: 'n', id: 'lonely' }]);
+    expect(sg.edges).toEqual([]);
+  });
+});
+
+describe('ProvenanceStore.topHubs', () => {
+  it('ranks nodes by total degree (in + out)', async () => {
+    // hub gets 3 outgoing; quiet gets 1 incoming.
+    await prov.addEdge({ from: { kind: 'file', id: 'hub.ts' }, to: { kind: 'file', id: 'a' }, edgeType: 'imports' });
+    await prov.addEdge({ from: { kind: 'file', id: 'hub.ts' }, to: { kind: 'file', id: 'b' }, edgeType: 'imports' });
+    await prov.addEdge({ from: { kind: 'file', id: 'hub.ts' }, to: { kind: 'file', id: 'c' }, edgeType: 'imports' });
+    await prov.addEdge({ from: { kind: 'file', id: 'q' }, to: { kind: 'file', id: 'quiet' }, edgeType: 'imports' });
+    const hubs = await prov.topHubs(5);
+    expect(hubs[0]!.node.id).toBe('hub.ts');
+    expect(hubs[0]!.degree).toBe(3);
+    expect(hubs[0]!.outDegree).toBe(3);
+    expect(hubs[0]!.inDegree).toBe(0);
+  });
+
+  it('filters by node kind', async () => {
+    await prov.addEdge({ from: { kind: 'file', id: 'a.ts' }, to: { kind: 'file', id: 'b.ts' }, edgeType: 'imports' });
+    await prov.addEdge({ from: { kind: 'symbol', id: 'fn:x' }, to: { kind: 'symbol', id: 'fn:y' }, edgeType: 'calls' });
+    const fileHubs = await prov.topHubs(10, 'file');
+    expect(fileHubs.every(h => h.node.kind === 'file')).toBe(true);
+    expect(fileHubs).toHaveLength(2);
+  });
+});

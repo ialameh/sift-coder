@@ -329,6 +329,34 @@ export const TOOLS = [
       required: [],
     },
   },
+  {
+    name: 'mem_graph_subgraph',
+    description: 'Extract a knowledge-graph subgraph around a node. Bidirectional BFS up to maxDepth hops, returning deduped nodes + edges. Complements mem_why with a "what is X connected to" query.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        kind: { type: 'string' },
+        id: { type: 'string' },
+        max_depth: { type: 'number', default: 2 },
+        direction: { type: 'string', enum: ['out', 'in', 'both'], default: 'both' },
+        edge_type: { type: 'string' },
+        max_edges: { type: 'number', default: 200 },
+      },
+      required: ['kind', 'id'],
+    },
+  },
+  {
+    name: 'mem_graph_hubs',
+    description: 'Top hub nodes by degree (incoming + outgoing edges). Surfaces the most-connected nodes — files that are edited often, decisions that drive many summaries, etc. Optionally filter to a single node kind.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        limit: { type: 'number', default: 20 },
+        kind: { type: 'string' },
+      },
+      required: [],
+    },
+  },
 ];
 
 export interface DrainResult {
@@ -731,6 +759,33 @@ export async function dispatch(req: JsonRpcRequest, deps: HandlerDeps): Promise<
           const res = await deps.client.send({
             kind: 'sessions',
             limit: args['limit'] !== undefined ? Number(args['limit']) : undefined,
+          });
+          return ok(req.id, res);
+        }
+        case 'mem_graph_subgraph': {
+          const kind = args['kind'];
+          const id = args['id'];
+          if (typeof kind !== 'string' || typeof id !== 'string') {
+            return { jsonrpc: '2.0', id: req.id, error: { code: -32602, message: 'kind and id are required strings' } };
+          }
+          const direction = args['direction'];
+          const dirNorm: 'out' | 'in' | 'both' = direction === 'in' || direction === 'out' ? direction : 'both';
+          const res = await deps.client.send({
+            kind: 'graph_subgraph',
+            nodeKind: kind,
+            nodeId: id,
+            maxDepth: args['max_depth'] !== undefined ? Number(args['max_depth']) : undefined,
+            direction: dirNorm,
+            edgeType: typeof args['edge_type'] === 'string' ? args['edge_type'] : undefined,
+            maxEdges: args['max_edges'] !== undefined ? Number(args['max_edges']) : undefined,
+          });
+          return ok(req.id, res);
+        }
+        case 'mem_graph_hubs': {
+          const res = await deps.client.send({
+            kind: 'graph_hubs',
+            limit: args['limit'] !== undefined ? Number(args['limit']) : undefined,
+            nodeKind: typeof args['kind'] === 'string' ? args['kind'] : undefined,
           });
           return ok(req.id, res);
         }

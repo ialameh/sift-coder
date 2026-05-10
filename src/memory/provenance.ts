@@ -106,6 +106,67 @@ export class ProvenanceStore {
     }
     return out;
   }
+
+  /**
+   * Bidirectional BFS yielding a connected subgraph (deduped node + edge lists) around `node`.
+   * Direction `'both'` follows incoming and outgoing edges; `'out'` and `'in'` restrict.
+   * Edge cap protects against pathological hubs (file-of-files, etc.) — once we've collected
+   * `maxEdges` edges, we stop extending. Returns the seed node even when isolated.
+   */
+  async subgraph(node: NodeRef, opts: {
+    maxDepth?: number;
+    direction?: 'out' | 'in' | 'both';
+    edgeType?: EdgeType;
+    maxEdges?: number;
+  } = {}): Promise<{ nodes: NodeRef[]; edges: Edge[] }> {
+    const maxDepth = opts.maxDepth ?? 2;
+    const direction = opts.direction ?? 'both';
+    const maxEdges = opts.maxEdges ?? 200;
+    const seen = new Set<string>([nodeKey(node)]);
+    const edgeIds = new Set<number>();
+    const nodes: NodeRef[] = [node];
+    const edges: Edge[] = [];
+    let frontier: NodeRef[] = [node];
+    for (let depth = 0; depth < maxDepth && frontier.length > 0 && edges.length < maxEdges; depth++) {
+      const next: NodeRef[] = [];
+      for (const n of frontier) {
+        const adjacent: Edge[] = [];
+        if (direction !== 'in') adjacent.push(...await this.outgoing(n, opts.edgeType));
+        if (direction !== 'out') adjacent.push(...await this.incoming(n, opts.edgeType));
+        for (const e of adjacent) {
+          if (edges.length >= maxEdges) break;
+          if (edgeIds.has(e.id)) continue;
+          edgeIds.add(e.id);
+          edges.push(e);
+          const other = nodeKey(e.from) === nodeKey(n) ? e.to : e.from;
+          const key = nodeKey(other);
+          if (!seen.has(key)) {
+            seen.add(key);
+            nodes.push(other);
+            next.push(other);
+          }
+        }
+      }
+      frontier = next;
+    }
+    return { nodes, edges };
+  }
+
+  /**
+   * Top hub nodes by total degree. `kind` filters to a single node kind ("file", "summary",
+   * "symbol", etc.) — useful when you want "most-edited files" rather than mixed-kind hubs.
+   */
+  async topHubs(limit = 20, kind?: string): Promise<Array<{
+    node: NodeRef; degree: number; outDegree: number; inDegree: number;
+  }>> {
+    const rows = await this.storage.topProvenanceDegree(limit, kind);
+    return rows.map(r => ({
+      node: { kind: r.kind, id: r.id },
+      degree: r.degree,
+      outDegree: r.outDegree,
+      inDegree: r.inDegree,
+    }));
+  }
 }
 
 function rowToEdge(r: Record<string, unknown>): Edge {

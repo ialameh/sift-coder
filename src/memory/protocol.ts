@@ -41,7 +41,9 @@ export type RequestKind =
   | 'auto_pin_patterns'
   | 'as_of'
   | 'dashboard'
-  | 'sessions';
+  | 'sessions'
+  | 'graph_subgraph'
+  | 'graph_hubs';
 
 export interface CaptureRequest {
   kind: 'capture';
@@ -348,7 +350,9 @@ export type Request =
   | AutoPinPatternsRequest
   | AsOfRequest
   | DashboardRequest
-  | SessionsRequest;
+  | SessionsRequest
+  | GraphSubgraphRequest
+  | GraphHubsRequest;
 
 /**
  * Build a single concat-text view of a session's summaries — a "digest" suitable to feed back
@@ -399,6 +403,34 @@ export interface SessionsRequest {
   kind: 'sessions';
   /** Cap on returned sessions, ordered by last activity desc. Default 20. */
   limit?: number;
+}
+
+/**
+ * Knowledge-graph subgraph extraction. Returns nodes + edges within `maxDepth` hops of the
+ * seed in the requested direction. Complements `why` (forward-only chain) with a bidirectional
+ * neighbourhood view suitable for visualization or "what's connected to X" queries.
+ */
+export interface GraphSubgraphRequest {
+  kind: 'graph_subgraph';
+  nodeKind: string;
+  nodeId: string;
+  maxDepth?: number;
+  direction?: 'out' | 'in' | 'both';
+  /** Optional edge-type filter (e.g. 'edits', 'references'). */
+  edgeType?: string;
+  /** Hard cap on edges returned. Default 200. */
+  maxEdges?: number;
+}
+
+/**
+ * Top hub nodes by degree. With no `kind`, mixes node types; with one, restricts to
+ * that kind ("file", "summary", "symbol", "decision").
+ */
+export interface GraphHubsRequest {
+  kind: 'graph_hubs';
+  limit?: number;
+  /** Optional node-kind filter. */
+  nodeKind?: string;
 }
 
 export interface OkResponse<T = unknown> {
