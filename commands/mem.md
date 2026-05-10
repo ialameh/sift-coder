@@ -34,6 +34,7 @@ Single entry point for memory daemon operations.
 | `federate-search <query> [--k N] [--prefix X] [--max-ws N]` | Cross-workspace federated search (consented workspaces only) |
 | `symbol-search <kind:name \| term> [--k N] [--json]` | Match events by extracted code symbol |
 | `stats [--day] [--json]` | Throughput, backlog ETA, cache hit rate, top tools |
+| `savings [--json]` | Capture / drain / spend totals + net token savings |
 | `web` | Print web UI URL for browser inspection |
 | `list` | List recent summaries |
 | `graph-subgraph <kind> <id> [--depth N] [--direction out\|in\|both] [--edge-type T] [--max-edges N] [--json]` | Extract a knowledge-graph subgraph around a node |

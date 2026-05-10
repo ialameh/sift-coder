@@ -613,6 +613,24 @@ describe('buildHandler with real Storage (cross-platform)', () => {
     expect(r2.data.skipped).toBe(2);
   });
 
+  it('savings RPC returns capture / drain / spend / context totals', async () => {
+    const eid = await realStorage.recordEvent({ ts: Date.now(), sessionId: 's', tool: 'Edit', payload: { x: 1 } });
+    await realStorage.recordSummary({
+      eventId: eid, ts: Date.now(), model: 'm', promptHash: 'p',
+      text: 'fact', tokensIn: 100, tokensOut: 50, confidence: 0.9,
+    });
+    // recordSummary doesn't transition event status — drain pipeline does both. Mirror that here.
+    await realStorage.markEventStatus(eid, 'summarized');
+    const h = buildHandler({ storage: realStorage, wal: realWal, cwd: '/x' });
+    const r = await h({ kind: 'savings' }) as { ok: true; data: { capture: { events: number }; drain: { summarized: number }; spend: { tokensIn: number; tokensOut: number }; context: { netSavedTokens: number } } };
+    expect(r.ok).toBe(true);
+    expect(r.data.capture.events).toBe(1);
+    expect(r.data.drain.summarized).toBe(1);
+    expect(r.data.spend.tokensIn).toBe(100);
+    expect(r.data.spend.tokensOut).toBe(50);
+    expect(typeof r.data.context.netSavedTokens).toBe('number');
+  });
+
   it('doctor reranker probe is cached for 60s; heal=true bypasses cache', async () => {
     const { resetRerankerProbeCache } = await import('./server.js');
     resetRerankerProbeCache();
