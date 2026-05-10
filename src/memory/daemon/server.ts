@@ -669,8 +669,32 @@ export function startServer(deps: ServerDeps): Server {
       for (const frame of frames) {
         pending++;
         try {
-          const res = await handler(frame as Request);
-          socket.write(encodeFrame(res));
+          // Streaming kinds emit multiple frames before yielding their terminator. Branch on
+          // request kind to select the streaming path; everything else stays single-frame.
+          const reqFrame = frame as Request;
+          if (reqFrame.kind === 'stream_search') {
+            const { streamingHybridSearch } = await import('../retrieval.js');
+            try {
+              await streamingHybridSearch(
+                deps.storage,
+                deps.embedder ?? null,
+                reqFrame.query,
+                Date.now(),
+                (chunk) => { socket.write(encodeFrame({ ok: true, data: { partial: chunk } })); },
+                {
+                  k: reqFrame.k ?? 5,
+                  candidatePool: reqFrame.candidatePool,
+                  asyncReranker: deps.reranker ?? null,
+                },
+              );
+              socket.write(encodeFrame({ ok: true, data: { done: true } }));
+            } catch (err) {
+              socket.write(encodeFrame({ ok: false, error: (err as Error).message }));
+            }
+          } else {
+            const res = await handler(reqFrame);
+            socket.write(encodeFrame(res));
+          }
         } finally {
           pending--;
           maybeClose();

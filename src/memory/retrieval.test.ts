@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { hybridSearch, DEFAULT_DECAY_TAU_MS_BY_TOOL, resetRerankCorpusCache } from './retrieval.js';
+import { hybridSearch, streamingHybridSearch, DEFAULT_DECAY_TAU_MS_BY_TOOL, resetRerankCorpusCache, type StreamSearchEmit } from './retrieval.js';
 import { Storage, type DBHandle, type SearchHit, type SummaryRow } from './storage/storage.js';
 import { DeterministicEmbedder } from './embedder.js';
 
@@ -201,6 +201,26 @@ describe('hybridSearch', () => {
     const hits = await hybridSearch(storage, null, 'auth', 0);
     expect(hits[0]!.id).toBe(1);
     expect(hits[0]!.tool).toBe('Edit');
+  });
+
+  it('streamingHybridSearch emits bm25, vector, and final stages in order', async () => {
+    const a: SummaryRow = { id: 1, eventId: 1, ts: 0, model: 'm', promptHash: 'p', text: 'auth login session', tokensIn: null, tokensOut: null, confidence: null };
+    const b: SummaryRow = { id: 2, eventId: 2, ts: 0, model: 'm', promptHash: 'p', text: 'database migration', tokensIn: null, tokensOut: null, confidence: null };
+    addSummary(a, 0); addSummary(b, 1);
+    await addEmbedding(a); await addEmbedding(b);
+    const stages: StreamSearchEmit[] = [];
+    await streamingHybridSearch(storage, e, 'auth', 0, (chunk) => stages.push(chunk), { decayTauMs: 1e15 });
+    expect(stages.map(s => s.stage)).toEqual(['bm25', 'vector', 'final']);
+    expect(stages[0]!.hits.length).toBeGreaterThan(0);
+    expect(stages[2]!.hits[0]!.id).toBe(1);
+  });
+
+  it('streamingHybridSearch emits an empty vector stage when no embedder is given', async () => {
+    const a: SummaryRow = { id: 1, eventId: 1, ts: 0, model: 'm', promptHash: 'p', text: 'auth', tokensIn: null, tokensOut: null, confidence: null };
+    addSummary(a, 0);
+    const stages: StreamSearchEmit[] = [];
+    await streamingHybridSearch(storage, null, 'auth', 0, (chunk) => stages.push(chunk));
+    expect(stages.find(s => s.stage === 'vector')!.hits).toEqual([]);
   });
 
   it('per-tool decay falls back to global tau when tool is unknown', async () => {
