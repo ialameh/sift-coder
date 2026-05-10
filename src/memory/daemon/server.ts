@@ -526,6 +526,16 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
           return { ok: true, data: { hubs } };
         }
 
+        case 'graph_path': {
+          if (!deps.provenance) return { ok: true, data: { path: null } };
+          const path = await deps.provenance.shortestPath(
+            { kind: req.fromKind, id: req.fromId },
+            { kind: req.toKind, id: req.toId },
+            req.maxDepth ?? 6,
+          );
+          return { ok: true, data: { path } };
+        }
+
         case 'shutdown': {
           if (deps.onShutdown) deps.onShutdown();
           return { ok: true, data: { stopping: true } };

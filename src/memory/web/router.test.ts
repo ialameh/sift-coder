@@ -155,6 +155,26 @@ describe('new web endpoints (stats, doctor, pinned, symbol-search, thread, repla
     expect(r.status).toBe(400);
   });
 
+  it('POST /api/graph/path returns the shortest connecting edges', async () => {
+    await provenance.addEdge({ from: { kind: 'n', id: 'a' }, to: { kind: 'n', id: 'b' }, edgeType: 'causes' });
+    await provenance.addEdge({ from: { kind: 'n', id: 'b' }, to: { kind: 'n', id: 'c' }, edgeType: 'causes' });
+    const r = await route(req({ method: 'POST', path: '/api/graph/path', body: JSON.stringify({ fromKind: 'n', fromId: 'a', toKind: 'n', toId: 'c' }) }), deps());
+    const body = JSON.parse(String(r.body));
+    expect(body.data.path).toHaveLength(2);
+  });
+
+  it('POST /api/graph/path returns null when no path exists', async () => {
+    await provenance.addEdge({ from: { kind: 'n', id: 'a' }, to: { kind: 'n', id: 'b' }, edgeType: 'causes' });
+    const r = await route(req({ method: 'POST', path: '/api/graph/path', body: JSON.stringify({ fromKind: 'n', fromId: 'a', toKind: 'n', toId: 'island' }) }), deps());
+    const body = JSON.parse(String(r.body));
+    expect(body.data.path).toBeNull();
+  });
+
+  it('POST /api/graph/path 400s on missing args', async () => {
+    const r = await route(req({ method: 'POST', path: '/api/graph/path', body: '{}' }), deps());
+    expect(r.status).toBe(400);
+  });
+
   it('GET /api/graph/hubs returns top-degree nodes', async () => {
     for (let i = 0; i < 3; i++) {
       await provenance.addEdge({ from: { kind: 'file', id: 'h' }, to: { kind: 'file', id: 'leaf-' + i }, edgeType: 'imports' });

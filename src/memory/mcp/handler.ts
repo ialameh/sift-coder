@@ -357,6 +357,21 @@ export const TOOLS = [
       required: [],
     },
   },
+  {
+    name: 'mem_graph_path',
+    description: 'Shortest path between two graph nodes (undirected for connectivity, directed in the result). Answers "how is X connected to Y" without forcing the caller to guess the direction. Returns the ordered edges, or null when no path exists within max_depth.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        from_kind: { type: 'string' },
+        from_id: { type: 'string' },
+        to_kind: { type: 'string' },
+        to_id: { type: 'string' },
+        max_depth: { type: 'number', default: 6 },
+      },
+      required: ['from_kind', 'from_id', 'to_kind', 'to_id'],
+    },
+  },
 ];
 
 export interface DrainResult {
@@ -786,6 +801,21 @@ export async function dispatch(req: JsonRpcRequest, deps: HandlerDeps): Promise<
             kind: 'graph_hubs',
             limit: args['limit'] !== undefined ? Number(args['limit']) : undefined,
             nodeKind: typeof args['kind'] === 'string' ? args['kind'] : undefined,
+          });
+          return ok(req.id, res);
+        }
+        case 'mem_graph_path': {
+          const fk = args['from_kind'], fi = args['from_id'], tk = args['to_kind'], ti = args['to_id'];
+          if (typeof fk !== 'string' || typeof fi !== 'string' || typeof tk !== 'string' || typeof ti !== 'string') {
+            return { jsonrpc: '2.0', id: req.id, error: { code: -32602, message: 'from_kind, from_id, to_kind, to_id are all required strings' } };
+          }
+          const res = await deps.client.send({
+            kind: 'graph_path',
+            fromKind: fk,
+            fromId: fi,
+            toKind: tk,
+            toId: ti,
+            maxDepth: args['max_depth'] !== undefined ? Number(args['max_depth']) : undefined,
           });
           return ok(req.id, res);
         }

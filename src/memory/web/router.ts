@@ -12,6 +12,9 @@
  *   GET  /api/events?limit  recent events tail
  *   GET  /api/summaries?limit  recent summaries tail
  *   GET  /api/sessions?limit  list sessions with first/last/count
+ *   POST /api/graph/subgraph { kind, id, maxDepth, direction, edgeType, maxEdges }
+ *   GET  /api/graph/hubs?limit&kind  top-degree nodes
+ *   POST /api/graph/path     { fromKind, fromId, toKind, toId, maxDepth }
  *   POST /api/search        { query, k }
  *   POST /api/timeline      { nearId, window }
  *   POST /api/get           { ids: number[] }
@@ -271,6 +274,20 @@ export async function route(req: WebRequest, deps: WebDeps): Promise<WebResponse
       },
     );
     return json(200, { ok: true, data: result });
+  }
+
+  if (req.method === 'POST' && req.path === '/api/graph/path') {
+    const body = parseBody<{ fromKind: string; fromId: string; toKind: string; toId: string; maxDepth?: number }>(req.body);
+    if (!body || typeof body.fromKind !== 'string' || typeof body.fromId !== 'string' || typeof body.toKind !== 'string' || typeof body.toId !== 'string') {
+      return badRequest('fromKind, fromId, toKind, toId required');
+    }
+    if (!deps.provenance) return json(200, { ok: true, data: { path: null } });
+    const path = await deps.provenance.shortestPath(
+      { kind: body.fromKind, id: body.fromId },
+      { kind: body.toKind, id: body.toId },
+      body.maxDepth ?? 6,
+    );
+    return json(200, { ok: true, data: { path } });
   }
 
   if (req.method === 'GET' && req.path === '/api/graph/hubs') {

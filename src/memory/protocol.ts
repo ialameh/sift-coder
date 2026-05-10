@@ -43,7 +43,8 @@ export type RequestKind =
   | 'dashboard'
   | 'sessions'
   | 'graph_subgraph'
-  | 'graph_hubs';
+  | 'graph_hubs'
+  | 'graph_path';
 
 export interface CaptureRequest {
   kind: 'capture';
@@ -352,7 +353,8 @@ export type Request =
   | DashboardRequest
   | SessionsRequest
   | GraphSubgraphRequest
-  | GraphHubsRequest;
+  | GraphHubsRequest
+  | GraphPathRequest;
 
 /**
  * Build a single concat-text view of a session's summaries — a "digest" suitable to feed back
@@ -431,6 +433,19 @@ export interface GraphHubsRequest {
   limit?: number;
   /** Optional node-kind filter. */
   nodeKind?: string;
+}
+
+/**
+ * Shortest path between two nodes (treated-as-undirected). Returns the path as ordered
+ * provenance edges, or null when no path exists within `maxDepth`.
+ */
+export interface GraphPathRequest {
+  kind: 'graph_path';
+  fromKind: string;
+  fromId: string;
+  toKind: string;
+  toId: string;
+  maxDepth?: number;
 }
 
 export interface OkResponse<T = unknown> {

@@ -273,6 +273,59 @@ describe('ProvenanceStore.subgraph', () => {
   });
 });
 
+describe('ProvenanceStore.shortestPath', () => {
+  it('returns an empty path when source equals target', async () => {
+    const p = await prov.shortestPath({ kind: 'n', id: 'x' }, { kind: 'n', id: 'x' });
+    expect(p).toEqual([]);
+  });
+
+  it('returns null when no path exists', async () => {
+    await prov.addEdge({ from: { kind: 'n', id: 'a' }, to: { kind: 'n', id: 'b' }, edgeType: 'causes' });
+    await prov.addEdge({ from: { kind: 'n', id: 'c' }, to: { kind: 'n', id: 'd' }, edgeType: 'causes' });
+    expect(await prov.shortestPath({ kind: 'n', id: 'a' }, { kind: 'n', id: 'c' })).toBeNull();
+  });
+
+  it('finds a 1-hop path along a single outgoing edge', async () => {
+    await prov.addEdge({ from: { kind: 'n', id: 'a' }, to: { kind: 'n', id: 'b' }, edgeType: 'causes' });
+    const p = await prov.shortestPath({ kind: 'n', id: 'a' }, { kind: 'n', id: 'b' });
+    expect(p).toHaveLength(1);
+    expect(p![0]!.from.id).toBe('a');
+    expect(p![0]!.to.id).toBe('b');
+  });
+
+  it('treats the graph as undirected for connectivity', async () => {
+    // a → b → c. Asking for c → a should still return a path.
+    await prov.addEdge({ from: { kind: 'n', id: 'a' }, to: { kind: 'n', id: 'b' }, edgeType: 'causes' });
+    await prov.addEdge({ from: { kind: 'n', id: 'b' }, to: { kind: 'n', id: 'c' }, edgeType: 'causes' });
+    const p = await prov.shortestPath({ kind: 'n', id: 'c' }, { kind: 'n', id: 'a' });
+    expect(p).toHaveLength(2);
+  });
+
+  it('finds the shortest of two competing routes', async () => {
+    // Long path: a → b → c → d → e. Short path: a → e.
+    await prov.addEdge({ from: { kind: 'n', id: 'a' }, to: { kind: 'n', id: 'b' }, edgeType: 'causes' });
+    await prov.addEdge({ from: { kind: 'n', id: 'b' }, to: { kind: 'n', id: 'c' }, edgeType: 'causes' });
+    await prov.addEdge({ from: { kind: 'n', id: 'c' }, to: { kind: 'n', id: 'd' }, edgeType: 'causes' });
+    await prov.addEdge({ from: { kind: 'n', id: 'd' }, to: { kind: 'n', id: 'e' }, edgeType: 'causes' });
+    await prov.addEdge({ from: { kind: 'n', id: 'a' }, to: { kind: 'n', id: 'e' }, edgeType: 'causes' });
+    const p = await prov.shortestPath({ kind: 'n', id: 'a' }, { kind: 'n', id: 'e' });
+    expect(p).toHaveLength(1);
+  });
+
+  it('respects maxDepth — deep targets return null when capped', async () => {
+    let prev = 'n0';
+    for (let i = 1; i <= 8; i++) {
+      const cur = 'n' + i;
+      await prov.addEdge({ from: { kind: 'n', id: prev }, to: { kind: 'n', id: cur }, edgeType: 'causes' });
+      prev = cur;
+    }
+    const within = await prov.shortestPath({ kind: 'n', id: 'n0' }, { kind: 'n', id: 'n8' }, 3);
+    expect(within).toBeNull();
+    const beyond = await prov.shortestPath({ kind: 'n', id: 'n0' }, { kind: 'n', id: 'n8' }, 10);
+    expect(beyond).toHaveLength(8);
+  });
+});
+
 describe('ProvenanceStore.topHubs', () => {
   it('ranks nodes by total degree (in + out)', async () => {
     // hub gets 3 outgoing; quiet gets 1 incoming.

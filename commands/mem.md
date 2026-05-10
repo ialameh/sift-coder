@@ -37,6 +37,7 @@ Single entry point for memory daemon operations.
 | `list` | List recent summaries |
 | `graph-subgraph <kind> <id> [--depth N] [--direction out\|in\|both] [--edge-type T] [--max-edges N] [--json]` | Extract a knowledge-graph subgraph around a node |
 | `graph-hubs [--limit N] [--kind file\|symbol\|...] [--json]` | List the most-connected nodes in the provenance graph |
+| `graph-path <fromKind> <fromId> <toKind> <toId> [--depth N] [--json]` | Shortest path between two graph nodes (undirected for connectivity) |
 
 ## Examples
 

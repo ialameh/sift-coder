@@ -634,6 +634,37 @@ switch (cmd) {
     }
     break;
   }
+  case 'graph-path': {
+    // siftcoder graph-path <fromKind> <fromId> <toKind> <toId> [--depth N] [--json]
+    const [fk, fi, tk, ti] = args.slice(1, 5);
+    if (!fk || !fi || !tk || !ti) {
+      console.error('usage: siftcoder graph-path <fromKind> <fromId> <toKind> <toId> [--depth N] [--json]');
+      process.exit(1);
+    }
+    const dIdx = args.indexOf('--depth');
+    const r = await rpc({
+      kind: 'graph_path',
+      fromKind: fk,
+      fromId: fi,
+      toKind: tk,
+      toId: ti,
+      maxDepth: dIdx >= 0 ? parseInt(args[dIdx + 1] ?? '6', 10) : 6,
+    }, 30000);
+    if (r.ok && !args.includes('--json')) {
+      if (r.data.path === null) {
+        console.log('no path within max depth');
+      } else if (r.data.path.length === 0) {
+        console.log('source equals target');
+      } else {
+        for (const e of r.data.path) {
+          console.log(`  ${e.from.kind}:${e.from.id}  --[${e.edgeType}]-->  ${e.to.kind}:${e.to.id}`);
+        }
+      }
+    } else {
+      console.log(JSON.stringify(r, null, 2));
+    }
+    break;
+  }
   case 'graph-hubs': {
     // siftcoder graph-hubs [--limit N] [--kind file|symbol|...] [--json]
     const lIdx = args.indexOf('--limit');
