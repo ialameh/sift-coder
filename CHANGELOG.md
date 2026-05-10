@@ -2,6 +2,43 @@
 
 All notable changes to SiftCoder. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning is [SemVer](https://semver.org/).
 
+## [1.2.0] — 2026-05-10
+
+Knowledge-graph + retrieval-quality release. Nine PRs (#27–#35) closing every deferred roadmap item from the 1.1.0 audit. Test count 800 → 857; +57 tests across new modules. Capture path now seeds the provenance graph automatically; search gains both progressive streaming and opt-in cross-encoder reranking.
+
+### Added — knowledge graph
+
+- **Auto-edge inference at capture** (PR #32) — `src/memory/auto-edges.ts` writes structural provenance edges as events land: `event → file (edits)` for Edit/Write/Read/MultiEdit, `event → file (references)` for Bash path-tokens, and a `derives_from` chain to the prior event in the same session. All inferred edges tagged `source='auto'`. Disable with `SIFTCODER_AUTO_EDGES=0`. Means `mem_graph_subgraph`/`hubs`/`path` now produce non-empty results on a fresh workspace.
+- **`mem_graph_subgraph` + `mem_graph_hubs`** (PR #29) — bidirectional BFS subgraph extraction (with edgeType filter + maxEdges cap) and top-degree node ranking with optional kind filter. Tools, HTTP routes (`/api/graph/subgraph`, `/api/graph/hubs`), CLI verbs (`graph-subgraph`, `graph-hubs`).
+- **`mem_graph_path`** (PR #31) — shortest path between two nodes via undirected BFS over the provenance graph; preserves edge direction in the response. CLI verb `graph-path`. Side-fix: `case 'why'` returned an unawaited Promise; now returns the resolved edges.
+
+### Added — retrieval quality
+
+- **Cross-encoder reranker** (PR #34) — opt-in HTTP scoring via `SIFTCODER_RERANKER_URL`. `HttpCrossEncoder` auto-detects Jina/TEI (`{scores}`) and Cohere (`{results}`) response shapes. Adapter fails open: any scoring error falls back to baseline RRF order so a flaky reranker never breaks search. Wired into `/api/search`, `mem_search`, `mem_context_budget`. Zero binary deps in default install.
+- **Streaming hybrid search** (PR #35) — new `stream_search` RPC kind emits BM25 → vector → final stages as separate frames on one socket connection. `MemoryClient.sendStream` is an AsyncGenerator with per-frame progress timeout. CLI verb `siftcoder stream-search` renders each stage progressively. `streamingHybridSearch` reuses non-streaming `hybridSearch` for the final stage to guarantee parity.
+- **MCP eager-drain loop** (PR #28) — `src/memory/mcp/drain-loop.ts` polls daemon backlog and drains via host sampling without waiting for `mem_search`. Adaptive backoff (2× per empty tick, capped) keeps idle workspaces quiet; resets to base cadence on a productive drain. Configurable: `SIFTCODER_MCP_DRAIN_MS` (default 60s; 0 disables), `SIFTCODER_MCP_DRAIN_BATCH` (default 4).
+
+### Added — web UI
+
+- **Health, Pinned, Sessions, Symbol tabs** (PR #27) — surfaces `/api/stats`, `/api/doctor`, `/api/pinned`, `/api/symbol-search`, `/api/replay` in the SPA. Adds `GET /api/sessions` for browser-friendly session listing (was RPC-only).
+- **Graph tab** (PR #30) — subgraph explorer with click-pivot edge cells + hub sidebar with kind filter. Turns the SPA into a graph walker.
+- **Path-finding form** (PR #31) — second form on the Graph tab for `/api/graph/path`.
+- **Patterns tab + HTTP parity** (PR #33) — `/api/patterns`, `/api/session-digest`, `/api/as-of` so external callers no longer need the legacy `POST /` RPC frame. Patterns tab surfaces recurring `input_hash` buckets across sessions.
+
+### Fixed
+
+- **`case 'why'` returned `{}` not edges** (PR #29) — the `trace` Promise was being JSON-serialized without await. The endpoint now returns the resolved edge list.
+- **Empty graph on fresh workspace** (PR #32) — graph features advertised but produced empty results until human edges or CDG ingest landed; auto-edge inference closes this.
+
+### Internals
+
+- 9 PRs, all squash-merged.
+- New modules: `auto-edges.ts`, `cross-encoder.ts`, `mcp/drain-loop.ts`, `stream-search.integration.test.ts`.
+- New protocol kinds: `graph_subgraph`, `graph_hubs`, `graph_path`, `stream_search`.
+- New storage methods: `previousEventInSession`, `topProvenanceDegree`.
+- New ProvenanceStore methods: `subgraph`, `topHubs`, `shortestPath`.
+- WebDeps + ServerDeps gained an optional `reranker: AsyncReranker | null`.
+
 ## [1.1.0] — 2026-05-09
 
 Major mem-subsystem expansion. 13 PRs (#8–#20) over a single audit-driven session, taking the memory system from a fragile capture-and-summarize pipeline to a self-maintaining knowledge graph with operator tooling and host-driven summarization. Test count 530 → 778, coverage 89.5 % → 92.6 %.
