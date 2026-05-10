@@ -15,6 +15,9 @@
  *   POST /api/graph/subgraph { kind, id, maxDepth, direction, edgeType, maxEdges }
  *   GET  /api/graph/hubs?limit&kind  top-degree nodes
  *   POST /api/graph/path     { fromKind, fromId, toKind, toId, maxDepth }
+ *   GET  /api/patterns?min   recurring input_hash patterns across sessions
+ *   POST /api/session-digest { sessionId, limit }
+ *   GET  /api/as-of?ts&limit point-in-time snapshot
  *   POST /api/search        { query, k }
  *   POST /api/timeline      { nearId, window }
  *   POST /api/get           { ids: number[] }
@@ -295,6 +298,25 @@ export async function route(req: WebRequest, deps: WebDeps): Promise<WebResponse
     const kind = req.query['kind'];
     if (!deps.provenance) return json(200, { ok: true, data: { hubs: [] } });
     return json(200, { ok: true, data: { hubs: await deps.provenance.topHubs(limit, kind || undefined) } });
+  }
+
+  if (req.method === 'GET' && req.path === '/api/patterns') {
+    const min = parseInt(req.query['min'] ?? '3', 10) || 3;
+    const limit = parseInt(req.query['limit'] ?? '50', 10) || 50;
+    return json(200, { ok: true, data: { patterns: await deps.storage.patterns(min, limit) } });
+  }
+
+  if (req.method === 'POST' && req.path === '/api/session-digest') {
+    const body = parseBody<{ sessionId: string; limit?: number }>(req.body);
+    if (!body || typeof body.sessionId !== 'string') return badRequest('sessionId required');
+    return json(200, { ok: true, data: await deps.storage.sessionDigest(body.sessionId, body.limit ?? 50) });
+  }
+
+  if (req.method === 'GET' && req.path === '/api/as-of') {
+    const ts = parseInt(req.query['ts'] ?? '0', 10);
+    if (!Number.isFinite(ts) || ts <= 0) return badRequest('ts (epoch ms) required');
+    const limit = parseInt(req.query['limit'] ?? '20', 10) || 20;
+    return json(200, { ok: true, data: await deps.storage.asOf(ts, limit) });
   }
 
   if (req.method === 'POST' && req.path === '/api/unpin') {
