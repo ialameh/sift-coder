@@ -30,6 +30,7 @@ Single entry point for memory daemon operations.
 | `export <file>` | Dump events + summaries + embeddings + provenance to ndjson |
 | `import <file>` | Load an ndjson snapshot (idempotent, INSERT OR IGNORE) |
 | `search <query> [--k N] [--json]` | Hybrid search via the daemon |
+| `stream-search <query> [--k N] [--json]` | Streaming hybrid search — emits BM25, vector, final stages progressively |
 | `federate-search <query> [--k N] [--prefix X] [--max-ws N]` | Cross-workspace federated search (consented workspaces only) |
 | `symbol-search <kind:name \| term> [--k N] [--json]` | Match events by extracted code symbol |
 | `stats [--day] [--json]` | Throughput, backlog ETA, cache hit rate, top tools |

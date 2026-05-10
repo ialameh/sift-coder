@@ -95,6 +95,49 @@ function rpc(req, timeoutMs = 5000) {
   });
 }
 
+/**
+ * Streaming RPC: yields each response frame as it arrives. Terminates when the server emits
+ * `{ ok: true, data: { done: true } }` or the connection ends.
+ */
+async function* rpcStream(req, timeoutMs = 30000) {
+  const c = net.createConnection(paths().sock);
+  let buf = Buffer.alloc(0);
+  const queue = [];
+  let waker = null;
+  let ended = false, errored = null;
+  const push = (v) => { if (waker) { const w = waker; waker = null; w(v); } else queue.push(v); };
+  const next = () => new Promise((resolve) => { const v = queue.shift(); if (v !== undefined) resolve(v); else waker = resolve; });
+  const timer = setTimeout(() => { errored = new Error('rpcStream timeout'); try { c.destroy(); } catch {} push(null); }, timeoutMs);
+  c.on('data', (chunk) => {
+    buf = Buffer.concat([buf, chunk]);
+    while (buf.length >= 4) {
+      const len = buf.readUInt32BE(0);
+      if (buf.length < 4 + len) break;
+      const body = buf.subarray(4, 4 + len);
+      buf = buf.subarray(4 + len);
+      try { push(JSON.parse(body.toString('utf8'))); } catch (e) { errored = e; push(null); return; }
+    }
+  });
+  c.on('end', () => { ended = true; push(null); });
+  c.on('error', (e) => { errored = e; push(null); });
+  c.write(encodeFrame(req));
+  try {
+    while (true) {
+      const item = await next();
+      if (item === null) {
+        if (errored) throw errored;
+        if (ended) return;
+        continue;
+      }
+      yield item;
+      if (item && item.ok && item.data && item.data.done === true) return;
+    }
+  } finally {
+    clearTimeout(timer);
+    try { c.end(); } catch {}
+  }
+}
+
 function ensureBuilt() {
   const sentinel = path.join(ROOT, 'dist', 'memory', 'mcp', 'server.js');
   if (fs.existsSync(sentinel)) return;
@@ -913,6 +956,37 @@ switch (cmd) {
     }
     console.error('search requires the daemon to be running');
     process.exit(1);
+  }
+  case 'stream-search': {
+    // siftcoder stream-search <query> [--k N] [--json]
+    const query = args.filter(a => !a.startsWith('--')).slice(1).join(' ');
+    if (!query) { console.error('usage: siftcoder stream-search <query> [--k N] [--json]'); process.exit(1); }
+    const kIdx = args.indexOf('--k');
+    const k = kIdx >= 0 ? parseInt(args[kIdx + 1] ?? '5', 10) : 5;
+    const json = args.includes('--json');
+    try {
+      for await (const frame of rpcStream({ kind: 'stream_search', query, k }, 30000)) {
+        if (!frame.ok) { console.error('error:', frame.error); break; }
+        if (json) {
+          console.log(JSON.stringify(frame.data));
+          continue;
+        }
+        if (frame.data?.partial) {
+          const { stage, hits } = frame.data.partial;
+          console.log(`[${stage}]  ${hits.length} hits`);
+          for (const h of hits.slice(0, k)) {
+            const snip = h.text && h.text.length > 100 ? h.text.slice(0, 100) + '...' : (h.text ?? '');
+            console.log(`  #${h.id}  [${h.tool ?? '?'}]  ${snip}`);
+          }
+        } else if (frame.data?.done) {
+          console.log('[done]');
+        }
+      }
+    } catch (e) {
+      console.error('stream-search failed:', e.message);
+      process.exit(1);
+    }
+    break;
   }
   case 'web': {
     const portFile = paths().httpPort;

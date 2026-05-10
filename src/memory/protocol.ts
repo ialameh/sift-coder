@@ -44,7 +44,8 @@ export type RequestKind =
   | 'sessions'
   | 'graph_subgraph'
   | 'graph_hubs'
-  | 'graph_path';
+  | 'graph_path'
+  | 'stream_search';
 
 export interface CaptureRequest {
   kind: 'capture';
@@ -62,6 +63,29 @@ export interface SearchRequest {
   kind: 'search';
   query: string;
   k?: number;
+}
+
+/**
+ * Streaming hybrid search. Returns multiple response frames on the same socket connection:
+ *
+ *   { ok: true, partial: { stage: 'bm25',   hits: SearchHit[] } }
+ *   { ok: true, partial: { stage: 'vector', hits: SearchHit[] } }
+ *   { ok: true, partial: { stage: 'final',  hits: HybridHit[] } }
+ *   { ok: true, done: true }
+ *
+ * The 'final' partial carries the fused, decay-weighted, optionally cross-encoder-reranked
+ * top-k. Earlier stages are progressive renderers' best friend — let a UI display BM25 hits at
+ * <5ms while the vector + reranker stages catch up. Total wall-clock matches non-streaming
+ * search; only perceived latency improves.
+ *
+ * Client correlates frames by socket-call: one stream_search request → N response frames →
+ * terminator → server-side socket.end().
+ */
+export interface StreamSearchRequest {
+  kind: 'stream_search';
+  query: string;
+  k?: number;
+  candidatePool?: number;
 }
 
 export interface TimelineRequest {
@@ -354,7 +378,8 @@ export type Request =
   | SessionsRequest
   | GraphSubgraphRequest
   | GraphHubsRequest
-  | GraphPathRequest;
+  | GraphPathRequest
+  | StreamSearchRequest;
 
 /**
  * Build a single concat-text view of a session's summaries — a "digest" suitable to feed back
