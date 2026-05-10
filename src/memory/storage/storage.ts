@@ -1279,6 +1279,17 @@ export class Storage {
     }));
   }
 
+  /**
+   * Most recent event in `sessionId` strictly before `beforeId` — used by auto-edge inference
+   * to draw `derives_from` edges between consecutive events without scanning the whole table.
+   */
+  async previousEventInSession(sessionId: string, beforeId: number): Promise<number | null> {
+    const row = await (await this.db.prepare(
+      'SELECT id FROM events WHERE session_id = ? AND id < ? ORDER BY id DESC LIMIT 1'
+    )).get(sessionId, beforeId) as { id?: number } | undefined;
+    return row?.id ?? null;
+  }
+
   async eventTail(limit: number): Promise<Array<{ id: number; ts: number; tool: string; status: string; sessionId: string }>> {
     const rows = await (await this.db.prepare(
       'SELECT id, ts, tool, status, session_id FROM events ORDER BY id DESC LIMIT ?'
