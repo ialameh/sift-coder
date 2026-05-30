@@ -58,6 +58,19 @@ Decision tree across SiftCoder skill families. Use when the user has a goal but 
 - Inventing a skill that doesn't exist
 - Hedging ("could be A or B")
 
+## Model-drift audit (review every 3–6 months)
+
+Instructions and pins tuned for today's model can work against a future one. On every major model release, re-check the model-coupled surfaces and retire anything compensating for an obsolete limitation:
+
+| Surface | What to check |
+|---|---|
+| `settings.json` → `summarizer.modelHaiku` / `modelSonnet` | Still the right tier? Still a current, non-retired model ID? |
+| `settings.json` → `summarizer.confidenceThreshold` (0.6) | Recalibrate against current Haiku quality — a smarter Haiku may warrant a higher bar before Sonnet escalation. |
+| `ollama.summarizeModel` / `embedModel` | Newer local models may beat the pinned ones on cost/quality. |
+| Skill/agent text that hard-codes model behavior | Wording written around an old limitation ("the model can't…") may now be wrong — delete it. |
+
+The pins live in `settings.json` (`siftcoder.memory.summarizer` / `siftcoder.ollama`); `siftcoder mem doctor` reports backend reachability. This is hygiene, not a feature: schedule it, don't wait for a regression.
+
 ## Value over native CC
 
 CC chooses paths organically. This skill is the **explicit decision tree** — useful when the user wants the "official" SiftCoder skill for their phrasing. Speeds discovery.
