@@ -1,6 +1,7 @@
 ---
 name: salesforce-deploy
 description: Use when deploying Salesforce metadata — package.xml, source-format/metadata-format, validate, deploy, diff, rollback, scratch orgs, sandboxes, production.
+paths: '**/*.cls,**/*.trigger,**/*.apex,**/lwc/**,**/aura/**,**/objects/**,**/*.object-meta.xml,sfdx-project.json,**/flows/**,**/flexipages/**,**/permissionsets/**,**/profiles/**'
 ---
 
 # Salesforce deploy skill

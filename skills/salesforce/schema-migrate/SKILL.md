@@ -1,6 +1,7 @@
 ---
 name: schema-migrate
 description: Use for Salesforce schema changes — object/field/relationship migrations w/ deploy plan, sandbox validation, rollback strategy. Different from /migrate (data) — schema-migrate handles metadata.
+paths: '**/*.cls,**/*.trigger,**/*.apex,**/lwc/**,**/aura/**,**/objects/**,**/*.object-meta.xml,sfdx-project.json,**/flows/**,**/flexipages/**,**/permissionsets/**,**/profiles/**'
 ---
 
 # schema-migrate

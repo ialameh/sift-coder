@@ -1,6 +1,7 @@
 ---
 name: salesforce-agentforce
 description: Use for Salesforce Agentforce work — Agents (Topics, Actions), prompt templates, Atlas reasoning engine, Trust Layer integration, agent testing.
+paths: '**/*.cls,**/*.trigger,**/*.apex,**/lwc/**,**/aura/**,**/objects/**,**/*.object-meta.xml,sfdx-project.json,**/flows/**,**/flexipages/**,**/permissionsets/**,**/profiles/**'
 ---
 
 # salesforce-agentforce

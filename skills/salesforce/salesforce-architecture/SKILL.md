@@ -1,6 +1,7 @@
 ---
 name: salesforce-architecture
 description: Use for org-level Salesforce architecture work — capacity planning, security/sharing review, integration patterns, multi-org strategy, tech-debt assessment.
+paths: '**/*.cls,**/*.trigger,**/*.apex,**/lwc/**,**/aura/**,**/objects/**,**/*.object-meta.xml,sfdx-project.json,**/flows/**,**/flexipages/**,**/permissionsets/**,**/profiles/**'
 ---
 
 # Salesforce architecture skill

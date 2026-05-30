@@ -1,6 +1,7 @@
 ---
 name: salesforce-lwc
 description: Use when working on Lightning Web Components — wire adapters, events, lifecycle, state, performance, testing.
+paths: '**/*.cls,**/*.trigger,**/*.apex,**/lwc/**,**/aura/**,**/objects/**,**/*.object-meta.xml,sfdx-project.json,**/flows/**,**/flexipages/**,**/permissionsets/**,**/profiles/**'
 ---
 
 # Salesforce LWC skill

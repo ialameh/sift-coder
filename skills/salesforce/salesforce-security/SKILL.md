@@ -1,6 +1,7 @@
 ---
 name: salesforce-security
 description: Use for Salesforce-specific security review — sharing model, CRUD/FLS, callout security, secrets management, Shield Encryption, OWASP Top 10 mapped to Salesforce. Beats built-in /security-review for SF orgs.
+paths: '**/*.cls,**/*.trigger,**/*.apex,**/lwc/**,**/aura/**,**/objects/**,**/*.object-meta.xml,sfdx-project.json,**/flows/**,**/flexipages/**,**/permissionsets/**,**/profiles/**'
 ---
 
 # salesforce-security
