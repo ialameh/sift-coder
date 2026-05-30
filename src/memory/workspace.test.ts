@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -8,8 +8,12 @@ import { gitToplevel, workspaceKey, workspacePaths, ensureWorkspaceDirs } from '
 
 describe('gitToplevel', () => {
   let dir: string;
-  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'siftws-')); });
-  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'siftws-'));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
 
   it('returns the toplevel for an initialized repo', () => {
     execFileSync('git', ['init', '-q', dir]);
@@ -92,5 +96,39 @@ describe('workspaceKey realpath fallback', () => {
   it('falls back to resolve() when realpathSync throws', () => {
     const fakeMissing = join(tmpdir(), 'definitely-does-not-exist-' + Date.now());
     expect(workspaceKey(fakeMissing)).toMatch(/^[0-9a-f]{12}$/);
+  });
+});
+
+describe('workspaceKey subspace partition', () => {
+  const orig = process.env['SIFTCODER_SUBSPACE'];
+  afterEach(() => {
+    if (orig === undefined) delete process.env['SIFTCODER_SUBSPACE'];
+    else process.env['SIFTCODER_SUBSPACE'] = orig;
+  });
+
+  it('partitions the key by SIFTCODER_SUBSPACE and is reversible to baseline', () => {
+    const root = realpathSync(
+      execFileSync('git', ['rev-parse', '--show-toplevel']).toString().trim(),
+    );
+    delete process.env['SIFTCODER_SUBSPACE'];
+    const base = workspaceKey(root);
+    process.env['SIFTCODER_SUBSPACE'] = 'svc-a';
+    const a = workspaceKey(root);
+    expect(a).not.toBe(base);
+    expect(a).toMatch(/^[0-9a-f]{12}$/);
+    delete process.env['SIFTCODER_SUBSPACE'];
+    expect(workspaceKey(root)).toBe(base);
+  });
+
+  it('reads .siftcoder/subspace file when env is unset', () => {
+    delete process.env['SIFTCODER_SUBSPACE'];
+    const dir = mkdtempSync(join(tmpdir(), 'siftsub-'));
+    execFileSync('git', ['init', '-q', dir]);
+    const real = realpathSync(dir);
+    const base = workspaceKey(real);
+    mkdirSync(join(real, '.siftcoder'), { recursive: true });
+    writeFileSync(join(real, '.siftcoder', 'subspace'), 'team-x\n');
+    expect(workspaceKey(real)).not.toBe(base);
+    rmSync(dir, { recursive: true, force: true });
   });
 });

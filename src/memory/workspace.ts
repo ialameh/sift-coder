@@ -4,18 +4,18 @@
  */
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { realpathSync, mkdirSync } from 'node:fs';
+import { realpathSync, mkdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 export interface WorkspacePaths {
   key: string;
-  root: string;          // ~/.siftcoder/workspaces/<key>
-  db: string;            // <root>/db.sqlite
-  wal: string;           // <root>/wal.ndjson
-  pid: string;           // <root>/run.pid
-  socket: string;        // ~/.siftcoder/run/<key>.sock
-  log: string;           // ~/.siftcoder/logs/<key>.ndjson
+  root: string; // ~/.siftcoder/workspaces/<key>
+  db: string; // <root>/db.sqlite
+  wal: string; // <root>/wal.ndjson
+  pid: string; // <root>/run.pid
+  socket: string; // ~/.siftcoder/run/<key>.sock
+  log: string; // ~/.siftcoder/logs/<key>.ndjson
 }
 
 export function gitToplevel(cwd: string): string | null {
@@ -30,6 +30,21 @@ export function gitToplevel(cwd: string): string | null {
   }
 }
 
+// Optional sub-workspace partition: SIFTCODER_SUBSPACE env, else first line of
+// <top>/.siftcoder/subspace. Lets a monorepo scope memory per service. Default: none.
+function subspaceFor(top: string): string | null {
+  const env = process.env['SIFTCODER_SUBSPACE'];
+  if (env && env.trim()) return env.trim();
+  try {
+    const v = readFileSync(join(top, '.siftcoder', 'subspace'), 'utf8')
+      .split('\n')[0]!
+      .trim();
+    return v || null;
+  } catch {
+    return null;
+  }
+}
+
 export function workspaceKey(cwd: string): string {
   const top = gitToplevel(cwd) ?? cwd;
   let real: string;
@@ -38,7 +53,9 @@ export function workspaceKey(cwd: string): string {
   } catch {
     real = resolve(top);
   }
-  return createHash('sha256').update(real).digest('hex').slice(0, 12);
+  const sub = subspaceFor(real);
+  const seed = sub ? `${real}:${sub}` : real;
+  return createHash('sha256').update(seed).digest('hex').slice(0, 12);
 }
 
 export function workspacePaths(cwd: string, home: string = homedir()): WorkspacePaths {

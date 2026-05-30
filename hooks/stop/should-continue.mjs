@@ -5,33 +5,14 @@
 import net from 'node:net';
 import path from 'node:path';
 import os from 'node:os';
-import crypto from 'node:crypto';
-import { execFileSync } from 'node:child_process';
-import { realpathSync } from 'node:fs';
+import { workspaceKey } from '../lib/workspace.mjs';
 
 const NS = process.env.SIFTCODER_NS || 'default';
 const BUDGET_MS = 1500;
 
-function workspaceKey() {
-  const cwd = process.env.CLAUDE_PROJECT_DIR || process.cwd();
-  let root = cwd;
-  try {
-    root = execFileSync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], {
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).toString('utf8').trim() || cwd;
-  } catch {
-    root = cwd;
-  }
-  try {
-    root = realpathSync(root);
-  } catch {
-    root = path.resolve(root);
-  }
-  return crypto.createHash('sha256').update(root).digest('hex').slice(0, 12);
-}
-
 function socketPath() {
-  return path.join(os.homedir(), '.siftcoder', NS, 'run', `${workspaceKey()}.sock`);
+  const cwd = process.env.CLAUDE_PROJECT_DIR || process.cwd();
+  return path.join(os.homedir(), '.siftcoder', NS, 'run', `${workspaceKey(cwd)}.sock`);
 }
 
 function ask() {

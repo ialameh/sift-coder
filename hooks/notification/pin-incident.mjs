@@ -7,29 +7,14 @@
  */
 
 import { connect } from 'node:net';
-import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
+import { workspaceKey } from '../lib/workspace.mjs';
 
 const SIFTCODER_NS = process.env.SIFTCODER_NS || 'default';
 
 const HOOK_BUDGET_MS = 250;
-
-function gitToplevel(cwd) {
-  try {
-    return execFileSync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], { stdio: ['ignore', 'pipe', 'ignore'] })
-      .toString('utf8').trim() || null;
-  } catch { return null; }
-}
-
-function workspaceKey(cwd) {
-  const top = gitToplevel(cwd) ?? cwd;
-  let real;
-  try { real = realpathSync(top); } catch { real = resolve(top); }
-  return createHash('sha256').update(real).digest('hex').slice(0, 12);
-}
 
 function encodeFrame(message) {
   const body = Buffer.from(JSON.stringify(message), 'utf8');

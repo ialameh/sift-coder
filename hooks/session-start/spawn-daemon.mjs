@@ -12,14 +12,14 @@
  * binary (commonly seen after /plugin uninstall + install when npm install runs without scripts).
  */
 
-import { spawn, execFileSync, spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import {
-  existsSync, readFileSync, mkdirSync, realpathSync, appendFileSync,
+  existsSync, readFileSync, mkdirSync, appendFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, dirname, resolve } from 'node:path';
-import { createHash } from 'node:crypto';
+import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { workspaceKey } from '../lib/workspace.mjs';
 
 const SIFTCODER_NS = process.env.SIFTCODER_NS || 'default';
 
@@ -37,24 +37,6 @@ function logEvent(level, message, attributes = {}) {
       JSON.stringify({ timestamp: new Date().toISOString(), level, name: 'spawn-daemon', message, attributes }) + '\n'
     );
   } catch { /* never fatal */ }
-}
-
-function gitToplevel(cwd) {
-  try {
-    const out = execFileSync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], {
-      stdio: ['ignore', 'pipe', 'ignore'],
-    });
-    return out.toString('utf8').trim() || null;
-  } catch {
-    return null;
-  }
-}
-
-function workspaceKey(cwd) {
-  const top = gitToplevel(cwd) ?? cwd;
-  let real;
-  try { real = realpathSync(top); } catch { real = resolve(top); }
-  return createHash('sha256').update(real).digest('hex').slice(0, 12);
 }
 
 function isAlive(pid) {
