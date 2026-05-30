@@ -33,6 +33,8 @@ SiftCoder runs a per-workspace memory daemon that captures tool observations, su
 
 **Prefer `mem_why` over `git log` for non-obvious code.** `git log` shows the commit; `mem_why` shows the conversation that led to it.
 
+**`mem_symbol_search` is recall, not live precision.** It finds symbols you have touched (regex-extracted, with provenance) — great for "where have I been." For live go-to-definition / find-all-references across a multi-language codebase, prefer Claude Code's code-intelligence (LSP) plugin. See `docs/foundations/large-codebases.md`.
+
 **Don't dump raw mem_search results to the user.** Pick the 1–3 relevant ones, paraphrase, cite ids.
 
 ## Anti-patterns

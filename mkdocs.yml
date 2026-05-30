@@ -106,6 +106,7 @@ nav:
       - Namespaces and workspaces: foundations/namespaces.md
       - Backends (Ollama, Anthropic, sampling): foundations/backends.md
       - Hooks lifecycle: foundations/hooks.md
+      - Large codebases: foundations/large-codebases.md
   - Operations:
       - operations/index.md
       - Daily workflow: operations/daily-workflow.md
