@@ -4,7 +4,7 @@
 // src/utils/ignore.ts (which uses minimatch); this twin reimplements a small glob subset so
 // hooks stay dependency-free.
 import { readFileSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
-import { relative, sep, join } from 'node:path';
+import { relative, sep, join, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
 import { createHash } from 'node:crypto';
 
@@ -117,8 +117,12 @@ function matchOne(rel, segs, raw) {
 }
 
 export function shouldCapturePath(absPath, root, set) {
-  const rel = relative(root, absPath).split(sep).join('/');
-  if (rel.startsWith('..') || rel === '') return true; // outside root → never lose it
+  const relRaw = relative(root, absPath);
+  const rel = relRaw.split(sep).join('/');
+  // Outside root → never lose it. `isAbsolute(relRaw)` catches the Windows
+  // cross-drive case where `relative()` cannot express the target relative to
+  // root and returns an absolute path (so it has no leading `..`).
+  if (rel === '' || rel.startsWith('..') || isAbsolute(relRaw)) return true;
   const segs = rel.split('/');
 
   const negations = [...set.gitignore, ...set.claudeignore]

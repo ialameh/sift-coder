@@ -33,6 +33,18 @@ describe('hook ignore matcher', () => {
     expect(shouldCapturePath('/elsewhere/node_modules/x.js', root, m)).toBe(true);
   });
 
+  // Windows-only: a path on a different drive than `root` cannot be expressed
+  // relative to it, so `relative()` returns an absolute path with no leading
+  // `..`. Regression guard for that cross-drive case (skipped on POSIX, where
+  // the test above already covers outside-root via the `..` prefix).
+  it.runIf(process.platform === 'win32')('captures cross-drive paths on Windows', () => {
+    const m = loadIgnore(root);
+    const otherDrive = root.toUpperCase().startsWith('C:')
+      ? 'D:\\elsewhere\\node_modules\\x.js'
+      : 'C:\\elsewhere\\node_modules\\x.js';
+    expect(shouldCapturePath(otherDrive, root, m)).toBe(true);
+  });
+
   it('caches by mtime (second load matches first)', () => {
     const a = loadIgnore(root);
     const b = loadIgnore(root);
