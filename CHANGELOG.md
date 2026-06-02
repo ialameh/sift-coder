@@ -2,6 +2,14 @@
 
 All notable changes to SiftCoder. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning is [SemVer](https://semver.org/).
 
+## [1.4.0] — 2026-06-02
+
+Source-bundle skill — consolidate any codebase into a hidden, git-ignored `.source/` folder of AI-ingestion-friendly Markdown bundles, for AI tools that only accept Markdown.
+
+### Added
+- **`/siftcoder:source-bundle`** + `source-bundle` skill (docs domain) — generate one `<folder>.source.md` per meaningful source folder (each file's contents copied verbatim into fenced code blocks), plus an `index.source.md` map (intro, included tree, bundle table, skip report). Adaptive folder grouping (descend > 40 files, split parts > 350 KB), backtick-aware fences so nested Markdown fences survive, file/folder intros extracted from the source itself (frontmatter / leading comment — no model call). Excludes deps/build/binaries/secrets/lockfiles; safe to rerun (wipes + regenerates `.source/`, idempotently git-ignores it).
+- **`scripts/generate-source-md.mjs`** — deterministic, portable generator (targets the CWD or an arg dir); shipped with the plugin and invoked via `${CLAUDE_PLUGIN_ROOT}`.
+
 ## [1.3.0] — 2026-05-31
 
 Large-codebase hardening — maps the Claude Code large-codebase best-practices playbook onto SiftCoder. Stops memory pollution at scale and closes the read-side feedback loop (CLAUDE.md hints, path-scoping, sub-workspace scoping, LSP guidance, model-drift cadence).
