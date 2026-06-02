@@ -13,6 +13,7 @@ import { hybridSearch, type AsyncReranker } from '../retrieval.js';
 import type { SymbolExtractor, AsyncSymbolExtractor } from '../symbols.js';
 import { approximate } from '../tokens.js';
 import { inferEdgesForEvent } from '../auto-edges.js';
+import { isIgnored, DEFAULT_IGNORES } from '../../utils/ignore.js';
 import { listTranscripts, readTranscript, parseTranscript } from '../replay.js';
 import type { Summarizer } from './summarizer.js';
 import type { ProvenanceStore } from '../provenance.js';
@@ -113,13 +114,32 @@ export type Handler = (req: Request) => Promise<Response>;
  * report `ok | down`; without a cache, a `mem watch` poller would hit the scorer every 20s.
  * 60s window = at most 1440 calls/day on an actively-watched session.
  */
-let rerankerProbeCache: { ts: number; result: { ok: boolean; latencyMs: number; error?: string } } | null = null;
+let rerankerProbeCache: {
+  ts: number;
+  result: { ok: boolean; latencyMs: number; error?: string };
+} | null = null;
 
 export function resetRerankerProbeCache(): void {
   rerankerProbeCache = null;
 }
 
-export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 'embedder' | 'symbols' | 'asyncSymbols' | 'onShutdown' | 'summarizer' | 'drainBatch' | 'drainBackend' | 'provenance' | 'reranker'>): Handler {
+export function buildHandler(
+  deps: Pick<
+    ServerDeps,
+    | 'storage'
+    | 'wal'
+    | 'cwd'
+    | 'embedder'
+    | 'symbols'
+    | 'asyncSymbols'
+    | 'onShutdown'
+    | 'summarizer'
+    | 'drainBatch'
+    | 'drainBackend'
+    | 'provenance'
+    | 'reranker'
+  >,
+): Handler {
   return async (req: Request): Promise<Response> => {
     try {
       switch (req.kind) {
@@ -131,6 +151,27 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
 
         case 'capture': {
           const ts = req.ts ?? Date.now();
+          // Memory hygiene (authoritative): drop ignored paths so junk never reaches storage.
+          // Defaults only here — the capture hook already applied .gitignore/.claudeignore.
+          // This backstop covers transcript backfill and any hook without the client-side filter.
+          if (process.env['SIFTCODER_CAPTURE_IGNORE'] !== '0') {
+            const ti = (
+              req.payload as { tool_input?: { file_path?: string; path?: string } } | null
+            )?.tool_input;
+            const cand = ti?.file_path ?? ti?.path;
+            if (cand) {
+              const abs = cand.startsWith('/') ? cand : `${deps.cwd}/${cand}`;
+              if (
+                isIgnored(abs, deps.cwd, {
+                  defaults: DEFAULT_IGNORES,
+                  gitignore: [],
+                  claudeignore: [],
+                })
+              ) {
+                return { ok: true, data: { dropped: true } };
+              }
+            }
+          }
           // Symbol annotation runs in a background worker (see SymbolWorker in
           // daemon/index.ts). Keeping it off the capture hot path means a slow CDG /
           // tree-sitter call cannot block tool capture from the host. The payload is stored
@@ -138,7 +179,9 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
           const { value: redactedPayload } = redact(req.payload);
           const source = req.source ?? 'claude-code';
           const stamped =
-            redactedPayload && typeof redactedPayload === 'object' && !Array.isArray(redactedPayload)
+            redactedPayload &&
+            typeof redactedPayload === 'object' &&
+            !Array.isArray(redactedPayload)
               ? { ...(redactedPayload as Record<string, unknown>), _source: source }
               : { value: redactedPayload, _source: source };
           await deps.storage.ensureSession(req.sessionId, deps.cwd, ts);
@@ -164,8 +207,18 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
           // call. SIFTCODER_AUTO_EDGES=0 disables it for benchmarks or schema-drift testing.
           if (deps.provenance && process.env['SIFTCODER_AUTO_EDGES'] !== '0') {
             try {
-              await inferEdgesForEvent(deps.storage, deps.provenance, id, req.sessionId, req.tool, stamped, ts);
-            } catch { /* swallow — graph health is observable via `mem doctor` */ }
+              await inferEdgesForEvent(
+                deps.storage,
+                deps.provenance,
+                id,
+                req.sessionId,
+                req.tool,
+                stamped,
+                ts,
+              );
+            } catch {
+              /* swallow — graph health is observable via `mem doctor` */
+            }
           }
           return { ok: true, data: { id, tokensEst } };
         }
@@ -192,10 +245,20 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
 
         case 'drain': {
           if (!deps.summarizer) {
-            return { ok: false, error: 'no summarizer configured — set GEMINI_API_KEY, ANTHROPIC_API_KEY, or start Ollama' };
+            return {
+              ok: false,
+              error:
+                'no summarizer configured — set GEMINI_API_KEY, ANTHROPIC_API_KEY, or start Ollama',
+            };
           }
           const batch = req.batch ?? deps.drainBatch ?? 16;
-          const r = await runDrain(deps.storage, deps.summarizer, deps.embedder, batch, deps.drainBackend ?? 'unknown');
+          const r = await runDrain(
+            deps.storage,
+            deps.summarizer,
+            deps.embedder,
+            batch,
+            deps.drainBackend ?? 'unknown',
+          );
           return { ok: true, data: r };
         }
 
@@ -204,7 +267,7 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
           return {
             ok: true,
             data: {
-              events: events.map(e => ({
+              events: events.map((e) => ({
                 id: e.id,
                 ts: e.ts,
                 sessionId: e.sessionId,
@@ -292,7 +355,7 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
 
         case 'pinned': {
           const rows = await deps.storage.listPinned(req.limit ?? 100);
-          const pinned = rows.map(r => ({
+          const pinned = rows.map((r) => ({
             id: r.id,
             eventId: r.eventId,
             ts: new Date(r.ts).toISOString(),
@@ -310,19 +373,36 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
           // an idle session). A 60s window means at most ~1440 calls/day, only when watch or
           // doctor is actively in use. Use req.heal as the cache-bypass: explicit heal runs do
           // a fresh probe so the operator gets ground truth on demand.
-          let reranker: { configured: boolean; ok?: boolean; latencyMs?: number; error?: string; cached?: boolean } = {
+          let reranker: {
+            configured: boolean;
+            ok?: boolean;
+            latencyMs?: number;
+            error?: string;
+            cached?: boolean;
+          } = {
             configured: !!deps.reranker,
           };
           if (deps.reranker?.ping) {
             const now = Date.now();
             const cached = rerankerProbeCache;
-            const stale = req.heal === true || cached === null || (now - cached.ts) > 60_000;
+            const stale = req.heal === true || cached === null || now - cached.ts > 60_000;
             if (stale) {
               const probe = await deps.reranker.ping();
               rerankerProbeCache = { ts: now, result: probe };
-              reranker = { configured: true, ok: probe.ok, latencyMs: probe.latencyMs, ...(probe.error ? { error: probe.error } : {}) };
+              reranker = {
+                configured: true,
+                ok: probe.ok,
+                latencyMs: probe.latencyMs,
+                ...(probe.error ? { error: probe.error } : {}),
+              };
             } else {
-              reranker = { configured: true, ok: cached.result.ok, latencyMs: cached.result.latencyMs, ...(cached.result.error ? { error: cached.result.error } : {}), cached: true };
+              reranker = {
+                configured: true,
+                ok: cached.result.ok,
+                latencyMs: cached.result.latencyMs,
+                ...(cached.result.error ? { error: cached.result.error } : {}),
+                cached: true,
+              };
             }
           }
           if (req.heal && r.vecCardinality.drift > 0) {
@@ -352,10 +432,16 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
           for (const line of req.ndjson.split('\n')) {
             if (!line.trim()) continue;
             try {
-              const { table, row } = JSON.parse(line) as { table: string; row: Record<string, unknown> };
+              const { table, row } = JSON.parse(line) as {
+                table: string;
+                row: Record<string, unknown>;
+              };
               const r = await deps.storage.importRow(table, row);
-              if (r === 'inserted') inserted++; else skipped++;
-            } catch { errors++; }
+              if (r === 'inserted') inserted++;
+              else skipped++;
+            } catch {
+              errors++;
+            }
           }
           return { ok: true, data: { inserted, skipped, errors } };
         }
@@ -365,7 +451,7 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
           return {
             ok: true,
             data: {
-              sessions: rows.map(r => ({
+              sessions: rows.map((r) => ({
                 sessionId: r.sessionId,
                 sharedEvents: r.sharedEvents,
                 lastTs: new Date(r.lastTs).toISOString(),
@@ -389,7 +475,7 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
           return {
             ok: true,
             data: {
-              hits: rows.map(r => ({
+              hits: rows.map((r) => ({
                 summaryId: r.summaryId,
                 eventId: r.eventId,
                 ts: new Date(r.ts).toISOString(),
@@ -424,7 +510,7 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
           return {
             ok: true,
             data: {
-              patterns: r.map(p => ({
+              patterns: r.map((p) => ({
                 ...p,
                 firstTs: new Date(p.firstTs).toISOString(),
                 lastTs: new Date(p.lastTs).toISOString(),
@@ -460,7 +546,7 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
           return {
             ok: true,
             data: {
-              sessions: rows.map(r => ({
+              sessions: rows.map((r) => ({
                 sessionId: r.sessionId,
                 firstTs: new Date(r.firstTs).toISOString(),
                 lastTs: new Date(r.lastTs).toISOString(),
@@ -483,8 +569,12 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
             data: {
               stats,
               doctor,
-              pinned: pinned.map(p => ({ id: p.id, ts: new Date(p.ts).toISOString(), text: p.text.length > 200 ? p.text.slice(0, 200) + '...' : p.text })),
-              patterns: patterns.map(p => ({
+              pinned: pinned.map((p) => ({
+                id: p.id,
+                ts: new Date(p.ts).toISOString(),
+                text: p.text.length > 200 ? p.text.slice(0, 200) + '...' : p.text,
+              })),
+              patterns: patterns.map((p) => ({
                 ...p,
                 firstTs: new Date(p.firstTs).toISOString(),
                 lastTs: new Date(p.lastTs).toISOString(),
@@ -495,18 +585,37 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
 
         case 'context_budget': {
           const k = req.candidatePool ?? 50;
-          const hits = await hybridSearch(deps.storage, deps.embedder ?? null, req.query, Date.now(), {
-            k, candidatePool: k,
-            asyncReranker: deps.reranker ?? null,
-          });
+          const hits = await hybridSearch(
+            deps.storage,
+            deps.embedder ?? null,
+            req.query,
+            Date.now(),
+            {
+              k,
+              candidatePool: k,
+              asyncReranker: deps.reranker ?? null,
+            },
+          );
           // Greedy fill: take in score order until cumulative tokens exceed budget.
-          const out: Array<{ id: number; eventId: number; text: string; ts: number; score: number; tool?: string; tokens: number }> = [];
+          const out: Array<{
+            id: number;
+            eventId: number;
+            text: string;
+            ts: number;
+            score: number;
+            tool?: string;
+            tokens: number;
+          }> = [];
           let used = 0;
           for (const h of hits) {
             const tokens = approximate(h.text);
             if (used + tokens > req.maxTokens) continue;
             out.push({
-              id: h.id, eventId: h.eventId, text: h.text, ts: h.ts, score: h.score,
+              id: h.id,
+              eventId: h.eventId,
+              text: h.text,
+              ts: h.ts,
+              score: h.score,
               ...(h.tool ? { tool: h.tool } : {}),
               tokens,
             });
@@ -522,7 +631,7 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
             ok: true,
             data: {
               sessionId: req.sessionId,
-              events: rows.map(r => ({
+              events: rows.map((r) => ({
                 eventId: r.eventId,
                 ts: new Date(r.ts).toISOString(),
                 tool: r.tool,
@@ -530,9 +639,8 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
                 symbols: r.symbols,
                 summary: r.summary,
                 // Truncate payload to keep responses bounded; raw data is one mem_get away.
-                payloadPreview: r.payloadJson.length > 480
-                  ? r.payloadJson.slice(0, 480) + '...'
-                  : r.payloadJson,
+                payloadPreview:
+                  r.payloadJson.length > 480 ? r.payloadJson.slice(0, 480) + '...' : r.payloadJson,
               })),
             },
           };
@@ -541,7 +649,7 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
         case 'summaries': {
           const limit = req.limit ?? 20;
           const rows = await deps.storage.recentSummaries(limit);
-          const summaries = rows.map(r => ({
+          const summaries = rows.map((r) => ({
             id: r.id,
             eventId: r.eventId,
             ts: new Date(r.ts).toISOString(),
@@ -554,13 +662,17 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
 
         case 'why': {
           if (!deps.provenance) return { ok: true, data: { edges: [] } };
-          const edges = await deps.provenance.trace({ kind: req.nodeKind, id: req.nodeId }, req.depth ?? 4);
+          const edges = await deps.provenance.trace(
+            { kind: req.nodeKind, id: req.nodeId },
+            req.depth ?? 4,
+          );
           return { ok: true, data: { edges } };
         }
 
         case 'graph_subgraph': {
           if (!deps.provenance) return { ok: true, data: { nodes: [], edges: [] } };
-          const direction = req.direction === 'in' || req.direction === 'out' ? req.direction : 'both';
+          const direction =
+            req.direction === 'in' || req.direction === 'out' ? req.direction : 'both';
           const result = await deps.provenance.subgraph(
             { kind: req.nodeKind, id: req.nodeId },
             {
@@ -625,7 +737,9 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
                 // Backfill defers symbol extraction to the SymbolWorker, same as live capture.
                 const { value: redactedPayload } = redact(f.payload);
                 const stamped =
-                  redactedPayload && typeof redactedPayload === 'object' && !Array.isArray(redactedPayload)
+                  redactedPayload &&
+                  typeof redactedPayload === 'object' &&
+                  !Array.isArray(redactedPayload)
                     ? { ...(redactedPayload as Record<string, unknown>), _source: f.source }
                     : { value: redactedPayload, _source: f.source };
                 await deps.storage.ensureSession(f.sessionId, deps.cwd, f.ts);
@@ -658,7 +772,14 @@ export function buildHandler(deps: Pick<ServerDeps, 'storage' | 'wal' | 'cwd' | 
           }
           return {
             ok: true,
-            data: { source, scanned, captured, skippedDuplicate, errors, ...(firstError ? { firstError } : {}) },
+            data: {
+              source,
+              scanned,
+              captured,
+              skippedDuplicate,
+              errors,
+              ...(firstError ? { firstError } : {}),
+            },
           };
         }
       }
@@ -691,7 +812,9 @@ export async function processFrame(
         deps.embedder ?? null,
         frame.query,
         Date.now(),
-        (chunk) => { write({ ok: true, data: { partial: chunk } }); },
+        (chunk) => {
+          write({ ok: true, data: { partial: chunk } });
+        },
         {
           k: frame.k ?? 5,
           candidatePool: frame.candidatePool,
@@ -712,7 +835,11 @@ export async function processFrame(
 export function startServer(deps: ServerDeps): Server {
   const handler = buildHandler(deps);
   if (existsSync(deps.socketPath)) {
-    try { unlinkSync(deps.socketPath); } catch { /* ignore */ }
+    try {
+      unlinkSync(deps.socketPath);
+    } catch {
+      /* ignore */
+    }
   }
   // allowHalfOpen: true — prevents Node from auto-closing the write side when the client
   // sends EOF (c.end()). Without this, async handlers (e.g. drain calling Gemini) finish
@@ -744,11 +871,8 @@ export function startServer(deps: ServerDeps): Server {
       for (const frame of frames) {
         pending++;
         try {
-          await processFrame(
-            frame as Request,
-            deps,
-            handler,
-            (out) => socket.write(encodeFrame(out)),
+          await processFrame(frame as Request, deps, handler, (out) =>
+            socket.write(encodeFrame(out)),
           );
         } finally {
           pending--;
@@ -760,7 +884,9 @@ export function startServer(deps: ServerDeps): Server {
       clientEofSeen = true;
       maybeClose();
     });
-    socket.on('error', () => { /* client may drop */ });
+    socket.on('error', () => {
+      /* client may drop */
+    });
   });
   server.listen(deps.socketPath);
   return server;

@@ -2,6 +2,33 @@
 
 All notable changes to SiftCoder. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), versioning is [SemVer](https://semver.org/).
 
+## [1.4.0] — 2026-06-02
+
+Source-bundle skill — consolidate any codebase into a hidden, git-ignored `.source/` folder of AI-ingestion-friendly Markdown bundles, for AI tools that only accept Markdown.
+
+### Added
+- **`/siftcoder:source-bundle`** + `source-bundle` skill (docs domain) — generate one `<folder>.source.md` per meaningful source folder (each file's contents copied verbatim into fenced code blocks), plus an `index.source.md` map (intro, included tree, bundle table, skip report). Adaptive folder grouping (descend > 40 files, split parts > 350 KB), backtick-aware fences so nested Markdown fences survive, file/folder intros extracted from the source itself (frontmatter / leading comment — no model call). Excludes deps/build/binaries/secrets/lockfiles; safe to rerun (wipes + regenerates `.source/`, idempotently git-ignores it).
+- **`scripts/generate-source-md.mjs`** — deterministic, portable generator (targets the CWD or an arg dir); shipped with the plugin and invoked via `${CLAUDE_PLUGIN_ROOT}`.
+
+## [1.3.0] — 2026-05-31
+
+Large-codebase hardening — maps the Claude Code large-codebase best-practices playbook onto SiftCoder. Stops memory pollution at scale and closes the read-side feedback loop (CLAUDE.md hints, path-scoping, sub-workspace scoping, LSP guidance, model-drift cadence).
+
+### Added
+- **Capture exclusion filtering** — the capture hook now drops paths matching hardcoded defaults (`node_modules`, `dist`, `build`, `coverage`, `target`, lockfiles, minified/maps, …) plus the repo's `.gitignore` and `.claudeignore`, so generated/vendored junk never dilutes BM25+vector retrieval as a codebase grows. Dep-free hook matcher (`hooks/lib/ignore.mjs`, mtime-cached to hold the 250 ms budget) with a `minimatch`-based daemon-side backstop (`src/utils/ignore.ts`) covering transcript backfill and older hooks. Opt out with `SIFTCODER_CAPTURE_IGNORE=0`; fails open.
+- **Optional sub-workspace memory namespace** — set `SIFTCODER_SUBSPACE` (or write a `.siftcoder/subspace` file) to partition memory per service in a monorepo, so retrieval doesn't mix unrelated subsystems. Default off — one memory per repo root, no migration.
+- **`/siftcoder:codemap-claudemd`** — generates/refreshes a layered CLAUDE.md hierarchy (lean root + per-subdirectory conventions and per-dir test/build commands), idempotently merging into existing files instead of clobbering.
+- **Stop-hook CLAUDE.md hint** — when a session produces ≥ N high-confidence convention/decision learnings, `should-continue` surfaces a one-line advisory pointing to `/siftcoder:knowledge` to fold them into CLAUDE.md. Never writes. Tune with `SIFTCODER_CLAUDEMD_HINT_MIN` (default 2). The fold-in flow (classify → propose diff → apply on approval) is added to the knowledge skill.
+- **Path-scoped Salesforce skills** — all 12 `skills/salesforce/*` declare `paths:` so they auto-load only when work touches Salesforce files; explicit slash invocation is unaffected.
+- **`docs/foundations/large-codebases.md`** — LSP-vs-`mem_symbol_search` guidance and how SiftCoder maps to the large-codebase playbook.
+- **Model-drift audit** — a 3–6 month review checklist for model-coupled pins in `/siftcoder:siftcoder`.
+
+### Changed
+- Hook workspace identity unified into `hooks/lib/workspace.mjs` (single source of truth, mirrors `src/memory/workspace.ts`); all 6 hooks import it instead of re-implementing `workspaceKey` inline.
+
+### Internals
+- New `hooks/lib/{workspace,ignore,conventions}.mjs` and `src/utils/ignore.ts`. Daemon `capture` RPC drops ignored paths (defaults backstop). New tests: `tests/hooks/*`, `tests/skills/*`, `src/utils/ignore.test.ts`, plus daemon capture-drop cases. ARCHITECTURE decisions **D12** (capture exclusion), **D13** (env-driven knobs), **D14** (model-drift cadence).
+
 ## [1.2.7] — 2026-05-10
 
 ### Fixed

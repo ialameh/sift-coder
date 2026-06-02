@@ -1,6 +1,7 @@
 ---
 name: salesforce-test
 description: Use when generating Apex tests, designing test data factories, sanitising sandbox data, or improving Apex test coverage / quality.
+paths: '**/*.cls,**/*.trigger,**/*.apex,**/lwc/**,**/aura/**,**/objects/**,**/*.object-meta.xml,sfdx-project.json,**/flows/**,**/flexipages/**,**/permissionsets/**,**/profiles/**'
 ---
 
 # Salesforce test skill

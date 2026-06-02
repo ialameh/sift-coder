@@ -1,6 +1,7 @@
 ---
 name: salesforce-flow
 description: Use for Salesforce Flow Builder work — Record-Triggered, Screen, Scheduled, Platform-Event-Triggered, Auto-launched. Bulk-safe patterns, error handling, sub-flows, performance.
+paths: '**/*.cls,**/*.trigger,**/*.apex,**/lwc/**,**/aura/**,**/objects/**,**/*.object-meta.xml,sfdx-project.json,**/flows/**,**/flexipages/**,**/permissionsets/**,**/profiles/**'
 ---
 
 # salesforce-flow

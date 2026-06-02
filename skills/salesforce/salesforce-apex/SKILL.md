@@ -1,6 +1,7 @@
 ---
 name: salesforce-apex
 description: Use when working on Apex code — classes, triggers, batch, queueable, schedulable, REST/SOAP services. Covers FFLib patterns, bulkification, governor limits, security, test data factories.
+paths: '**/*.cls,**/*.trigger,**/*.apex,**/lwc/**,**/aura/**,**/objects/**,**/*.object-meta.xml,sfdx-project.json,**/flows/**,**/flexipages/**,**/permissionsets/**,**/profiles/**'
 ---
 
 # Salesforce Apex skill

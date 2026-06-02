@@ -1,6 +1,7 @@
 ---
 name: salesforce-comply
 description: Use for Salesforce industry-cloud compliance work — Health Cloud (HIPAA), Financial Services Cloud (regulatory), Public Sector Solutions (FedRAMP/CJIS), Education Cloud. Maps controls to org configuration.
+paths: '**/*.cls,**/*.trigger,**/*.apex,**/lwc/**,**/aura/**,**/objects/**,**/*.object-meta.xml,sfdx-project.json,**/flows/**,**/flexipages/**,**/permissionsets/**,**/profiles/**'
 ---
 
 # salesforce-comply

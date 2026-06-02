@@ -1,6 +1,7 @@
 ---
 name: salesforce-cpq
 description: Use for Salesforce CPQ work — products, price rules, product rules, quote templates, advanced approvals, contracts/amendments/renewals. Migrating to Revenue Cloud — flag if relevant.
+paths: '**/*.cls,**/*.trigger,**/*.apex,**/lwc/**,**/aura/**,**/objects/**,**/*.object-meta.xml,sfdx-project.json,**/flows/**,**/flexipages/**,**/permissionsets/**,**/profiles/**'
 ---
 
 # salesforce-cpq

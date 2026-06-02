@@ -74,6 +74,17 @@ Recommendations:
 - `memory-curator` agent for actual prune-recommendations
 - Memory MCP throughout
 
+## Fold session conventions into CLAUDE.md
+
+The Stop hook may hint `N convention learnings this session — run /siftcoder:knowledge to fold into CLAUDE.md`. That hint is heuristic (marker + confidence floor over the session digest) and never writes. This is where the real fold-in happens, on demand:
+
+1. **Pull this session's conventions.** `mem_session_digest { sessionId }` (or `mem_patterns`) → keep high-confidence decision/convention/gotcha summaries.
+2. **Read the targets.** Root `CLAUDE.md`, plus the nearest subdirectory `CLAUDE.md` if the session's work was scoped to one module (pairs with `/siftcoder:codemap-claudemd`, which scaffolds the hierarchy).
+3. **Draft a minimal delta.** Only conventions not already documented. Phrase each as a durable rule (imperative, file-scoped where it belongs), not a play-by-play of the session.
+4. **Show the diff. Apply on approval only.** Never auto-write a tracked file. If the user declines, leave CLAUDE.md untouched — the knowledge survives in memory regardless.
+
+Rule of thumb: a learning earns a CLAUDE.md line only if it will still be true next month and a new contributor would benefit. Session trivia stays in memory.
+
 ## Value over native CC
 
 CC won't naturally take inventory of the memory store, cluster, detect drift, or compare snapshots over time. The aggregate-curation IS the value.

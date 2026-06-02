@@ -1,6 +1,7 @@
 ---
 name: salesforce-einstein
 description: Use for Salesforce Einstein work — Discovery, Predictions, Next Best Action, Einstein Bots (legacy → migrating to Agentforce), prompt builder, model management.
+paths: '**/*.cls,**/*.trigger,**/*.apex,**/lwc/**,**/aura/**,**/objects/**,**/*.object-meta.xml,sfdx-project.json,**/flows/**,**/flexipages/**,**/permissionsets/**,**/profiles/**'
 ---
 
 # salesforce-einstein

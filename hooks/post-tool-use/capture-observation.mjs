@@ -7,33 +7,15 @@
  */
 
 import { connect } from 'node:net';
-import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
+import { workspaceKey, gitToplevel } from '../lib/workspace.mjs';
+import { loadIgnore, shouldCapturePath } from '../lib/ignore.mjs';
 
 const SIFTCODER_NS = process.env.SIFTCODER_NS || 'default';
 
 const HOOK_BUDGET_MS = 250;
-
-function gitToplevel(cwd) {
-  try {
-    const out = execFileSync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], {
-      stdio: ['ignore', 'pipe', 'ignore'],
-    });
-    return out.toString('utf8').trim() || null;
-  } catch {
-    return null;
-  }
-}
-
-function workspaceKey(cwd) {
-  const top = gitToplevel(cwd) ?? cwd;
-  let real;
-  try { real = realpathSync(top); } catch { real = resolve(top); }
-  return createHash('sha256').update(real).digest('hex').slice(0, 12);
-}
 
 function socketPath(cwd) {
   return join(homedir(), '.siftcoder', SIFTCODER_NS, 'run', `${workspaceKey(cwd)}.sock`);
@@ -47,29 +29,46 @@ function encodeFrame(message) {
 }
 
 async function readStdin() {
-  return new Promise(res => {
+  return new Promise((res) => {
     let data = '';
-    process.stdin.on('data', chunk => { data += chunk; });
+    process.stdin.on('data', (chunk) => {
+      data += chunk;
+    });
     process.stdin.on('end', () => res(data));
     setTimeout(() => res(data), 100);
   });
 }
 
 async function send(sock, frame) {
-  return new Promise(res => {
+  return new Promise((res) => {
     const socket = connect(sock);
     let settled = false;
     const finish = () => {
       if (settled) return;
       settled = true;
-      try { socket.end(); } catch { /* ignore */ }
+      try {
+        socket.end();
+      } catch {
+        /* ignore */
+      }
       res();
     };
     const timer = setTimeout(finish, HOOK_BUDGET_MS);
-    socket.on('error', () => { clearTimeout(timer); finish(); });
-    socket.on('connect', () => { socket.write(frame); });
-    socket.on('data', () => { clearTimeout(timer); finish(); });
-    socket.on('end', () => { clearTimeout(timer); finish(); });
+    socket.on('error', () => {
+      clearTimeout(timer);
+      finish();
+    });
+    socket.on('connect', () => {
+      socket.write(frame);
+    });
+    socket.on('data', () => {
+      clearTimeout(timer);
+      finish();
+    });
+    socket.on('end', () => {
+      clearTimeout(timer);
+      finish();
+    });
   });
 }
 
@@ -81,10 +80,31 @@ async function main() {
 
   const raw = await readStdin();
   let envelope = {};
-  try { envelope = raw ? JSON.parse(raw) : {}; } catch { envelope = {}; }
+  try {
+    envelope = raw ? JSON.parse(raw) : {};
+  } catch {
+    envelope = {};
+  }
 
   const toolName = envelope.tool_name || process.argv[2] || process.env.TOOL_NAME || '';
   if (!RELEVANT.has(toolName)) process.exit(0);
+
+  // Memory hygiene: drop captures for ignored paths (node_modules, dist, gitignored, …) so
+  // retrieval quality does not degrade as the codebase grows. Opt out with
+  // SIFTCODER_CAPTURE_IGNORE=0. Fail-open: any error falls through to capture.
+  if (process.env.SIFTCODER_CAPTURE_IGNORE !== '0') {
+    const ti = envelope.tool_input || {};
+    const cand = ti.file_path || ti.path || ti.notebook_path;
+    if (cand && typeof cand === 'string') {
+      try {
+        const root = gitToplevel(cwd) ?? cwd;
+        const abs = cand.startsWith('/') ? cand : join(root, cand);
+        if (!shouldCapturePath(abs, root, loadIgnore(root))) process.exit(0);
+      } catch {
+        /* fail open — capture */
+      }
+    }
+  }
 
   const sessionId = envelope.session_id || 'unknown';
   const payload = {

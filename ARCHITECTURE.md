@@ -71,9 +71,9 @@ The unique additive value:
 |---|---|---|
 | `.claude-plugin/plugin.json` | yes | manifest |
 | `settings.json` (plugin defaults) | yes | safe defaults for timeouts/modes |
-| `skills/` | yes (96) | workflow contracts, organised by family |
+| `skills/` | yes (97) | workflow contracts, organised by family |
 | `agents/` | yes (15) | domain agents plus disciplined generic agents that add memory grounding, evidence ledgers, scope control, or output contracts |
-| `commands/` | yes (107) | thin slash wrappers over high-value skills |
+| `commands/` | yes (108) | thin slash wrappers over high-value skills |
 | `hooks/` | yes (7) | only memory + safety hooks; quality-gates moved to on-demand skill |
 | `monitors/` | yes (1) | memory-daemon health |
 | `bin/` | yes | `siftcoder` CLI for setup, drain, status |
@@ -111,14 +111,14 @@ src/
 
 ## 5. Plugin component map
 
-### Skills (96)
+### Skills (97)
 Skills are the primary value surface. They are grouped by family:
 
 - `coding` — build, fix, add-feature, investigate, heal, tdd, pair, refactor, optimize, zen
 - `workflow` — autonomous, swarm, pause, continue, handoff, checkpoint, session-eval, smart-retry, preview, scope, chroot
 - `quality` + `review` — blast-radius, chaos, fuzz, invariant, review, security, comply, timewarp, ripple, polyglot
 - `knowledge` — memory usage and pattern learning/search
-- `docs` + `spec` — codemap, documentation, reverse spec, gap analysis, feasibility
+- `docs` + `spec` — codemap, codemap-claudemd (layered CLAUDE.md hierarchy), documentation, reverse spec, gap analysis, feasibility
 - `salesforce` — Apex, LWC, deploy, architecture, test, Flow, CPQ, Agentforce, Einstein, security, compliance
 - `ux` — ideate, surprise-me, reverse-prompt
 - `meta` — compression, local LLM setup, prompt/sync/team/trace/onboard/siftcoder
@@ -131,7 +131,7 @@ Agents are kept only when they add a stricter contract than native dispatch:
 
 The generic agents must add value through memory grounding, evidence ledgers, scope refusal, deviation protocol, or structured output. If an agent does not maintain that edge, delete it.
 
-### Slash commands (107)
+### Slash commands (108)
 Commands are thin entry points into skills. This is intentional: direct slash invocation is still useful, but behaviour belongs in skills/agents so native Claude Code can compose it.
 
 High-value groups:
@@ -145,12 +145,12 @@ High-value groups:
 | Event | Hook | Purpose |
 |---|---|---|
 | `PreToolUse` (Read|Write|Edit) | `boundary-enforcer.mjs` | block writes outside scope; transparent failure |
-| `PostToolUse` (Read|Write|Edit|Bash|Grep|Glob) | `capture-observation.mjs` | feed memory daemon |
+| `PostToolUse` (Read|Write|Edit|Bash|Grep|Glob) | `capture-observation.mjs` | feed memory daemon; drops ignored paths (gitignore/claudeignore/defaults) |
 | `PostToolUse` (Write|Edit) | `detect-console-logs.mjs` | warn on console.log |
 | `PreCompact` | `inject-memories.mjs` | top-k memories into compact context |
 | `Notification` | `pin-incident.mjs` | high-priority capture (permission prompts, errors) |
 | `SessionStart` | `spawn-daemon.mjs` | idempotent daemon boot with native binding self-heal |
-| `Stop` | `should-continue.mjs` | optional continuation hint |
+| `Stop` | `should-continue.mjs` | pending-drain hint + advisory CLAUDE.md convention hint |
 
 Quality gates run via on-demand `/siftcoder:quality` skill. Checkpoint/handoff are explicit workflow skills, not hidden automation. Compression is a skill backed by companion plugin state.
 
@@ -288,6 +288,8 @@ Claude Code emits PreCompact
 - **New hook:** add `hooks/<event>/<name>.mjs` and register in `plugin.json` `hooks` block.
 - **New auto-edge rule:** extend `inferEdgesForEvent` in `src/memory/auto-edges.ts`. Tag `source='auto'` for distinguishability.
 - **New streaming kind:** add to `RequestKind` union, branch in `server.ts` socket loop with multi-frame writes ending in `{ done: true }`.
+- **New capture-ignore rule:** extend `DEFAULT_IGNORES` / matcher in `src/utils/ignore.ts` (daemon) and its dep-free twin `hooks/lib/ignore.mjs` (hook). Keep the two semantically in sync; both are test-pinned.
+- **Sub-workspace partition:** `SIFTCODER_SUBSPACE` env or `<root>/.siftcoder/subspace` file folds into `workspaceKey` (shared `hooks/lib/workspace.mjs` + `src/memory/workspace.ts`). Both impls must agree — golden-vector tested.
 
 ## 9. Design decisions
 
@@ -313,8 +315,15 @@ Claude Code emits PreCompact
 
 **D11. Auto-edge `source` tag is load-bearing.** The provenance graph mixes auto-inferred, CDG-imported, and human-curated edges. Filtering by `source` lets graph queries scope to a trust level when that matters.
 
+**D12. Capture exclusion is hook-first, daemon-backstopped.** The capture hook applies defaults ∪ `.gitignore` ∪ `.claudeignore` before the RPC (dep-free matcher, mtime-cached to hold the 250ms budget); the daemon re-applies defaults on ingest to cover backfill and older hooks. Both fail open — a matcher error captures rather than drops. Memory quality at scale depends on junk (node_modules, dist, generated) never entering the store. `SIFTCODER_CAPTURE_IGNORE=0` disables.
+
+**D13. Large-codebase knobs are env-driven, not config-driven.** `SIFTCODER_SUBSPACE` and `SIFTCODER_CAPTURE_IGNORE` are read directly by the dep-free hooks, matching the existing `SIFTCODER_NS` pattern. Wiring them through `settings.json` → config → hooks would add plumbing for no behavioral gain; the hooks cannot import the TS config loader. Documented in `docs/foundations/large-codebases.md`.
+
+**D14. Model pins get a scheduled drift review.** Instructions/pins tuned for the current model can work against a future one. The model-coupled surfaces (`settings.json` summarizer/ollama models, confidence threshold, model-worded skill text) are audited every 3–6 months via the checklist in `/siftcoder:siftcoder`, rather than waiting for a regression.
+
 ## 10. Open risks
 
 - Ollama installation gating local-LLM benefits — mitigated by graceful Anthropic fallback + `/siftcoder:mem setup` walkthrough
 - WASM SQLite backend can't load `sqlite-vec`; vector search stays JS-side until corpus > ~10k summaries
 - License/provenance audit on `vendor/sift-compress/` before bundling
+- `mem_symbol_search` is regex-derived recall, not a language server — for live go-to-def/find-refs across languages, recommend the CC code-intelligence (LSP) plugin (see `docs/foundations/large-codebases.md`); do not bundle LSP/tree-sitter (D8 reasoning).
