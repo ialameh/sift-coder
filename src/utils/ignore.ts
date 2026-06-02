@@ -7,7 +7,7 @@
  * minimatch and is the authoritative filter on the daemon (covers backfill + older hooks).
  */
 import { minimatch } from 'minimatch';
-import { relative, sep } from 'node:path';
+import { relative, sep, isAbsolute } from 'node:path';
 
 export const DEFAULT_IGNORES = [
   'node_modules',
@@ -60,8 +60,11 @@ function matches(rel: string, segs: string[], raw: string): boolean {
 }
 
 export function isIgnored(absPath: string, root: string, set: IgnoreSet): boolean {
-  const rel = relative(root, absPath).split(sep).join('/');
-  if (rel.startsWith('..') || rel === '') return false; // outside root → not our concern
+  const relRaw = relative(root, absPath);
+  const rel = relRaw.split(sep).join('/');
+  // outside root → not our concern. `isAbsolute(relRaw)` catches the Windows
+  // cross-drive case where `relative()` returns an absolute path (no leading `..`).
+  if (rel === '' || rel.startsWith('..') || isAbsolute(relRaw)) return false;
   const segs = rel.split('/');
 
   // Negations (leading `!`) win — a re-included path is always captured.
